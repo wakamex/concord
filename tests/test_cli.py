@@ -1,34 +1,38 @@
 """Smoke tests for the concord entrypoints."""
 
+import contextlib
+import io
 import subprocess
 import sys
-
-import pytest
+import unittest
 
 from concord.cli import build_parser, main
 
 
-def test_no_args_prints_help_and_succeeds(capsys):
-    assert main([]) == 0
-    out = capsys.readouterr().out
-    assert "Matching recompilation" in out
+class CliTest(unittest.TestCase):
+    def test_no_args_prints_help_and_succeeds(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(main([]), 0)
+        self.assertIn("Matching recompilation", out.getvalue())
+
+    def test_subcommands_are_stubs(self):
+        # Each wired subcommand returns the stub code until implemented.
+        self.assertEqual(main(["status"]), 2)
+        self.assertEqual(main(["match", "some_function"]), 2)
+
+    def test_parser_knows_the_pipeline_stages(self):
+        help_text = build_parser().format_help()
+        for stage in ("init", "seed", "types", "flags", "match", "diff", "status"):
+            self.assertIn(stage, help_text)
+
+    def test_module_entrypoint_runs(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "concord", "--version"], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("concord", result.stdout)
 
 
-def test_subcommands_are_stubs():
-    # Each wired subcommand returns the stub code until implemented.
-    assert main(["status"]) == 2
-    assert main(["match", "some_function"]) == 2
-
-
-def test_parser_knows_the_pipeline_stages():
-    parser = build_parser()
-    help_text = parser.format_help()
-    for stage in ("init", "seed", "types", "flags", "match", "diff", "status"):
-        assert stage in help_text
-
-
-@pytest.mark.parametrize("entry", [[sys.executable, "-m", "concord"]])
-def test_module_entrypoint_runs(entry):
-    result = subprocess.run([*entry, "--version"], capture_output=True, text=True)
-    assert result.returncode == 0
-    assert "concord" in result.stdout
+if __name__ == "__main__":
+    unittest.main()

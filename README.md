@@ -46,5 +46,5 @@ concord uses [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv run concord --help
-uv run pytest
+uv run --locked python -m unittest discover -s tests
 ```
