@@ -50,6 +50,8 @@ uv run concord survey --harvest ../harvest
 
 `concord survey` counts the causes over every inexact function in a Harvest build.
 
+`concord match --harvest ROOT --unit UNIT SYMBOL` searches source rewrites for one function: it diffs the unit's compile against the target, generates the rewrites for the causes found, compiles them in one batch through Harvest's toolchain (into `build/concord/`, leaving Harvest's own outputs alone), and keeps the best one that improves the function without losing any exact function of the unit. The only transform so far swaps the operands of comparisons in the function's own source. On Harvest's 88 functions whose main difference is operand order it fixed none, because nearly all of those compares come from inlined code; the knowledge base records the details.
+
 The knowledge base in `src/concord/knowledge/` records a compiler's codegen idiosyncrasies, one TOML file per compiler version. Each idiom names the cause the diff reports, the symptom, the source change that fixes it, whether that is confirmed or a hypothesis, and the evidence (a Harvest commit or note). `concord diff` lists the idioms for the causes it finds, and the transform search will read the same entries to choose its moves. Add an idiom whenever a fix makes a function match.
 
 ## Development

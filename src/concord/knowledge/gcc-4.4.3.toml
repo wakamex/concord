@@ -17,6 +17,7 @@ symptom = "a cmp with its operands swapped, with the conditional jump after it m
 fix = "Write the comparison with its operands in the other order: `a != b` as `b != a`, `x < y` as `y > x`. GCC 4.4 keeps the source operand order in the cmp it emits."
 before = "if (GraphType != type && ...)"
 after = "if (type != GraphType && ...)"
+limits = "Applies to comparisons of two non-constant operands written in the function itself. GCC moves a constant to the right of a comparison on its own, so `x > 0` and `0 < x` compile to the same bytes. Swapping an overloaded comparison, such as CString ==, calls the operator on the other object and changes much more than the cmp. Across the 88 Harvest functions whose main difference is operand order, swapping each comparison in the function's own source one at a time fixed none: 46 were inline copies defined in headers, 18 had no comparison in their own source, and in 24 no swap helped, so most of these compares come from inlined code."
 evidence = [
   { commit = "4f54643", function = "harvest::gui::CStatisticsScreen::OnEvent" },
   { commit = "15eaefb", function = "ox::video::SMaterial::operator!=", note = "colorsDiffer(AmbientColor, other.AmbientColor) instead of colorsDiffer(other.AmbientColor, AmbientColor)" },

@@ -24,6 +24,7 @@ class Idiom:
     fix: str
     before: str = ""
     after: str = ""
+    limits: str = ""  # where the idiom does not apply, as measured
     evidence: tuple[dict, ...] = ()
 
 
@@ -42,6 +43,7 @@ def load(compiler: str) -> list[Idiom]:
             fix=row["fix"],
             before=row.get("before", ""),
             after=row.get("after", ""),
+            limits=row.get("limits", ""),
             evidence=tuple(row.get("evidence", ())),
         )
         for row in data["idiom"]

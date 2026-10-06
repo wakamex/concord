@@ -10,8 +10,10 @@ concord reads those files; it does not import Harvest's code.
 from __future__ import annotations
 
 import json
+import subprocess
+import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from concord.diff import diff_code, read_function
@@ -26,6 +28,30 @@ class FunctionVerdict:
     symbol: str
     row: dict  # the function's row in the match report
     section: dict  # the section the function belongs to
+
+
+DRIVER = Path(__file__).with_name("harvest_driver.py")
+
+
+@dataclass
+class Evaluation:
+    """One candidate source compiled and compared by Harvest's matcher."""
+
+    name: str
+    unit: str  # report slug
+    object: Path | None = None
+    error: str = ""
+    sections: list[dict] = field(default_factory=list)
+
+    def verdict(self, symbol: str) -> FunctionVerdict | None:
+        for section in self.sections:
+            for row in section.get("functions", []):
+                if row["symbol"] == symbol:
+                    return FunctionVerdict(self.unit, symbol, row, section)
+        return None
+
+    def exact_functions(self) -> set[str]:
+        return {row["symbol"] for s in self.sections for row in s.get("functions", []) if row["exact"]}
 
 
 class Harvest:
@@ -49,17 +75,54 @@ class Harvest:
                 for row in section.get("functions", []):
                     yield FunctionVerdict(path.stem, row["symbol"], row, section)
 
+    def source(self, unit: str) -> str:
+        """The unit's source path under src/, from its report."""
+        return json.loads((self.reports / f"{self.slug(unit)}.json").read_text())["unit"]
+
+    def evaluate(self, unit: str, sources: dict[str, bytes]) -> dict[str, Evaluation]:
+        """Compile each candidate source of the unit in Harvest's pinned toolchain,
+        in one batch, and compare it with the target. Work files go under
+        build/concord/, never into the checkout's own match outputs."""
+        slug = self.slug(unit)
+        out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+        out.mkdir(parents=True)
+        paths = {}
+        for name, text in sources.items():
+            paths[name] = out / f"{name}.cpp"
+            paths[name].write_bytes(text)
+        request = {"unit": self.source(unit), "out": str(out), "candidates": {n: str(p) for n, p in paths.items()}}
+        result = subprocess.run(
+            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
+            cwd=self.root,
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        evaluations = {}
+        for name, row in json.loads(result.stdout).items():
+            evaluations[name] = Evaluation(
+                name,
+                slug,
+                Path(row["object"]) if "object" in row else None,
+                row.get("error", ""),
+                row.get("sections", []),
+            )
+        return evaluations
+
     def verdict(self, unit: str, symbol: str) -> FunctionVerdict:
         for v in self.verdicts(unit):
             if v.symbol == symbol:
                 return v
         raise KeyError(f"{symbol} is not in {unit}'s report")
 
-    def diff(self, verdict: FunctionVerdict) -> DiffResult:
+    def diff(self, verdict: FunctionVerdict, candidate_object: Path | None = None) -> DiffResult:
+        """Attribute the function's remaining differences, for the checkout's own
+        compile or for a candidate object from evaluate()."""
         if verdict.row["exact"]:
             return DiffResult(score=100.0, exact=True)
         target = read_function(self.objects / "target" / f"{verdict.unit}.o", verdict.symbol)
-        candidate = read_function(self.objects / "base" / f"{verdict.unit}.o", verdict.symbol)
+        candidate = read_function(candidate_object or self.objects / "base" / f"{verdict.unit}.o", verdict.symbol)
         if target.code != candidate.code:
             return diff_code(target, candidate)
         return DiffResult(score=100.0, exact=False, findings=self._unproven(verdict, candidate.start))

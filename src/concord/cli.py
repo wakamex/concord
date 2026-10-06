@@ -18,6 +18,7 @@ from concord import __version__, knowledge
 from concord.diff import diff_code, read_function
 from concord.harvest import Harvest
 from concord.model import DiffResult
+from concord.search import search
 
 
 def _not_implemented(stage: str) -> int:
@@ -48,9 +49,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_flags = sub.add_parser("flags", help="infer toolchain flags from anchor functions")
     p_flags.add_argument("anchors", nargs="+", help="anchor function names")
 
-    p_match = sub.add_parser("match", help="run the matching search for a function")
-    p_match.add_argument("function", help="target function name")
-    p_match.add_argument("--max-seconds", type=float, default=600.0)
+    p_match = sub.add_parser("match", help="search source rewrites toward a byte match for one function")
+    p_match.add_argument("function", help="target function symbol")
+    p_match.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_match.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
+    p_match.add_argument("--rounds", type=int, default=4)
+    p_match.add_argument("--apply", action="store_true", help="write the improved source over the unit's file")
 
     p_diff = sub.add_parser("diff", help="show the attributed diff for a function")
     p_diff.add_argument("function", help="target function symbol")
@@ -81,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
         return _diff(parser, args)
     if args.command == "survey":
         return _survey(args)
+    if args.command == "match":
+        return _match(args)
     return _not_implemented(args.command)
 
 
@@ -108,6 +114,21 @@ def _diff(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         _print_result(diff_code(target, read_function(args.candidate, args.function)), args.compiler)
     else:
         parser.error("pass --target and --candidate, or --harvest and --unit")
+    return 0
+
+
+def _match(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    result = search(harvest, args.unit, args.function, rounds=args.rounds)
+    print(f"baseline score {result.baseline.score:.2f}")
+    for step in result.steps:
+        print(f"  {step.rewrite.transform}: {step.rewrite.description}  -> score {step.diff.score:.2f}")
+    print(f"{result.reason}: score {result.best.score:.2f}, exact {result.best.exact}, {result.tried} rewrites compiled")
+    _print_result(result.best, "gcc-4.4.3")
+    if result.steps and args.apply:
+        path = harvest.root / "src" / harvest.source(args.unit)
+        path.write_bytes(result.source)
+        print(f"wrote {path}")
     return 0
 
 
