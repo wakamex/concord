@@ -28,6 +28,7 @@ id = "definition-order"
 cause = "register-allocation"
 status = "confirmed"
 symptom = "registers or inlining decisions differ in a function whose own source is right"
+limits = "Definition order alone closes few register differences. hv search with 128 orders and 2 restarts on the 12 Harvest units with the most functions whose main difference is register allocation (148 such functions) gained one exact function. Of the 258 such functions overall, 123 are header code (59 inline IGUIElement or IGUILayout copies, 55 libstdc++ and 9 project template instances), whose registers depend on the unit around them rather than on their own source."
 fix = "Move function definitions within the translation unit. GCC 4.4 processes a unit's functions in definition order, so the order changes which callees are inlined and how registers are allocated. `hv search` searches definition orders automatically."
 before = "bool CConfiguration::blockExists(const wchar_t*) defined before CConfigBlock* CConfiguration::getBlock(const wchar_t*)"
 after = "getBlock(const wchar_t*) defined first"
@@ -35,6 +36,7 @@ evidence = [
   { commit = "7ece3d7", function = "ox::game::CConfiguration::getBlock(const wchar_t*)" },
   { commit = "3708bf8", function = "harvest::game::CWorld", note = "unit definitions reordered to the build's order" },
   { commit = "e4b0712", function = "harvest::gui::CMainMenuScreen", note = "restored definition order" },
+  { function = "std::__final_insertion_sort for CVideoNull::SSurface", note = "hv search at 69ea9eb: defining CVideoNull::setInputTexture earlier made this libstdc++ instance exact, so order also steers template code whose source is fixed" },
 ]
 
 [[idiom]]
