@@ -101,7 +101,7 @@ id = "thunk-without-unwind-entry"
 cause = "placement"
 status = "confirmed"
 symptom = "a this-adjusting thunk (_ZThn..., _ZTv...) whose bytes match but which the matcher cannot place at an unwind entry"
-fix = "No source change: GCC 4.4 emits no unwind-table entry for thunks, in the original or in a recompile. A matcher that proves a function by its unwind entry has to prove thunks by their symbol address instead."
+fix = "No source change: GCC 4.4 emits no unwind-table entry for thunks, in the original or in a recompile. Harvest's matcher proves a function's extent by its unwind entry, by design, so thunks stay inexact there even when their bytes match. Their extent is provable another way: the thunk ends at its jmp, and a slot in its class's vtable points at it."
 evidence = [
   { function = "about 230 thunks across Harvest units", note = "bytes identical to the target; no FDE on either side" },
 ]

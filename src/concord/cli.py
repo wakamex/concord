@@ -126,6 +126,8 @@ def _survey(args: argparse.Namespace) -> int:
             primary["(no object)"] += 1
             continue
         causes = Counter(f.cause.value for f in result.findings)
+        if verdict.symbol.startswith(("_ZTh", "_ZTv")) and set(causes) == {"placement"}:
+            causes = Counter({"placement (thunk)": 1})
         functions.update(causes.keys())
         primary[causes.most_common(1)[0][0] if causes else "(none)"] += 1
     print(f"{total} inexact functions")
