@@ -11,8 +11,13 @@ partial work.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+from pathlib import Path
 
 from concord import __version__
+from concord.diff import diff_code, read_function
+from concord.harvest import Harvest
+from concord.model import DiffResult
 
 
 def _not_implemented(stage: str) -> int:
@@ -48,7 +53,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_match.add_argument("--max-seconds", type=float, default=600.0)
 
     p_diff = sub.add_parser("diff", help="show the attributed diff for a function")
-    p_diff.add_argument("function", help="target function name")
+    p_diff.add_argument("function", help="target function symbol")
+    p_diff.add_argument("--target", type=Path, help="relocatable object holding the target function")
+    p_diff.add_argument("--candidate", type=Path, help="compiled object holding the candidate function")
+    p_diff.add_argument("--harvest", type=Path, help="Harvest checkout whose `hv match` outputs to read")
+    p_diff.add_argument("--unit", help="Harvest unit, as a source path or report slug (with --harvest)")
+
+    p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
+    p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
 
     sub.add_parser("status", help="report matching progress")
 
@@ -61,7 +73,54 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         parser.print_help()
         return 0
+    if args.command == "diff":
+        return _diff(parser, args)
+    if args.command == "survey":
+        return _survey(args)
     return _not_implemented(args.command)
+
+
+def _print_result(result: DiffResult) -> None:
+    print(f"score {result.score:.2f}  exact {result.exact}")
+    for f in result.findings:
+        print(f"  {f.cause.value:22} +{f.offset:#06x}  {f.detail}")
+
+
+def _diff(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if args.harvest:
+        if not args.unit:
+            parser.error("--harvest needs --unit")
+        harvest = Harvest(args.harvest)
+        _print_result(harvest.diff(harvest.verdict(args.unit, args.function)))
+    elif args.target and args.candidate:
+        _print_result(diff_code(read_function(args.target, args.function), read_function(args.candidate, args.function)))
+    else:
+        parser.error("pass --target and --candidate, or --harvest and --unit")
+    return 0
+
+
+def _survey(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    functions = Counter()
+    primary = Counter()
+    total = 0
+    for verdict in harvest.verdicts():
+        if verdict.row["exact"]:
+            continue
+        total += 1
+        try:
+            result = harvest.diff(verdict)
+        except (KeyError, FileNotFoundError):
+            primary["(no object)"] += 1
+            continue
+        causes = Counter(f.cause.value for f in result.findings)
+        functions.update(causes.keys())
+        primary[causes.most_common(1)[0][0] if causes else "(none)"] += 1
+    print(f"{total} inexact functions")
+    print(f"{'cause':24}{'functions with it':>18}{'as most frequent':>18}")
+    for cause in sorted(set(functions) | set(primary), key=lambda c: -functions.get(c, 0)):
+        print(f"{cause:24}{functions.get(cause, 0):>18}{primary.get(cause, 0):>18}")
+    return 0
 
 
 if __name__ == "__main__":

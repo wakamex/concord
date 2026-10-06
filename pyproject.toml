@@ -4,7 +4,10 @@ version = "0.0.0"
 description = "Matching recompilation for x86-64 and C++: search for source that recompiles byte-identical to a target."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "capstone>=5.0.9",
+    "pyelftools>=0.33",
+]
 
 [project.scripts]
 concord = "concord.cli:main"

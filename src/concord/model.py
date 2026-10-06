@@ -61,6 +61,10 @@ class Cause(str, Enum):
     STRUCT_LAYOUT = "struct-layout"
     IMMEDIATE_OR_RELOC = "immediate-or-reloc"
     INSTRUCTION_SELECTION = "instruction-selection"
+    # Identical bytes, but a relocation resolves to a different destination.
+    REFERENCE = "reference"
+    # Identical bytes, but the function's place in the target is not proven.
+    PLACEMENT = "placement"
     UNKNOWN = "unknown"
 
 

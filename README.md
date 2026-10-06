@@ -38,7 +38,17 @@ Its conceptual ancestors are m2c, objdiff, decomp-permuter and decomp.me; the cl
 
 ## Status
 
-Skeleton. Module interfaces and the pipeline are defined; the component implementations are stubs. See `docs/DESIGN.md` for the full design and `src/concord/` for the interfaces.
+The cause-attributing diff works; the other stages are stubs. See `docs/DESIGN.md` for the full design and `src/concord/` for the interfaces.
+
+`concord diff` disassembles one function from a target object and a candidate object with [Capstone](https://www.capstone-engine.org/), aligns the instructions, and labels each mismatch: register allocation, operand order, block order, inlining, stack or struct layout, immediate, or instruction selection. Pointed at a Harvest checkout after `hv match`, it reads Harvest's delinked target and compiled objects, and for functions whose bytes already match it reports the references or placement that keep Harvest's matcher from proving them exact:
+
+```sh
+uv run concord diff --harvest ../harvest --unit HarvestFull/harvest/gui/CProfileScreen.cpp _ZN7harvest3gui14CProfileScreen11saveProfileEb
+uv run concord diff --target target.o --candidate candidate.o SYMBOL
+uv run concord survey --harvest ../harvest
+```
+
+`concord survey` counts the causes over every inexact function in a Harvest build.
 
 ## Development
 
