@@ -1,0 +1,117 @@
+# Codegen idiosyncrasies of g++ (Ubuntu 4.4.3-4ubuntu5) 4.4.3 at -O2, x86-64.
+#
+# Each idiom pairs a symptom concord's diff reports (its cause) with a source
+# change that moves GCC's output toward the target. "confirmed" idioms were
+# applied in a commit that made a function or unit match; "hypothesis" idioms
+# are observed but not yet isolated. Evidence names commits in
+# github.com/banteg/harvest.
+
+compiler = "g++ (Ubuntu 4.4.3-4ubuntu5) 4.4.3"
+flags = ["-O2"]
+
+[[idiom]]
+id = "compare-operand-order"
+cause = "operand-order"
+status = "confirmed"
+symptom = "a cmp with its operands swapped, with the conditional jump after it mirrored (jl against jg, jge against jle)"
+fix = "Write the comparison with its operands in the other order: `a != b` as `b != a`, `x < y` as `y > x`. GCC 4.4 keeps the source operand order in the cmp it emits."
+before = "if (GraphType != type && ...)"
+after = "if (type != GraphType && ...)"
+evidence = [
+  { commit = "4f54643", function = "harvest::gui::CStatisticsScreen::OnEvent" },
+  { commit = "15eaefb", function = "ox::video::SMaterial::operator!=", note = "colorsDiffer(AmbientColor, other.AmbientColor) instead of colorsDiffer(other.AmbientColor, AmbientColor)" },
+]
+
+[[idiom]]
+id = "definition-order"
+cause = "register-allocation"
+status = "confirmed"
+symptom = "registers or inlining decisions differ in a function whose own source is right"
+fix = "Move function definitions within the translation unit. GCC 4.4 processes a unit's functions in definition order, so the order changes which callees are inlined and how registers are allocated. `hv search` searches definition orders automatically."
+before = "bool CConfiguration::blockExists(const wchar_t*) defined before CConfigBlock* CConfiguration::getBlock(const wchar_t*)"
+after = "getBlock(const wchar_t*) defined first"
+evidence = [
+  { commit = "7ece3d7", function = "ox::game::CConfiguration::getBlock(const wchar_t*)" },
+  { commit = "3708bf8", function = "harvest::game::CWorld", note = "unit definitions reordered to the build's order" },
+  { commit = "e4b0712", function = "harvest::gui::CMainMenuScreen", note = "restored definition order" },
+]
+
+[[idiom]]
+id = "result-flag-or-early-return"
+cause = "block-order"
+status = "confirmed"
+symptom = "the blocks of a switch's cases, or its lowering, differ: a compare chain against a lookup table, or case bodies laid out in another order"
+fix = "Try the other exit style. A switch whose cases `return true` lays out differently from one whose cases set `result = true; break;` and return once at the end, and a result flag can let GCC turn a switch into a lookup table where early returns keep a compare chain."
+before = "case ID_BACK: removeWindow(); return true;"
+after = "case ID_BACK: removeWindow(); result = true; break;"
+evidence = [
+  { commit = "69e27c1", function = "harvest::gui::CProfileScreen::OnEvent", note = "result flag matched" },
+  { commit = "4f54643", function = "harvest::gui::CStatisticsScreen::OnEvent", note = "early return kept the compare chain; a result flag became a lookup table" },
+]
+
+[[idiom]]
+id = "switch-or-if-chain"
+cause = "block-order"
+status = "confirmed"
+symptom = "tests on one value happen in a different order, or a compare chain appears where the target branches differently"
+fix = "Write tests on a single value as a switch instead of an if/else-if chain, or the reverse. GCC 4.4 lowers the two forms to different compare orders and block layouts."
+before = "if (event.GUIEvent.EventType == EGET_BUTTON_CLICKED) { ... } else if (event.GUIEvent.EventType == EGET_MESSAGEBOX_YES) { ... }"
+after = "switch (event.GUIEvent.EventType) { case EGET_BUTTON_CLICKED: ... break; case EGET_MESSAGEBOX_YES: ... break; default: break; }"
+evidence = [
+  { commit = "4f54643", function = "harvest::gui::CIngameMenuScreen::OnEvent" },
+  { commit = "50b223e", function = "harvest::gui::CMenuInfoDialog", note = "switch on the event type and button id" },
+]
+
+[[idiom]]
+id = "branch-sense"
+cause = "block-order"
+status = "confirmed"
+symptom = "the then and else blocks of an if sit in the opposite order, with the conditional jump inverted (je against jne)"
+fix = "Negate the condition and swap the branches. GCC 4.4 tends to lay the then-branch out as the fall-through, so `if (!x) A else B` places A where `if (x) B else A` places B."
+before = "if (mutate) { /* mutate */ } else { /* copy */ }"
+after = "if (!copyMine) { /* mutate */ } else { /* copy */ }"
+evidence = [
+  { commit = "9edc1d4", function = "harvest::entity::CShuttleEntity::resetAllAiByMe", note = "combined with other changes in the same commit" },
+]
+
+[[idiom]]
+id = "inline-in-header"
+cause = "inlining"
+status = "confirmed"
+symptom = "a call on one side where the other side has the callee's body inline, or the reverse"
+fix = "Define the callee where the original did: inline in the class definition or an included header lets GCC inline it at -O2, an out-of-line definition in another unit prevents it. Match the original header layout (the Mac debug map's N_SOL header markers show which headers contributed code)."
+evidence = [
+  { commit = "0003aa9", function = "ox::gui::IGUIElement and IGUILayout", note = "inline method bodies added to IGUILayout.h, as in the original headers" },
+]
+
+[[idiom]]
+id = "named-temporary"
+cause = "register-allocation"
+status = "hypothesis"
+symptom = "a repeated subexpression is recomputed on one side and kept in a register on the other, with spills or copies around it"
+fix = "Introduce or remove a named local for the repeated subexpression. GCC 4.4's common-subexpression elimination does not always merge repeated array indices or member loads, so a local changes what stays in a register."
+before = "MiddleTargets[NextCheckPoint % 14].X = ...; EndTargets[NextCheckPoint % 14] = ...;"
+after = "int next = NextCheckPoint % 14; MiddleTargets[next].X = ...; EndTargets[next] = ...;"
+evidence = [
+  { commit = "9edc1d4", function = "harvest::entity::CShuttleEntity::updateLogic", note = "not isolated from the other changes in the commit" },
+]
+
+[[idiom]]
+id = "thunk-without-unwind-entry"
+cause = "placement"
+status = "confirmed"
+symptom = "a this-adjusting thunk (_ZThn..., _ZTv...) whose bytes match but which the matcher cannot place at an unwind entry"
+fix = "No source change: GCC 4.4 emits no unwind-table entry for thunks, in the original or in a recompile. A matcher that proves a function by its unwind entry has to prove thunks by their symbol address instead."
+evidence = [
+  { function = "about 230 thunks across Harvest units", note = "bytes identical to the target; no FDE on either side" },
+]
+
+[[idiom]]
+id = "inliner-pass-operand-order"
+cause = "operand-order"
+status = "hypothesis"
+symptom = "swapped compare operands inside an inlined callee's code, where other functions that inline the same callee match"
+fix = "Leave the callee's source alone: the operand order appears to depend on which GCC 4.4 inliner pass inlined that copy. Change how the caller reaches it instead, such as which call comes first or whether a temporary is constructed separately, so that copy is inlined the way the original's was."
+evidence = [
+  { function = "harvest::entity::CSparkMoverEntity and CMineralGatherEntity constructors", note = "only the first inlined CString copy loop has cmp len, i; single-string constructors match (harvest docs/matching.md)" },
+]

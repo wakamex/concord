@@ -14,7 +14,7 @@ import argparse
 from collections import Counter
 from pathlib import Path
 
-from concord import __version__
+from concord import __version__, knowledge
 from concord.diff import diff_code, read_function
 from concord.harvest import Harvest
 from concord.model import DiffResult
@@ -58,6 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("--candidate", type=Path, help="compiled object holding the candidate function")
     p_diff.add_argument("--harvest", type=Path, help="Harvest checkout whose `hv match` outputs to read")
     p_diff.add_argument("--unit", help="Harvest unit, as a source path or report slug (with --harvest)")
+    p_diff.add_argument(
+        "--compiler",
+        help="compiler whose known idioms to show for the causes found (default: gcc-4.4.3 with --harvest)",
+    )
 
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
@@ -80,10 +84,17 @@ def main(argv: list[str] | None = None) -> int:
     return _not_implemented(args.command)
 
 
-def _print_result(result: DiffResult) -> None:
+def _print_result(result: DiffResult, compiler: str | None) -> None:
     print(f"score {result.score:.2f}  exact {result.exact}")
     for f in result.findings:
         print(f"  {f.cause.value:22} +{f.offset:#06x}  {f.detail}")
+    if not compiler or not result.findings:
+        return
+    idioms = knowledge.for_causes(knowledge.load(compiler), {f.cause for f in result.findings})
+    if idioms:
+        print(f"\nknown {compiler} idioms for these causes:")
+    for i in idioms:
+        print(f"  {i.id} ({i.cause.value}, {i.status}): {i.fix}")
 
 
 def _diff(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
@@ -91,9 +102,10 @@ def _diff(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         if not args.unit:
             parser.error("--harvest needs --unit")
         harvest = Harvest(args.harvest)
-        _print_result(harvest.diff(harvest.verdict(args.unit, args.function)))
+        _print_result(harvest.diff(harvest.verdict(args.unit, args.function)), args.compiler or "gcc-4.4.3")
     elif args.target and args.candidate:
-        _print_result(diff_code(read_function(args.target, args.function), read_function(args.candidate, args.function)))
+        target = read_function(args.target, args.function)
+        _print_result(diff_code(target, read_function(args.candidate, args.function)), args.compiler)
     else:
         parser.error("pass --target and --candidate, or --harvest and --unit")
     return 0

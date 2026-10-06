@@ -50,6 +50,8 @@ uv run concord survey --harvest ../harvest
 
 `concord survey` counts the causes over every inexact function in a Harvest build.
 
+The knowledge base in `src/concord/knowledge/` records a compiler's codegen idiosyncrasies, one TOML file per compiler version. Each idiom names the cause the diff reports, the symptom, the source change that fixes it, whether that is confirmed or a hypothesis, and the evidence (a Harvest commit or note). `concord diff` lists the idioms for the causes it finds, and the transform search will read the same entries to choose its moves. Add an idiom whenever a fix makes a function match.
+
 ## Development
 
 concord uses [uv](https://docs.astral.sh/uv/).

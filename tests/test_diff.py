@@ -152,5 +152,21 @@ class HarvestDocumentedCauses(unittest.TestCase):
                 self.assertTrue(all(f.cause == cause for f in findings), [f.cause.value for f in findings])
 
 
+
+class KnowledgeBase(unittest.TestCase):
+    def test_every_compiler_file_loads_with_known_causes(self):
+        from concord import knowledge
+
+        self.assertIn("gcc-4.4.3", knowledge.compilers())
+        for compiler in knowledge.compilers():
+            idioms = knowledge.load(compiler)
+            self.assertTrue(idioms)
+            self.assertEqual(len({i.id for i in idioms}), len(idioms))
+            for i in idioms:
+                self.assertIn(i.status, ("confirmed", "hypothesis"))
+                self.assertTrue(i.fix and i.symptom)
+                self.assertTrue(all("commit" in e or "note" in e for e in i.evidence), i.id)
+
+
 if __name__ == "__main__":
     unittest.main()
