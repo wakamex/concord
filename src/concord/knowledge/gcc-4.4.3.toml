@@ -69,7 +69,7 @@ evidence = [
 id = "branch-sense"
 cause = "block-order"
 status = "confirmed"
-limits = "concord's branch-sense transform (`if (c) A else B` to `if (!c) B else A`) improved 17 of 98 Harvest functions with a block-order finding and made none exact on its own. CGUIWindow::draw went from 89.18 to 99.73, leaving one loop-entry compare (cmp [rsp+0x98], r12d in the target, the reverse in ours) that four rewrites of its loop did not flip: hoisting the bound before or after the step (worse, 98.36), declaring x before the step (99.59), and a while loop (identical bytes); CBuildableItems::loadCreativeBuildingData went from 91.79 to 99.14 and CPlayState::addParticleEntity from 86.59 to 97.56. Mixing up to 32 one-definition moves per round into a 6-round search on those 17 functions, at harvest 4bc99eb, left every one where branch sense alone had left it."
+limits = "Applied only where the diff reports block order, concord's branch-sense transform (`if (c) A else B` to `if (!c) B else A`) improved 17 of 98 Harvest functions with a block-order finding and made none exact on its own; applied anywhere by concord permute, it made two exact whose diffs named other causes (see evidence). CGUIWindow::draw went from 89.18 to 99.73, leaving one loop-entry compare (cmp [rsp+0x98], r12d in the target, the reverse in ours) that four rewrites of its loop did not flip: hoisting the bound before or after the step (worse, 98.36), declaring x before the step (99.59), and a while loop (identical bytes); CBuildableItems::loadCreativeBuildingData went from 91.79 to 99.14 and CPlayState::addParticleEntity from 86.59 to 97.56. Mixing up to 32 one-definition moves per round into a 6-round search on those 17 functions, at harvest 4bc99eb, left every one where branch sense alone had left it."
 symptom = "the then and else blocks of an if sit in the opposite order, with the conditional jump inverted (je against jne)"
 fix = "Negate the condition and swap the branches. GCC 4.4 tends to lay the then-branch out as the fall-through, so `if (!x) A else B` places A where `if (x) B else A` places B."
 before = "if (mutate) { /* mutate */ } else { /* copy */ }"
@@ -77,6 +77,7 @@ after = "if (!copyMine) { /* mutate */ } else { /* copy */ }"
 evidence = [
   { commit = "9edc1d4", function = "harvest::entity::CShuttleEntity::resetAllAiByMe", note = "combined with other changes in the same commit" },
   { function = "daisy::gui::CGUIListBox::draw", note = "concord permute at harvest 4bc99eb: `if (!DrawBack) { children } else IGUIElement::draw();` as `if (DrawBack) IGUIElement::draw(); else { children }` made it exact (98.45); the diff had attributed its mismatch to other causes, so only a search over every transform tried it" },
+  { function = "harvest::settings::CSystemConfig constructors", note = "concord permute at harvest 4bc99eb: setting the default resolution in the then-branch, `if (attributeExists(h) != true || !attributeExists(v)) setScreenRes(resolution); else { ... }`, made C1 and C2 exact (98.14)" },
 ]
 
 [[idiom]]
