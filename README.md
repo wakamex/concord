@@ -48,7 +48,7 @@ uv run concord diff --target target.o --candidate candidate.o SYMBOL
 uv run concord survey --harvest ../harvest
 ```
 
-`concord survey` counts the causes over every inexact function in a Harvest build.
+`concord survey` counts the causes over every inexact function in a Harvest build. `concord vtables` compares every vtable the compiled units emit with the target's, slot by slot; a slot that differs means a class declaration with an extra, missing or misplaced virtual, which shifts the vtable references of every constructor and destructor that uses it.
 
 `concord sweep --harvest ROOT [--apply]` runs Harvest's definition-order search (`hv search`) on every unit with an inexact function and reports the functions its verification compile confirms as newly exact; with `--apply` it writes a winning order only when it is a pure reorder of the unchanged source. Its first full run produced [banteg/harvest#19](https://github.com/banteg/harvest/pull/19), nine functions across five units.
 

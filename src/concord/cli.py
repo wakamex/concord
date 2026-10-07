@@ -79,6 +79,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_sweep.add_argument("--apply", action="store_true", help="write verified pure-reorder gains into the sources")
     p_sweep.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
+    p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
+    p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
 
@@ -101,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
         return _match(args)
     if args.command == "sweep":
         return _sweep(args)
+    if args.command == "vtables":
+        return _vtables(args)
     return _not_implemented(args.command)
 
 
@@ -203,6 +208,14 @@ def _sweep(args: argparse.Namespace) -> int:
         print(line, flush=True)
     print(f"{gained} functions gained across {len(units)} units")
     return 0
+
+
+def _vtables(args: argparse.Namespace) -> int:
+    compared, mismatches = Harvest(args.harvest).vtables()
+    print(f"{compared} vtables compared, {len(mismatches)} differ")
+    for m in mismatches:
+        print(f"  {m['vtable']} slot {m['slot']}/{m['slots']}: ours {m['ours']}, target {m['target']} ({m['object']})")
+    return 1 if mismatches else 0
 
 
 def _short_names(symbols: set[str]) -> list[str]:

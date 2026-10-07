@@ -146,6 +146,20 @@ class Harvest:
             for name, row in json.loads(result.stdout).items()
         }
 
+    def vtables(self) -> tuple[int, list[dict]]:
+        """Compare every vtable the last `hv match` compiled with the target's. A slot that
+        disagrees means a class declaration with a missing, extra or misplaced virtual."""
+        result = subprocess.run(
+            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
+            cwd=self.root,
+            input=json.dumps({"vtables": True}),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        header, *mismatches = json.loads(result.stdout)
+        return header["compared"], mismatches
+
     def dependents(self, path: str) -> list[str]:
         """Units whose last `hv match` compile read the file (path under the checkout)."""
         found = []

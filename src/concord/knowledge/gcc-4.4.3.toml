@@ -130,3 +130,13 @@ limits = "No gain found yet: 256 one-block moves of IGUIElementInline.h across i
 evidence = [
   { function = "IGUIElementInline.h, 23 units", note = "concord header-order search at harvest 69ea9eb" },
 ]
+
+[[idiom]]
+id = "vtable-slot-count"
+cause = "immediate-or-reloc"
+status = "confirmed"
+symptom = "functions whose bytes match except a reference to a vtable at a different addend, typically constructors and destructors storing a secondary vtable pointer (ours vtable + 0x1c8, the target's + 0x1c0)"
+fix = "Make the class declarations give each vtable the original's slots: an extra, missing or misplaced virtual shifts every later slot and every secondary vtable after it. `concord vtables` compares each compiled vtable with the target's slot by slot and names the first slot that differs; a concrete class's own virtuals sit after its interface's, so a function the interface should not declare shows up there."
+evidence = [
+  { function = "daisy::gui::CGUIListBox destructors", note = "setIconFont and setNumber declared only in CGUIListBox and CGUITab (banteg/harvest#22): three destructors exact, both interface vtables matched" },
+]

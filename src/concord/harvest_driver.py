@@ -31,7 +31,7 @@ import uuid
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from hv import builds, match, symbols, toolchain, units
+from hv import builds, extents, match, symbols, toolchain, units
 from hv.elf import Elf
 
 _shared = None  # (target, known, placements by unit), inherited by forked workers
@@ -93,13 +93,48 @@ def compile_overlays(compiler: toolchain.Compiler, items: dict[str, dict], unit_
     return outcomes
 
 
+def vtable_mismatches(target, objects: list[Path], known: dict[str, int]) -> list[dict]:
+    """Compare every vtable the compiled objects define with the target's, word by word:
+    offsets as numbers, slots by the symbol they point at. A slot pointing at an unnamed
+    target function is unknown and not a mismatch; the first real disagreement is reported."""
+    names = {address: name for name, address in known.items()}
+    names |= {address: name for name, address in target.plt_symbols().items()}
+    seen, found = set(), []
+    for path in objects:
+        obj = Elf.load(path, "ET_REL")
+        for sym in obj.symtab():
+            index = sym["st_shndx"]
+            if not sym.name.startswith("_ZTV") or not isinstance(index, int) or sym.name in seen or sym.name not in known:
+                continue
+            seen.add(sym.name)
+            slots = {r["r_offset"]: s.name or obj.sections[s["st_shndx"]].name for r, s in obj.relocations(index)}
+            data = obj.sections[index].data()
+            for slot in range(sym["st_size"] // 8):
+                offset = sym["st_value"] + 8 * slot
+                ours = slots.get(offset, int.from_bytes(data[offset : offset + 8], "little", signed=True))
+                word = target.word(known[sym.name] + 8 * slot)
+                word = word - (1 << 64) if word >= 1 << 63 else word
+                theirs = names.get(word, word) if word > 0x400000 else word
+                if ours != theirs and not (isinstance(ours, str) and isinstance(theirs, int)):
+                    found.append({"vtable": sym.name, "slot": slot, "slots": sym["st_size"] // 8,
+                                  "ours": ours, "target": theirs, "object": path.stem})
+                    break
+    return [{"compared": len(seen)}, *found]
+
+
 def main() -> None:
     global _shared
     request = json.load(sys.stdin)
+    if request.get("vtables"):
+        build = builds.canonical_build()
+        target = extents.load_target(build)
+        known = symbols.by_name(symbols.load(build))
+        objects = sorted((builds.ROOT / "build" / "match" / build).glob("*.o"))
+        json.dump(vtable_mismatches(target, objects, known), sys.stdout)
+        return
     build = builds.canonical_build()
     by_source = {u.source: u for u in units.load(build)}
-    (image,) = builds.load_builds()[build].images.values()
-    target = Elf.load(image.path, "ET_EXEC")
+    target = extents.load_target(build)
     known = symbols.by_name(symbols.load(build))
     out = Path(request["out"])
     out.mkdir(parents=True, exist_ok=True)
