@@ -124,4 +124,45 @@ def swap_operands(source: bytes, symbol: str) -> Iterator[Rewrite]:
         )
 
 
-TRANSFORMS = {Cause.OPERAND_ORDER: [swap_operands]}
+def _negate(condition: Node) -> bytes:
+    if condition.type == "unary_expression" and condition.child_by_field_name("operator").type == "!":
+        return condition.child_by_field_name("argument").text
+    return b"!(" + condition.text + b")"
+
+
+def _block(statement: Node) -> bytes:
+    """The statement as a block, so a moved branch cannot capture a following else."""
+    return statement.text if statement.type == "compound_statement" else b"{ " + statement.text + b" }"
+
+
+def swap_branches(source: bytes, symbol: str) -> Iterator[Rewrite]:
+    """One rewrite per if/else in the function: `if (c) A else B` becomes
+    `if (!c) B else A`. The condition is still evaluated once and the same
+    branch runs; GCC 4.4 tends to lay out the then-branch as the fall-through."""
+    stack = [find_function(source, symbol)]
+    found = []
+    while stack:
+        node = stack.pop()
+        stack.extend(node.children)
+        if node.type != "if_statement" or node.child_by_field_name("alternative") is None:
+            continue
+        clause = node.child_by_field_name("condition")
+        condition = clause.child_by_field_name("value")
+        if condition is None or clause.named_child_count != 1:
+            continue  # an init-statement or declaration condition has no simple negation
+        found.append(node)
+    for node in sorted(found, key=lambda n: n.start_byte):
+        condition = node.child_by_field_name("condition").child_by_field_name("value")
+        then = node.child_by_field_name("consequence")
+        otherwise = node.child_by_field_name("alternative").named_children[-1]
+        swapped = b"if (" + _negate(condition) + b") " + _block(otherwise) + b" else " + _block(then)
+        line = source.count(b"\n", 0, node.start_byte) + 1
+        yield Rewrite(
+            "branch-sense",
+            Cause.BLOCK_ORDER,
+            f"line {line}: if ({condition.text.decode()}) swapped",
+            source[: node.start_byte] + swapped + source[node.end_byte :],
+        )
+
+
+TRANSFORMS = {Cause.OPERAND_ORDER: [swap_operands], Cause.BLOCK_ORDER: [swap_branches]}
