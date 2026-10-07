@@ -11,6 +11,7 @@ partial work.
 from __future__ import annotations
 
 import argparse
+import subprocess
 from collections import Counter
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from concord import __version__, knowledge
 from concord.diff import diff_code, read_function
 from concord.harvest import Harvest
 from concord.model import DiffResult
+from concord.order import apply_order, search_order
 from concord.search import search
 
 
@@ -67,6 +69,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="compiler whose known idioms to show for the causes found (default: gcc-4.4.3 with --harvest)",
     )
 
+    p_sweep = sub.add_parser("sweep", help="search definition orders of Harvest units through hv search")
+    p_sweep.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_sweep.add_argument("--unit", action="append", help="unit to search (default: every unit with an inexact function)")
+    p_sweep.add_argument("--budget", type=int, default=128)
+    p_sweep.add_argument("--restarts", type=int, default=2)
+    p_sweep.add_argument("--apply", action="store_true", help="write verified pure-reorder gains into the sources")
+
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
 
@@ -87,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
         return _survey(args)
     if args.command == "match":
         return _match(args)
+    if args.command == "sweep":
+        return _sweep(args)
     return _not_implemented(args.command)
 
 
@@ -130,6 +141,31 @@ def _match(args: argparse.Namespace) -> int:
         path.write_bytes(result.source)
         print(f"wrote {path}")
     return 0
+
+
+def _sweep(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    units = args.unit or sorted(
+        {v.unit for v in harvest.verdicts() if not v.row["exact"] and not v.symbol.startswith(("_ZTh", "_ZTv"))}
+    )
+    gained = 0
+    for unit in units:
+        result = search_order(harvest, unit, args.budget, args.restarts)
+        line = f"{result.unit}: {result.reason}"
+        if result.gained and not result.lost:
+            gained += len(result.gained)
+            line += f", +{len(result.gained)} verified: {', '.join(_short_names(result.gained))}"
+            if args.apply:
+                apply_order(harvest, result)
+                line += " (applied)"
+        print(line, flush=True)
+    print(f"{gained} functions gained across {len(units)} units")
+    return 0
+
+
+def _short_names(symbols: set[str]) -> list[str]:
+    demangled = subprocess.run(["c++filt"], input="\n".join(sorted(symbols)), capture_output=True, text=True)
+    return [name.split("(")[0] for name in demangled.stdout.split("\n") if name]
 
 
 def _survey(args: argparse.Namespace) -> int:
