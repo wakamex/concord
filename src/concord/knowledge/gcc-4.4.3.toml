@@ -76,6 +76,7 @@ before = "if (mutate) { /* mutate */ } else { /* copy */ }"
 after = "if (!copyMine) { /* mutate */ } else { /* copy */ }"
 evidence = [
   { commit = "9edc1d4", function = "harvest::entity::CShuttleEntity::resetAllAiByMe", note = "combined with other changes in the same commit" },
+  { function = "daisy::gui::CGUIListBox::draw", note = "concord permute at harvest 4bc99eb: `if (!DrawBack) { children } else IGUIElement::draw();` as `if (DrawBack) IGUIElement::draw(); else { children }` made it exact (98.45); the diff had attributed its mismatch to other causes, so only a search over every transform tried it" },
 ]
 
 [[idiom]]

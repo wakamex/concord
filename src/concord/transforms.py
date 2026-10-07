@@ -255,6 +255,74 @@ def move_declarations(source: bytes, scope: Node) -> Iterator[Rewrite]:
                 )
 
 
+# Expressions worth naming: a value computed from others, not a plain name or literal.
+HOISTABLE = {"binary_expression", "field_expression", "subscript_expression", "pointer_expression", "call_expression"}
+
+
+def name_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per subexpression of a declaration or expression statement:
+    `f(a.b + c);` becomes `__typeof__(a.b + c) tmp = a.b + c; f(tmp);`. A named
+    local changes the order GCC 4.4 creates values in and what stays in a register.
+    `__typeof__` (a GCC extension) keeps the rewrite type-correct without type
+    inference; it drops references, so a temporary of class type is a copy, which
+    the byte comparison then rejects."""
+    for statement in _descendants(scope, "expression_statement") + _descendants(scope, "declaration"):
+        if statement.parent is None or statement.parent.type != "compound_statement":
+            continue
+        indent = source[_line_start(source, statement.start_byte) : statement.start_byte]
+        if indent.strip():
+            continue
+        for node in _subexpressions(statement):
+            if node.type not in HOISTABLE or node.parent == statement or b"\n" in node.text or _written(node):
+                continue
+            if node.type == "binary_expression" and node.child_by_field_name("operator").type in ("&&", "||"):
+                continue  # naming the right operand would evaluate it unconditionally
+            if any(a.type in ("conditional_expression", "lambda_expression") or (a.type == "binary_expression" and a.child_by_field_name("operator").type in ("&&", "||")) for a in _ancestors(node, statement)):
+                continue
+            name = b"concordTmp%d" % source.count(b"concordTmp")
+            declaration = b"__typeof__(" + node.text + b") " + name + b" = " + node.text + b";\n" + indent
+            replaced = source[: node.start_byte] + name + source[node.end_byte :]
+            at = statement.start_byte
+            line = source.count(b"\n", 0, node.start_byte) + 1
+            yield Rewrite(
+                "named-temporary",
+                Cause.REGISTER_ALLOCATION,
+                f"line {line}: {node.text.decode()} named",
+                replaced[:at] + declaration + replaced[at:],
+            )
+
+
+def _written(node: Node) -> bool:
+    """Whether the expression is assigned, incremented or has its address taken,
+    where a named copy would change what is written."""
+    parent = node.parent
+    if parent.type == "assignment_expression" and parent.child_by_field_name("left") == node:
+        return True
+    if parent.type == "update_expression":
+        return True
+    return parent.type == "pointer_expression" and parent.child_by_field_name("operator").type == "&"
+
+
+def _subexpressions(statement: Node) -> list[Node]:
+    out, stack = [], list(statement.children)
+    while stack:
+        node = stack.pop()
+        if node.type in ("lambda_expression", "compound_statement"):
+            continue
+        out.append(node)
+        stack.extend(node.children)
+    return sorted(out, key=lambda n: n.start_byte)
+
+
+def _ancestors(node: Node, stop: Node) -> list[Node]:
+    out = []
+    node = node.parent
+    while node is not None and node != stop:
+        out.append(node)
+        node = node.parent
+    return out
+
+
 TRANSFORMS = {Cause.OPERAND_ORDER: [swap_operands], Cause.BLOCK_ORDER: [swap_branches]}
 # Every rewrite, for searches that do not pick rewrites by cause.
-ALL = [swap_operands, swap_branches, swap_statements, move_declarations]
+ALL = [swap_operands, swap_branches, swap_statements, move_declarations, name_temporaries]

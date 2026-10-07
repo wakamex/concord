@@ -3,7 +3,7 @@
 import shutil
 import unittest
 
-from concord.transforms import comparisons, find_function, move_declarations, swap_branches, swap_operands, swap_statements
+from concord.transforms import comparisons, find_function, move_declarations, name_temporaries, swap_branches, swap_operands, swap_statements
 
 SOURCE = b"""namespace game {
 int Board::score(int a, int b) const
@@ -87,6 +87,25 @@ class Reorder(unittest.TestCase):
         for source in moved:
             self.assertEqual(source.count(b"int t;"), 1)
             self.assertEqual(len(source), len(STATEMENTS))
+
+
+TEMPORARIES = b"""int Board::sum(int a)
+{
+    int x = a + b.c;
+    call(x * 2, a && f(a));
+    b.c = x[1];
+    return x;
+}
+"""
+
+
+@unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
+class NameTemporaries(unittest.TestCase):
+    def test_values_are_named_but_not_written_places_or_conditional_operands(self):
+        rewrites = list(name_temporaries(TEMPORARIES, find_function(TEMPORARIES, "_ZN5Board3sumEi")))
+        # not the call statement itself, f(a) behind &&, or the assigned b.c
+        self.assertEqual([r.description for r in rewrites], ["line 4: x * 2 named", "line 5: x[1] named", "line 3: a + b.c named", "line 3: b.c named"])
+        self.assertIn(b"    __typeof__(x * 2) concordTmp0 = x * 2;\n    call(concordTmp0, a && f(a));", rewrites[0].source)
 
 
 if __name__ == "__main__":
