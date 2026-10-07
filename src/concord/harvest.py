@@ -64,6 +64,19 @@ class Harvest:
         if not self.reports.is_dir():
             raise FileNotFoundError(f"{self.reports} is missing; run `hv match` in {root}")
 
+    def _driver(self, request: str) -> subprocess.CompletedProcess:
+        """Run harvest_driver.py with the checkout's Python; its stderr explains a failure."""
+        result = subprocess.run(
+            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
+            cwd=self.root,
+            input=request,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode:
+            raise RuntimeError(f"harvest_driver.py failed:\n{result.stderr[-3000:]}")
+        return result
+
     def slug(self, unit: str) -> str:
         """Accept a report slug or a source path such as ox/net/CVariablePacket.cpp."""
         return unit.removesuffix(".cpp").replace("/", "__")
@@ -92,14 +105,7 @@ class Harvest:
             paths[name] = out / f"{name}.cpp"
             paths[name].write_bytes(text)
         request = {"unit": self.source(unit), "out": str(out), "candidates": {n: str(p) for n, p in paths.items()}}
-        result = subprocess.run(
-            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
-            cwd=self.root,
-            input=json.dumps(request),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = self._driver(json.dumps(request))
         evaluations = {}
         for name, row in json.loads(result.stdout).items():
             evaluations[name] = Evaluation(
@@ -127,14 +133,7 @@ class Harvest:
                     files[text].write_bytes(text)
                 mapped[path] = str(files[text])
             request_items[name] = {"unit": unit, "overlays": mapped}
-        result = subprocess.run(
-            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
-            cwd=self.root,
-            input=json.dumps({"out": str(out), "items": request_items}),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = self._driver(json.dumps({"out": str(out), "items": request_items}))
         return {
             name: Evaluation(
                 name,
@@ -153,27 +152,13 @@ class Harvest:
         out.mkdir(parents=True, exist_ok=True)
         names = {f"u{n}": unit for n, unit in enumerate(units)}
         request = {"out": str(out), "debug": True, "items": {n: {"unit": u, "overlays": {}} for n, u in names.items()}}
-        result = subprocess.run(
-            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
-            cwd=self.root,
-            input=json.dumps(request),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = self._driver(json.dumps(request))
         return {names[n]: Path(row["object"]) for n, row in json.loads(result.stdout).items() if "object" in row}
 
     def vtables(self) -> tuple[int, list[dict]]:
         """Compare every vtable the last `hv match` compiled with the target's. A slot that
         disagrees means a class declaration with a missing, extra or misplaced virtual."""
-        result = subprocess.run(
-            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
-            cwd=self.root,
-            input=json.dumps({"vtables": True}),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = self._driver(json.dumps({"vtables": True}))
         header, *mismatches = json.loads(result.stdout)
         return header["compared"], mismatches
 
