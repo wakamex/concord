@@ -15,7 +15,7 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
-from concord import __version__, knowledge
+from concord import __version__, knowledge, results
 from concord.diff import diff_code, read_function
 from concord.harvest import Harvest
 from concord.model import DiffResult
@@ -57,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_match.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
     p_match.add_argument("--rounds", type=int, default=4)
     p_match.add_argument("--apply", action="store_true", help="write the improved source over the unit's file")
+    p_match.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_diff = sub.add_parser("diff", help="show the attributed diff for a function")
     p_diff.add_argument("function", help="target function symbol")
@@ -76,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sweep.add_argument("--restarts", type=int, default=2)
     p_sweep.add_argument("--seed", type=int, default=0)
     p_sweep.add_argument("--apply", action="store_true", help="write verified pure-reorder gains into the sources")
+    p_sweep.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
@@ -131,7 +133,29 @@ def _diff(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
 
 def _match(args: argparse.Namespace) -> int:
     harvest = Harvest(args.harvest)
+    revision = results.commit(harvest.root)
+    original = (harvest.root / "src" / harvest.source(args.unit)).read_bytes()
     result = search(harvest, args.unit, args.function, rounds=args.rounds)
+    results.record(
+        args.results,
+        {
+            "command": "match",
+            "harvest": revision,
+            "unit": harvest.source(args.unit),
+            "symbol": args.function,
+            "rounds": args.rounds,
+            "transforms": sorted(result.transforms),
+            "reason": result.reason,
+            "tried": result.tried,
+            "before": result.baseline.score,
+            "after": result.best.score,
+            "exact": result.best.exact,
+            "steps": [f"{s.rewrite.transform}: {s.rewrite.description}" for s in result.steps],
+            "patch": results.save_patch(args.results, harvest.source(args.unit), original, result.source)
+            if result.steps
+            else None,
+        },
+    )
     print(f"baseline score {result.baseline.score:.2f}")
     for step in result.steps:
         print(f"  {step.rewrite.transform}: {step.rewrite.description}  -> score {step.diff.score:.2f}")
@@ -149,9 +173,26 @@ def _sweep(args: argparse.Namespace) -> int:
     units = args.unit or sorted(
         {v.unit for v in harvest.verdicts() if not v.row["exact"] and not v.symbol.startswith(("_ZTh", "_ZTv"))}
     )
+    revision = results.commit(harvest.root)
     gained = 0
     for unit in units:
         result = search_order(harvest, unit, args.budget, args.restarts, args.seed)
+        row = {
+            "command": "sweep",
+            "harvest": revision,
+            "unit": result.unit,
+            "budget": args.budget,
+            "restarts": args.restarts,
+            "seed": args.seed,
+            "reason": result.reason,
+            "gained": sorted(result.gained) if not result.lost else [],
+            "patch": None,
+        }
+        if result.gained and not result.lost:
+            original = (harvest.root / "src" / result.unit).read_bytes()
+            winner = (result.run / "candidate.cpp").read_bytes()
+            row["patch"] = results.save_patch(args.results, result.unit, original, winner)
+        results.record(args.results, row)
         line = f"{result.unit}: {result.reason}"
         if result.gained and not result.lost:
             gained += len(result.gained)

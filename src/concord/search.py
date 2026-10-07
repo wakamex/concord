@@ -34,6 +34,7 @@ class SearchResult:
     steps: list[Step] = field(default_factory=list)
     tried: int = 0
     reason: str = ""
+    transforms: set[str] = field(default_factory=set)  # idiom ids of every rewrite compiled
 
 
 def _key(diff: DiffResult) -> tuple:
@@ -63,6 +64,7 @@ def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4) -> SearchR
             break
         evaluations = harvest.evaluate(unit, {f"r{n}": r.source for n, r in enumerate(rewrites)})
         result.tried += len(rewrites)
+        result.transforms |= {r.transform for r in rewrites}
         best = None
         for n, rewrite in enumerate(rewrites):
             e = evaluations[f"r{n}"]
