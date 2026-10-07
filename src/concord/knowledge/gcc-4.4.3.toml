@@ -118,3 +118,14 @@ fix = "Leave the callee's source alone: the operand order appears to depend on w
 evidence = [
   { function = "harvest::entity::CSparkMoverEntity and CMineralGatherEntity constructors", note = "only the first inlined CString copy loop has cmp len, i; single-string constructors match (harvest docs/matching.md)" },
 ]
+
+[[idiom]]
+id = "header-definition-order"
+cause = "register-allocation"
+status = "hypothesis"
+symptom = "inline copies of header functions (IGUIElement, IGUILayout) differ in registers or inlining across the units that emit them"
+fix = "Reorder the header's inline definitions, judged across every unit that includes it. The order does change GCC's output: reversing IGUIElementInline.h's 30 definitions cost CGUIButton, CGUIEditBox and CGUIListBox one exact function each."
+limits = "No gain found yet: 256 one-block moves of IGUIElementInline.h across its 23 dependent units, and all 25 single moves of IGUILayoutInline.h across 5, left every unit's exact count unchanged. The header's own notes say the number and size of its inline functions decide which destructor calls GCC inlines into exception cleanups, which points at content rather than order."
+evidence = [
+  { function = "IGUIElementInline.h, 23 units", note = "concord header-order search at harvest 69ea9eb" },
+]

@@ -10,6 +10,7 @@ concord reads those files; it does not import Harvest's code.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import uuid
 from collections.abc import Iterator
@@ -109,6 +110,49 @@ class Harvest:
                 row.get("sections", []),
             )
         return evaluations
+
+    def evaluate_overlays(self, items: dict[str, tuple[str, dict[str, bytes]]]) -> dict[str, Evaluation]:
+        """Compile each item, a unit source path with repository files replaced
+        (path under the checkout -> new bytes), in one batch, and compare it with
+        the target."""
+        out = self.root / "build" / "concord" / "overlays" / uuid.uuid4().hex
+        out.mkdir(parents=True)
+        files: dict[bytes, Path] = {}
+        request_items = {}
+        for name, (unit, overlays) in items.items():
+            mapped = {}
+            for path, text in overlays.items():
+                if text not in files:
+                    files[text] = out / f"overlay{len(files)}{Path(path).suffix}"
+                    files[text].write_bytes(text)
+                mapped[path] = str(files[text])
+            request_items[name] = {"unit": unit, "overlays": mapped}
+        result = subprocess.run(
+            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
+            cwd=self.root,
+            input=json.dumps({"out": str(out), "items": request_items}),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return {
+            name: Evaluation(
+                name,
+                self.slug(items[name][0]),
+                Path(row["object"]) if "object" in row else None,
+                row.get("error", ""),
+                row.get("sections", []),
+            )
+            for name, row in json.loads(result.stdout).items()
+        }
+
+    def dependents(self, path: str) -> list[str]:
+        """Units whose last `hv match` compile read the file (path under the checkout)."""
+        found = []
+        for depfile in sorted(self.reports.glob("*.d")):
+            if path in {os.path.normpath(word) for word in depfile.read_text().split()}:
+                found.append(self.source(depfile.stem))
+        return found
 
     def verdict(self, unit: str, symbol: str) -> FunctionVerdict:
         for v in self.verdicts(unit):
