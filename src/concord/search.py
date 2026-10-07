@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from concord.harvest import Evaluation, Harvest
 from concord.model import DiffResult
-from concord.transforms import TRANSFORMS, Rewrite
+from concord.transforms import TRANSFORMS, Rewrite, find_function
 
 
 @dataclass
@@ -55,7 +55,7 @@ def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4) -> SearchR
             break
         causes = {f.cause for f in current.findings}
         try:
-            rewrites = [r for cause in causes for t in TRANSFORMS.get(cause, []) for r in t(source, symbol)]
+            rewrites = [r for cause in causes for t in TRANSFORMS.get(cause, []) for r in t(source, find_function(source, symbol))]
         except KeyError:
             result.reason = "the function is not defined in the unit's own source (an inline copy from a header?)"
             break

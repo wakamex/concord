@@ -21,7 +21,8 @@ from concord.harvest import Harvest
 from concord.lines import editable, inline_chains
 from concord.model import DiffResult
 from concord.order import apply_order, search_order
-from concord.search import search
+from concord.permute import permute
+from concord.search import _key, search
 
 
 def _not_implemented(stage: str) -> int:
@@ -59,6 +60,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_match.add_argument("--rounds", type=int, default=4)
     p_match.add_argument("--apply", action="store_true", help="write the improved source over the unit's file")
     p_match.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
+
+    p_permute = sub.add_parser("permute", help="random multi-step rewrite search toward a byte match for one function")
+    p_permute.add_argument("function", help="target function symbol")
+    p_permute.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_permute.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
+    p_permute.add_argument("--budget", type=int, default=256, help="candidate sources to compile")
+    p_permute.add_argument("--batch", type=int, default=32, help="candidates compiled per step")
+    p_permute.add_argument("--depth", type=int, default=3, help="most rewrites one candidate adds")
+    p_permute.add_argument("--seed", type=int, default=0)
+    p_permute.add_argument("--apply", action="store_true", help="write an exact match over the unit's file")
+    p_permute.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_diff = sub.add_parser("diff", help="show the attributed diff for a function")
     p_diff.add_argument("function", help="target function symbol")
@@ -107,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         return _survey(args)
     if args.command == "match":
         return _match(args)
+    if args.command == "permute":
+        return _permute(args)
     if args.command == "sweep":
         return _sweep(args)
     if args.command == "vtables":
@@ -173,6 +187,45 @@ def _match(args: argparse.Namespace) -> int:
     _print_result(result.best, "gcc-4.4.3")
     if result.steps and args.apply:
         path = harvest.root / "src" / harvest.source(args.unit)
+        path.write_bytes(result.source)
+        print(f"wrote {path}")
+    return 0
+
+
+def _permute(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    revision = results.commit(harvest.root)
+    source = harvest.source(args.unit)
+    original = (harvest.root / "src" / source).read_bytes()
+    result = permute(harvest, args.unit, args.function, args.budget, args.batch, args.seed, args.depth)
+    improved = _key(result.best) > _key(result.baseline)
+    results.record(
+        args.results,
+        {
+            "command": "permute",
+            "harvest": revision,
+            "unit": source,
+            "symbol": args.function,
+            "budget": args.budget,
+            "batch": args.batch,
+            "depth": args.depth,
+            "seed": args.seed,
+            "reason": result.reason,
+            "tried": result.tried,
+            "before": result.baseline.score,
+            "after": result.best.score,
+            "exact": result.best.exact,
+            "steps": result.steps,
+            "patch": results.save_patch(args.results, source, original, result.source) if improved else None,
+        },
+    )
+    print(f"baseline score {result.baseline.score:.2f}")
+    for step in result.steps:
+        print(f"  {step}")
+    print(f"{result.reason}: score {result.best.score:.2f}, exact {result.best.exact}, {result.tried} candidates compiled")
+    _print_result(result.best, "gcc-4.4.3")
+    if result.best.exact and args.apply:
+        path = harvest.root / "src" / source
         path.write_bytes(result.source)
         print(f"wrote {path}")
     return 0

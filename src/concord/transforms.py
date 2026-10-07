@@ -105,22 +105,23 @@ def comparisons(function: Node) -> list[Node]:
     return sorted(out, key=lambda n: n.start_byte)
 
 
-def swap_operands(source: bytes, symbol: str) -> Iterator[Rewrite]:
-    """One rewrite per comparison of two non-constant operands in the function:
-    `a < b` becomes `b > a`."""
-    for node in comparisons(find_function(source, symbol)):
+def _rewrite(transform: str, cause: Cause, source: bytes, node: Node, replacement: bytes, what: str) -> Rewrite:
+    line = source.count(b"\n", 0, node.start_byte) + 1
+    return Rewrite(transform, cause, f"line {line}: {what}", source[: node.start_byte] + replacement + source[node.end_byte :])
+
+
+def swap_operands(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per comparison of two non-constant operands in scope (a function
+    or a whole file): `a < b` becomes `b > a`."""
+    for node in comparisons(scope):
         left = node.child_by_field_name("left")
         right = node.child_by_field_name("right")
         if left.type in CONSTANTS or right.type in CONSTANTS:
             continue
         op = node.child_by_field_name("operator").type
         swapped = right.text + b" " + MIRROR[op].encode() + b" " + left.text
-        line = source.count(b"\n", 0, node.start_byte) + 1
-        yield Rewrite(
-            "compare-operand-order",
-            Cause.OPERAND_ORDER,
-            f"line {line}: {node.text.decode()} -> {swapped.decode()}",
-            source[: node.start_byte] + swapped + source[node.end_byte :],
+        yield _rewrite(
+            "compare-operand-order", Cause.OPERAND_ORDER, source, node, swapped, f"{node.text.decode()} -> {swapped.decode()}"
         )
 
 
@@ -135,34 +136,125 @@ def _block(statement: Node) -> bytes:
     return statement.text if statement.type == "compound_statement" else b"{ " + statement.text + b" }"
 
 
-def swap_branches(source: bytes, symbol: str) -> Iterator[Rewrite]:
-    """One rewrite per if/else in the function: `if (c) A else B` becomes
-    `if (!c) B else A`. The condition is still evaluated once and the same
-    branch runs; GCC 4.4 tends to lay out the then-branch as the fall-through."""
-    stack = [find_function(source, symbol)]
-    found = []
-    while stack:
-        node = stack.pop()
-        stack.extend(node.children)
-        if node.type != "if_statement" or node.child_by_field_name("alternative") is None:
+def swap_branches(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per if/else in scope: `if (c) A else B` becomes `if (!c) B else A`.
+    The condition is still evaluated once and the same branch runs; GCC 4.4 tends
+    to lay out the then-branch as the fall-through."""
+    for node in _descendants(scope, "if_statement"):
+        if node.child_by_field_name("alternative") is None:
             continue
         clause = node.child_by_field_name("condition")
         condition = clause.child_by_field_name("value")
         if condition is None or clause.named_child_count != 1:
             continue  # an init-statement or declaration condition has no simple negation
-        found.append(node)
-    for node in sorted(found, key=lambda n: n.start_byte):
-        condition = node.child_by_field_name("condition").child_by_field_name("value")
         then = node.child_by_field_name("consequence")
         otherwise = node.child_by_field_name("alternative").named_children[-1]
         swapped = b"if (" + _negate(condition) + b") " + _block(otherwise) + b" else " + _block(then)
-        line = source.count(b"\n", 0, node.start_byte) + 1
-        yield Rewrite(
-            "branch-sense",
-            Cause.BLOCK_ORDER,
-            f"line {line}: if ({condition.text.decode()}) swapped",
-            source[: node.start_byte] + swapped + source[node.end_byte :],
-        )
+        yield _rewrite("branch-sense", Cause.BLOCK_ORDER, source, node, swapped, f"if ({condition.text.decode()}) swapped")
+
+
+def _descendants(scope: Node, kind: str) -> list[Node]:
+    found, stack = [], [scope]
+    while stack:
+        node = stack.pop()
+        stack.extend(node.children)
+        if node.type == kind:
+            found.append(node)
+    return sorted(found, key=lambda n: n.start_byte)
+
+
+SIMPLE = {"declaration", "expression_statement"}
+WRITES = {"assignment_expression", "update_expression"}
+
+
+def _names(node: Node) -> tuple[set[bytes], set[bytes]]:
+    """Identifiers a statement writes (declares, assigns or increments) and every
+    identifier it mentions. Calls are not followed: two calls may still depend on
+    each other through state, which the byte comparison then rejects."""
+    writes, mentions = set(), set()
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        stack.extend(n.children)
+        if n.type in ("identifier", "field_identifier"):
+            mentions.add(n.text)
+        target = None
+        if n.type == "init_declarator":
+            target = n.child_by_field_name("declarator")
+        elif n.type == "declaration" and n.child_by_field_name("declarator").type != "init_declarator":
+            target = n.child_by_field_name("declarator")
+        elif n.type == "assignment_expression":
+            target = n.child_by_field_name("left")
+        elif n.type == "update_expression":
+            target = n.child_by_field_name("argument")
+        if target is not None:
+            writes |= {i.text for i in _descendants(target, "identifier")} | ({target.text} if target.type == "identifier" else set())
+    return writes, mentions
+
+
+def swap_statements(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per pair of adjacent declarations or expression statements that
+    share no written variable: `a; b;` becomes `b; a;`. The order statements are
+    written in sets the order GCC 4.4 creates their values in, which decides
+    register choices and, through SSA numbering, the operand order of compares."""
+    for block in _descendants(scope, "compound_statement"):
+        statements = [c for c in block.named_children if c.type != "comment"]
+        for first, second in zip(statements, statements[1:]):
+            if first.type not in SIMPLE or second.type not in SIMPLE:
+                continue
+            w1, m1 = _names(first)
+            w2, m2 = _names(second)
+            if w1 & m2 or w2 & m1:
+                continue
+            between = source[first.end_byte : second.start_byte]
+            replacement = second.text + between + first.text
+            line = source.count(b"\n", 0, first.start_byte) + 1
+            yield Rewrite(
+                "statement-order",
+                Cause.REGISTER_ALLOCATION,
+                f"line {line}: swapped with the next statement",
+                source[: first.start_byte] + replacement + source[second.end_byte :],
+            )
+
+
+def _line_start(source: bytes, offset: int) -> int:
+    return source.rfind(b"\n", 0, offset) + 1
+
+
+def move_declarations(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per position a declaration without an initializer can move to
+    within its block, from the block's start up to its first use. GCC 4.4 assigns
+    registers and stack slots in declaration order."""
+    for block in _descendants(scope, "compound_statement"):
+        statements = [c for c in block.named_children if c.type != "comment"]
+        for i, declaration in enumerate(statements):
+            if declaration.type != "declaration" or _descendants(declaration, "init_declarator"):
+                continue
+            declared, _ = _names(declaration)
+            if not declared or b"(" in declaration.text:
+                continue  # a function declaration, or a constructor call
+            uses = (j for j in range(i + 1, len(statements)) if declared & _names(statements[j])[1])
+            first_use = next(uses, len(statements) - 1)
+            start = _line_start(source, declaration.start_byte)
+            end = source.find(b"\n", declaration.end_byte) + 1 or len(source)
+            if source[start : declaration.start_byte].strip() or source[declaration.end_byte : end].strip():
+                continue  # shares its line with other code
+            for j in [*range(0, i), *range(i + 2, first_use + 1)]:
+                at = _line_start(source, statements[j].start_byte)
+                text = source[at : statements[j].start_byte] + declaration.text + b"\n"
+                if at < start:
+                    moved = source[:at] + text + source[at:start] + source[end:]
+                else:
+                    moved = source[:start] + source[end:at] + text + source[at:]
+                line = source.count(b"\n", 0, declaration.start_byte) + 1
+                yield Rewrite(
+                    "declaration-order",
+                    Cause.REGISTER_ALLOCATION,
+                    f"line {line}: {declaration.text.decode()} moved to line {source.count(b'\n', 0, at) + 1}",
+                    moved,
+                )
 
 
 TRANSFORMS = {Cause.OPERAND_ORDER: [swap_operands], Cause.BLOCK_ORDER: [swap_branches]}
+# Every rewrite, for searches that do not pick rewrites by cause.
+ALL = [swap_operands, swap_branches, swap_statements, move_declarations]
