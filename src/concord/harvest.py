@@ -146,6 +146,23 @@ class Harvest:
             for name, row in json.loads(result.stdout).items()
         }
 
+    def debug_objects(self, units: list[str]) -> dict[str, Path]:
+        """Compile each unit's checkout source with -g added, for its line tables.
+        Units that fail to compile are left out."""
+        out = self.root / "build" / "concord" / "debug"
+        out.mkdir(parents=True, exist_ok=True)
+        names = {f"u{n}": unit for n, unit in enumerate(units)}
+        request = {"out": str(out), "debug": True, "items": {n: {"unit": u, "overlays": {}} for n, u in names.items()}}
+        result = subprocess.run(
+            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
+            cwd=self.root,
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return {names[n]: Path(row["object"]) for n, row in json.loads(result.stdout).items() if "object" in row}
+
     def vtables(self) -> tuple[int, list[dict]]:
         """Compare every vtable the last `hv match` compiled with the target's. A slot that
         disagrees means a class declaration with a missing, extra or misplaced virtual."""

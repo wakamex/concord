@@ -75,6 +75,7 @@ class DiffFinding:
     cause: Cause
     offset: int  # byte offset into the function where the mismatch starts
     detail: str
+    candidate: int | None = None  # where the candidate's side of it starts, when it has one
 
 
 @dataclass

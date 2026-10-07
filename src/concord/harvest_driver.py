@@ -14,6 +14,10 @@ shared by many units, for instance):
     {"out": "/abs/dir",
      "items": {"name": {"unit": "ox/gui/X.cpp", "overlays": {"src/ox/gui/Y.h": "/abs/dir/y.h"}}, ...}}
 
+With "debug": true, the items compile with -g added and are not compared: each
+name maps to {"object": path} or {"error": ...}. GCC 4.4 emits the same code with
+and without -g, so a debug object's line tables locate the code of a normal compile.
+
 Either way every compile runs in the pinned toolchain at the unit's own path, in
 parallel lanes, and stdout gets one JSON object mapping each name to
 {"object": path, "exact": bool, "sections": [...]} or {"error": compiler output}.
@@ -139,13 +143,15 @@ def main() -> None:
     out = Path(request["out"])
     out.mkdir(parents=True, exist_ok=True)
     compiler = toolchain.Compiler(toolchain.load_flags(build), out)
+    if request.get("debug"):
+        compiler.flags = {**compiler.flags, "flags": [*compiler.flags["flags"], "-g"]}
     result: dict[str, dict] = {}
     jobs: dict[str, tuple[str, str]] = {}
     if "items" in request:
         items = request["items"]
         paths = {item["unit"]: by_source[item["unit"]].path for item in items.values()}
         for name, outcome in compile_overlays(compiler, items, paths).items():
-            if "error" in outcome:
+            if "error" in outcome or request.get("debug"):
                 result[name] = outcome
             else:
                 jobs[name] = (outcome["object"], items[name]["unit"])

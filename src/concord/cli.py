@@ -18,6 +18,7 @@ from pathlib import Path
 from concord import __version__, knowledge, results
 from concord.diff import diff_code, read_function
 from concord.harvest import Harvest
+from concord.lines import editable, inline_chains
 from concord.model import DiffResult
 from concord.order import apply_order, search_order
 from concord.search import search
@@ -84,6 +85,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_survey.add_argument(
+        "--lines", type=int, metavar="N", default=0,
+        help="also locate each finding's source line through a -g compile, and list the N lines with the most",
+    )  # fmt: skip
 
     sub.add_parser("status", help="report matching progress")
 
@@ -228,6 +233,7 @@ def _survey(args: argparse.Namespace) -> int:
     functions = Counter()
     primary = Counter()
     total = 0
+    found = []
     for verdict in harvest.verdicts():
         if verdict.row["exact"]:
             continue
@@ -237,6 +243,7 @@ def _survey(args: argparse.Namespace) -> int:
         except (KeyError, FileNotFoundError):
             primary["(no object)"] += 1
             continue
+        found.append((verdict, result))
         causes = Counter(f.cause.value for f in result.findings)
         if verdict.symbol.startswith(("_ZTh", "_ZTv")) and set(causes) == {"placement"}:
             causes = Counter({"placement (thunk)": 1})
@@ -246,7 +253,36 @@ def _survey(args: argparse.Namespace) -> int:
     print(f"{'cause':24}{'functions with it':>18}{'as most frequent':>18}")
     for cause in sorted(set(functions) | set(primary), key=lambda c: -functions.get(c, 0)):
         print(f"{cause:24}{functions.get(cause, 0):>18}{primary.get(cause, 0):>18}")
+    if args.lines:
+        _survey_lines(harvest, found, args.lines)
     return 0
+
+
+def _survey_lines(harvest: Harvest, found: list, limit: int) -> None:
+    """Rank source lines by the findings whose candidate code they produced. A
+    line in a header gathers the findings of every copy inlined from it."""
+    units = sorted({harvest.source(v.unit) for v, _ in found})
+    debug = harvest.debug_objects(units)
+    by_line: dict[str, dict] = {}
+    for verdict, result in found:
+        obj = debug.get(harvest.source(verdict.unit))
+        located = [f for f in result.findings if f.candidate is not None]
+        if obj is None or not located:
+            continue
+        function = read_function(obj, verdict.symbol)
+        chains = inline_chains(obj, function.section, [function.start + f.candidate for f in located])
+        for finding, chain in zip(located, chains, strict=True):
+            frame = editable(chain)
+            key = str(frame) if frame else "(toolchain code)"
+            entry = by_line.setdefault(key, {"causes": Counter(), "functions": set(), "units": set()})
+            entry["causes"][finding.cause.value] += 1
+            entry["functions"].add(verdict.symbol)
+            entry["units"].add(verdict.unit)
+    print(f"\nsource lines with the most located findings (of {sum(sum(e['causes'].values()) for e in by_line.values())})")
+    ranked = sorted(by_line.items(), key=lambda kv: (-len(kv[1]["functions"]), -sum(kv[1]["causes"].values())))
+    for key, entry in ranked[:limit]:
+        causes = ", ".join(f"{c} {n}" for c, n in entry["causes"].most_common())
+        print(f"  {key:56} {len(entry['functions']):>3} functions {len(entry['units']):>3} units  {causes}")
 
 
 if __name__ == "__main__":

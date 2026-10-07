@@ -31,6 +31,7 @@ class ObjectFunction:
     the function) where relocation fields start."""
 
     name: str
+    section: str
     start: int  # offset of the function in its section
     code: bytes
     relocations: frozenset[int]
@@ -46,7 +47,8 @@ def read_function(path: Path, symbol: str) -> ObjectFunction:
         if not found:
             raise KeyError(f"{symbol} is not a function in {path}")
         index, start, size = found[0]["st_shndx"], found[0]["st_value"], found[0]["st_size"]
-        code = elf.get_section(index).data()[start : start + size]
+        section = elf.get_section(index)
+        code = section.data()[start : start + size]
         fields = {
             r["r_offset"] - start
             for section in elf.iter_sections()
@@ -54,7 +56,7 @@ def read_function(path: Path, symbol: str) -> ObjectFunction:
             for r in section.iter_relocations()
             if start <= r["r_offset"] < start + size
         }
-    return ObjectFunction(symbol, start, code, frozenset(fields))
+    return ObjectFunction(symbol, section.name, start, code, frozenset(fields))
 
 
 def _register_families() -> dict[str, str]:
@@ -205,21 +207,22 @@ def diff_code(target: ObjectFunction, candidate: ObjectFunction) -> DiffResult:
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
             mapping: dict[str, str] = {}
-            run_start = None
+            run_start = run_candidate = None
             for a, b in zip(t[i1:i2], c[j1:j2]):
                 if a.operands == b.operands:
                     same += 1
                     continue
                 if _swapped(a, b):
-                    findings.append(DiffFinding(Cause.OPERAND_ORDER, a.offset, f"{a.text}  vs  {b.text}"))
+                    findings.append(DiffFinding(Cause.OPERAND_ORDER, a.offset, f"{a.text}  vs  {b.text}", b.offset))
                     continue
                 for x, y in zip(_registers(a), _registers(b)):
                     if x != y and x is not None and y is not None:
                         mapping[x] = y
-                run_start = a.offset if run_start is None else run_start
+                if run_start is None:
+                    run_start, run_candidate = a.offset, b.offset
             if mapping:
                 pairs = ", ".join(f"{x}->{y}" for x, y in sorted(mapping.items()))
-                findings.append(DiffFinding(Cause.REGISTER_ALLOCATION, run_start, pairs))
+                findings.append(DiffFinding(Cause.REGISTER_ALLOCATION, run_start, pairs, run_candidate))
         else:
             mismatched.append((t[i1:i2], c[j1:j2]))
     findings.extend(_mismatched(mismatched))
@@ -272,7 +275,7 @@ def _mismatched(regions: list[tuple[list[Instruction], list[Instruction]]]) -> l
                     detail = f"{len(piece)} instructions at target +{piece[0].offset:#x} sit at candidate +{other[0].offset:#x}"
                     if [(i.mnemonic, i.operands) for i in piece] != [(i.mnemonic, i.operands) for i in other]:
                         detail += ", reordered within the block" if exact else ", with different registers"
-                    findings.append(DiffFinding(Cause.BLOCK_ORDER, piece[0].offset, detail))
+                    findings.append(DiffFinding(Cause.BLOCK_ORDER, piece[0].offset, detail, other[0].offset))
                     break
     pairs: list[tuple[Instruction, Instruction]] = []
     for r, (a, b) in enumerate(regions):
@@ -280,7 +283,7 @@ def _mismatched(regions: list[tuple[list[Instruction], list[Instruction]]]) -> l
         right = [i for ci, (pr, p) in enumerate(candidate_pieces) if pr == r and ci not in used_c for i in p]
         if left and right and len(_content(left, True)) > 1 and _content(left, True) == _content(right, True):
             detail = f"the same {len(left)} instructions in a different order (candidate +{right[0].offset:#x})"
-            findings.append(DiffFinding(Cause.BLOCK_ORDER, left[0].offset, detail))
+            findings.append(DiffFinding(Cause.BLOCK_ORDER, left[0].offset, detail, right[0].offset))
             continue
         if left and len(left) == len(right):
             pairs.extend(zip(left, right))
@@ -298,7 +301,7 @@ def _mismatched(regions: list[tuple[list[Instruction], list[Instruction]]]) -> l
     }
     for n, (x, y) in enumerate(pairs):
         cause = Cause.BLOCK_ORDER if n in swapped else _classify_pair(x, y)
-        findings.append(DiffFinding(cause, x.offset, f"{x.text}  vs  {y.text}"))
+        findings.append(DiffFinding(cause, x.offset, f"{x.text}  vs  {y.text}", y.offset))
     return findings
 
 
@@ -331,7 +334,7 @@ def _one_sided(run: list[Instruction], side: str, others: list[list[Instruction]
     else:
         cause = Cause.UNKNOWN
         detail = f"{side} only, {len(run)} instructions: {_run(run[:4])}{' ...' if len(run) > 4 else ''}"
-    return DiffFinding(cause, run[0].offset, detail)
+    return DiffFinding(cause, run[0].offset, detail, run[0].offset if side == "candidate" else None)
 
 
 class ObjectDiff:
