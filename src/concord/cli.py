@@ -74,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sweep.add_argument("--unit", action="append", help="unit to search (default: every unit with an inexact function)")
     p_sweep.add_argument("--budget", type=int, default=128)
     p_sweep.add_argument("--restarts", type=int, default=2)
+    p_sweep.add_argument("--seed", type=int, default=0)
     p_sweep.add_argument("--apply", action="store_true", help="write verified pure-reorder gains into the sources")
 
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
@@ -150,7 +151,7 @@ def _sweep(args: argparse.Namespace) -> int:
     )
     gained = 0
     for unit in units:
-        result = search_order(harvest, unit, args.budget, args.restarts)
+        result = search_order(harvest, unit, args.budget, args.restarts, args.seed)
         line = f"{result.unit}: {result.reason}"
         if result.gained and not result.lost:
             gained += len(result.gained)
