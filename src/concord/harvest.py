@@ -187,7 +187,9 @@ class Harvest:
         if row.get("exact_but_unknown"):
             names = ", ".join(sorted({name for name, _ in row.get("candidates", [])}))
             findings.append(DiffFinding(Cause.REFERENCE, 0, f"references to symbols with unknown addresses: {names}"))
-        if not row["fde"]:
+        # Harvest reports the extent's source as "extent" (fde, thunk or null); older reports
+        # had an "fde" flag instead
+        if row.get("extent", "fde" if row.get("fde") else None) is None:
             detail = f"the target has no unwind entry of {row['size']} bytes at {row['address']}"
             if verdict.symbol.startswith(("_ZTh", "_ZTv")):
                 detail += "; GCC 4.4 emits no unwind entry for thunks"
