@@ -72,6 +72,7 @@ class Harvest:
             input=request,
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode:
             raise RuntimeError(f"harvest_driver.py failed:\n{result.stderr[-3000:]}")

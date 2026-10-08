@@ -297,7 +297,7 @@ def _vtables(args: argparse.Namespace) -> int:
 
 
 def _short_names(symbols: set[str]) -> list[str]:
-    demangled = subprocess.run(["c++filt"], input="\n".join(sorted(symbols)), capture_output=True, text=True)
+    demangled = subprocess.run(["c++filt"], input="\n".join(sorted(symbols)), capture_output=True, text=True, check=False)
     return [name.split("(")[0] for name in demangled.stdout.split("\n") if name]
 
 

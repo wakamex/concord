@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 from concord.diff import diff_code, read_function
 from concord.model import Cause
@@ -107,7 +108,7 @@ HARVEST = Path(os.environ.get("CONCORD_HARVEST", "../harvest"))
 class HarvestDocumentedCauses(unittest.TestCase):
     """Functions whose remaining difference Harvest's docs/matching.md records."""
 
-    CASES = [
+    CASES: ClassVar = [
         (
             "HarvestFull/harvest/entity/CPerimeterBomb.cpp",
             "_ZN7harvest6entity23CPerimeterBombExplosion11updateLogicEf",

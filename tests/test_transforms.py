@@ -5,7 +5,17 @@ import unittest
 
 from tree_sitter import Parser
 
-from concord.transforms import CPP, _negate, comparisons, find_function, move_declarations, name_temporaries, swap_branches, swap_operands, swap_statements
+from concord.transforms import (
+    CPP,
+    _negate,
+    comparisons,
+    find_function,
+    move_declarations,
+    name_temporaries,
+    swap_branches,
+    swap_operands,
+    swap_statements,
+)
 
 SOURCE = b"""namespace game {
 int Board::score(int a, int b) const

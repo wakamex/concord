@@ -28,7 +28,8 @@ class CliTest(unittest.TestCase):
 
     def test_module_entrypoint_runs(self):
         result = subprocess.run(
-            [sys.executable, "-m", "concord", "--version"], capture_output=True, text=True
+            [sys.executable, "-m", "concord", "--version"], capture_output=True, text=True,
+            check=False,
         )
         self.assertEqual(result.returncode, 0)
         self.assertIn("concord", result.stdout)

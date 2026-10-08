@@ -12,6 +12,7 @@ import re
 import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
+from itertools import pairwise
 
 import tree_sitter_cpp
 from tree_sitter import Language, Node, Parser
@@ -83,9 +84,8 @@ def find_function(source: bytes, symbol: str) -> Node:
     stack = [tree.root_node]
     while stack:
         node = stack.pop()
-        if node.type == "function_definition" and _declarator_name(node) == name:
-            if _arity(node) == arity:
-                found.append(node)
+        if node.type == "function_definition" and _declarator_name(node) == name and _arity(node) == arity:
+            found.append(node)
         stack.extend(node.children)
     if not found:
         raise KeyError(f"no definition of {name} in the source")
@@ -277,9 +277,7 @@ def _names(node: Node) -> tuple[set[bytes], set[bytes]]:
         if n.type in ("identifier", "field_identifier"):
             mentions.add(n.text)
         target = None
-        if n.type == "init_declarator":
-            target = n.child_by_field_name("declarator")
-        elif n.type == "declaration" and n.child_by_field_name("declarator").type != "init_declarator":
+        if n.type == "init_declarator" or n.type == "declaration" and n.child_by_field_name("declarator").type != "init_declarator":
             target = n.child_by_field_name("declarator")
         elif n.type == "assignment_expression":
             target = n.child_by_field_name("left")
@@ -297,7 +295,7 @@ def swap_statements(source: bytes, scope: Node) -> Iterator[Rewrite]:
     register choices and, through SSA numbering, the operand order of compares."""
     for block in _descendants(scope, "compound_statement"):
         statements = [c for c in block.named_children if c.type != "comment"]
-        for first, second in zip(statements, statements[1:]):
+        for first, second in pairwise(statements):
             if first.type not in SIMPLE or second.type not in SIMPLE:
                 continue
             w1, m1 = _names(first)
@@ -337,7 +335,7 @@ def move_declarations(source: bytes, scope: Node) -> Iterator[Rewrite]:
             end = source.find(b"\n", declaration.end_byte) + 1 or len(source)
             if source[start : declaration.start_byte].strip() or source[declaration.end_byte : end].strip():
                 continue  # shares its line with other code
-            for j in [*range(0, i), *range(i + 2, first_use + 1)]:
+            for j in [*range(i), *range(i + 2, first_use + 1)]:
                 at = _line_start(source, statements[j].start_byte)
                 text = source[at : statements[j].start_byte] + declaration.text + b"\n"
                 if at < start:
@@ -345,10 +343,11 @@ def move_declarations(source: bytes, scope: Node) -> Iterator[Rewrite]:
                 else:
                     moved = source[:start] + source[end:at] + text + source[at:]
                 line = source.count(b"\n", 0, declaration.start_byte) + 1
+                target = source.count(b"\n", 0, at) + 1
                 yield Rewrite(
                     "declaration-order",
                     Cause.REGISTER_ALLOCATION,
-                    f"line {line}: {declaration.text.decode()} moved to line {source.count(b'\n', 0, at) + 1}",
+                    f"line {line}: {declaration.text.decode()} moved to line {target}",
                     moved,
                 )
 

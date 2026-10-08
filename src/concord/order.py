@@ -51,11 +51,11 @@ def search_order(
         "uv", "--no-config", "run", "--locked", "hv", "search", source,
         "--budget", str(budget), "--restarts", str(restarts), "--seed", str(seed), "--batch", str(batch),
     ]  # fmt: skip
-    done = subprocess.run(command, cwd=harvest.root, capture_output=True, text=True)
+    done = subprocess.run(command, cwd=harvest.root, capture_output=True, text=True, check=False)
     output = done.stdout + done.stderr
     if "at least two explicit blocks" in output:
         return OrderResult(source, "a single definition, nothing to reorder")
-    match = re.search(r"^evidence\s+(\S+)", output, re.M)
+    match = re.search(r"^evidence\s+(\S+)", output, re.MULTILINE)
     if done.returncode or not match:
         return OrderResult(source, f"hv search failed: {output.strip()[-300:]}")
     run = Path(match.group(1))

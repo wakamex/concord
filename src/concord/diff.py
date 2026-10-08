@@ -294,7 +294,7 @@ def _mismatched(regions: list[tuple[list[Instruction], list[Instruction]]]) -> l
             findings.append(_one_sided(right, "candidate", [left]))
     # Two instructions that trade places across regions, such as two case tests in
     # the opposite order, are order rather than selection.
-    key = lambda i: (i.mnemonic, i.operands)  # noqa: E731
+    key = lambda i: (i.mnemonic, i.operands)
     swapped = {
         n for n, (x, y) in enumerate(pairs) for m, (u, v) in enumerate(pairs)
         if n != m and key(x) == key(v) and key(y) == key(u)
