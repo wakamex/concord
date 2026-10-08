@@ -202,7 +202,11 @@ class Harvest:
         ]
         if row.get("exact_but_unknown"):
             names = ", ".join(sorted({name for name, _ in row.get("candidates", [])}))
-            findings.append(DiffFinding(Cause.REFERENCE, 0, f"references to symbols with unknown addresses: {names}"))
+            destinations = {name: {a for n, a in row["candidates"] if n == name} for name, _ in row["candidates"]}
+            detail = f"references to symbols with unknown addresses: {names}"
+            if all(len(a) == 1 for a in destinations.values()):
+                detail += f"; every reference agrees, so `hv match --learn {self.source(verdict.unit)}` places them"
+            findings.append(DiffFinding(Cause.REFERENCE, 0, detail))
         # Harvest reports the extent's source as "extent" (fde, thunk or null); older reports
         # had an "fde" flag instead
         if row.get("extent", "fde" if row.get("fde") else None) is None:
