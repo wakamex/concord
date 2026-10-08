@@ -73,3 +73,12 @@ def partial_gains(rows: list[dict]) -> dict[tuple[str, str], dict]:
         if gain > 0 and (key not in best or gain > best[key]["after"] - best[key]["before"]):
             best[key] = row
     return best
+
+
+def searched(rows: list[dict], command: str, settings: dict) -> set[tuple[str, str]]:
+    """(unit, symbol) of every logged `command` run whose settings equal `settings`."""
+    return {
+        (row["unit"], row["symbol"])
+        for row in rows
+        if row.get("command") == command and all(row.get(k) == v for k, v in settings.items())
+    }

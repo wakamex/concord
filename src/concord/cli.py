@@ -68,6 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_permute = sub.add_parser("permute", help="random multi-step rewrite search toward a byte match for one function")
     p_permute.add_argument("function", nargs="?", help="target function symbol (with --unit)")
     p_permute.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_permute.add_argument(
+        "--skip-logged", action="store_true", help="skip functions the results log shows searched with these settings"
+    )
     p_permute.add_argument("--unit", help="Harvest unit, as a source path or report slug")
     p_permute.add_argument(
         "--near-miss", type=float, metavar="SCORE",
@@ -265,6 +268,10 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     harvest = Harvest(args.harvest)
     if args.near_miss is not None:
         targets = [(unit, symbol) for unit, symbol, _ in near_misses(harvest, args.near_miss)]
+        if args.skip_logged:
+            settings = {k: getattr(args, k) for k in ("budget", "batch", "depth", "seed")}
+            done = results.searched(results.load(args.results), "permute", settings)
+            targets = [t for t in targets if t not in done]
         print(f"{len(targets)} functions score at least {args.near_miss}")
     elif args.unit and args.function:
         targets = [(harvest.source(args.unit), args.function)]

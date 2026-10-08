@@ -57,5 +57,15 @@ class PartialGains(unittest.TestCase):
         self.assertEqual(gains[("a.cpp", "f")]["after"], 95.0)
 
 
+class Searched(unittest.TestCase):
+    def test_only_runs_with_the_same_command_and_settings(self):
+        rows = [
+            {"command": "permute", "unit": "a.cpp", "symbol": "f", "budget": 256, "seed": 3},
+            {"command": "permute", "unit": "a.cpp", "symbol": "g", "budget": 256, "seed": 1},
+            {"command": "match", "unit": "a.cpp", "symbol": "h", "budget": 256, "seed": 3},
+        ]
+        self.assertEqual(results.searched(rows, "permute", {"budget": 256, "seed": 3}), {("a.cpp", "f")})
+
+
 if __name__ == "__main__":
     unittest.main()

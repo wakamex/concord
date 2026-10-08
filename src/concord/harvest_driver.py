@@ -72,7 +72,12 @@ def fuzzy_scores(target, known: list, reports: dict[str, dict], out: Path) -> di
     entries = []
     for name, report in reports.items():
         obj = Path(report["object"])
-        sections, symbols_ = delink.delink_unit(target, Elf.load(obj, "ET_REL"), report, known, extents_by_address)
+        try:
+            sections, symbols_ = delink.delink_unit(target, Elf.load(obj, "ET_REL"), report, known, extents_by_address)
+        except ValueError:
+            # a candidate whose sections the matcher placed outside the target cannot be delinked;
+            # it gets no objdiff scores, which ranks it last and rejects it, rather than ending the batch
+            continue
         destination = project / f"{name}.target.o"
         delink.write_object(destination, sections, symbols_)
         entries.append({"name": name, "target_path": str(destination), "base_path": str(obj)})
