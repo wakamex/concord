@@ -16,7 +16,7 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
-from concord import __version__, knowledge, results, scores
+from concord import __version__, knowledge, oracle, results, scores
 from concord.diff import diff_code, read_function
 from concord.finish import finish
 from concord.harvest import Harvest
@@ -190,6 +190,12 @@ def _match(args: argparse.Namespace) -> int:
     original = (harvest.root / "src" / harvest.source(args.unit)).read_bytes()
     result = search(harvest, args.unit, args.function, rounds=args.rounds)
     finished = finish(harvest, harvest.source(args.unit), args.function, result.source, original) if result.steps else None
+    verdict = None
+    if finished is not None and not result.best.exact:
+        verdict = oracle.check(harvest, harvest.source(args.unit), args.function, original, finished)
+        if verdict is not None and not verdict.equivalent:
+            print(f"the oracle found a behavior change; nothing written: {verdict.detail}")
+            finished = None
     results.record(
         args.results,
         {
@@ -206,6 +212,7 @@ def _match(args: argparse.Namespace) -> int:
             "exact": result.best.exact,
             "steps": [f"{s.rewrite.transform}: {s.rewrite.description}" for s in result.steps],
             "finished": finished is not None if result.steps else None,
+            "oracle": None if verdict is None else json.loads(verdict.detail),
             "patch": results.save_patch(args.results, harvest.source(args.unit), original, finished or result.source)
             if result.steps
             else None,
@@ -247,6 +254,12 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
     result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth)
     improved = _key(result.best) > _key(result.baseline)
     finished = finish(harvest, source, symbol, result.source, original) if improved else None
+    verdict = None
+    if finished is not None and not result.best.exact:
+        verdict = oracle.check(harvest, source, symbol, original, finished)
+        if verdict is not None and not verdict.equivalent:
+            print(f"the oracle found a behavior change; nothing written: {verdict.detail}")
+            finished = None
     results.record(
         args.results,
         {
@@ -265,6 +278,7 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
             "exact": result.best.exact,
             "steps": result.steps,
             "finished": finished is not None if improved else None,
+            "oracle": None if verdict is None else json.loads(verdict.detail),
             "patch": results.save_patch(args.results, source, original, finished or result.source) if improved else None,
         },
     )
@@ -273,7 +287,7 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
         print(f"  {step}")
     print(f"{result.reason}: score {result.best.score:.2f}, exact {result.best.exact}, {result.tried} candidates compiled")
     _print_result(result.best, "gcc-4.4.3")
-    if improved and finished is None:
+    if improved and finished is None and verdict is None:
         print("its temporaries could not be given concrete types without changing the bytes; nothing written")
     elif finished is not None and (result.best.exact and args.apply or args.apply_improved):
         path = harvest.root / "src" / source

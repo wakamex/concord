@@ -58,7 +58,7 @@ class Evaluation:
 
 class Harvest:
     def __init__(self, root: Path, build: str = BUILD) -> None:
-        self.root = root
+        self.root = root.resolve()
         self.build = build
         self.reports = root / "build" / "match" / build
         self.objects = root / "build" / "objdiff" / build

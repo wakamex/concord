@@ -38,7 +38,7 @@ Its conceptual ancestors are m2c, objdiff, decomp-permuter and decomp.me; the cl
 
 ## Status
 
-The diff, the transforms and the searches work against Harvest; the seed, types, flag inference and oracle stages are stubs (`concord seed`, `types`, `flags`, `init` and `status` say so). The searches stay safe without the oracle in two ways: every rewrite is meant to preserve behavior, and a change goes upstream only when the target's own matcher proves the function byte-identical, which makes it equivalent at the machine level. `docs/DESIGN.md` has the full design.
+The diff, the transforms, the searches and a differential oracle work against Harvest; the seed, types and flag inference stages are stubs (`concord seed`, `types`, `flags`, `init` and `status` say so). An exact match needs no oracle: the target's own matcher proves the function byte-identical, which makes it equivalent at the machine level. A partial gain carries no such proof, so when the `CONCORD_ORACLE` environment variable names a differential check, `match`, `permute` and `rerun` compile the function before and after the rewrite, run both on 5,000 generated inputs comparing return values, calls out of the function and memory written, and drop the rewrite on any difference. The check runs as `$CONCORD_ORACLE check BEFORE.o AFTER.o --symbol SYMBOL --unit UNIT --cases N` from the Harvest checkout and prints one JSON line with its verdict; harvest-oracle implements it. The oracle compares two compiles of Harvest's source; checking against a lift of the original executable (rev.ng) is the next step. `docs/DESIGN.md` has the full design.
 
 Upstream results so far, each verified by Harvest's `hv match` on every unit:
 
