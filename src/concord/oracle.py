@@ -7,8 +7,8 @@ compiles the function before and after the rewrite and runs both on the same
 generated inputs (differential testing), comparing return values, calls out of
 the function and memory written. Agreement is evidence, not proof.
 
-The check is an external command named by the CONCORD_ORACLE environment
-variable, run from the Harvest checkout as
+The check is an external command, harvest-oracle when it is installed or the
+command the CONCORD_ORACLE environment variable names (empty turns it off), run from the Harvest checkout as
 `$CONCORD_ORACLE check BEFORE.o AFTER.o --symbol SYMBOL --unit UNIT --cases N`. It prints
 one JSON line with "verdict" ("agree" or "differ") and exits 0 on agreement and
 1 on a difference. harvest-oracle implements it.
@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 
 from concord.harvest import Harvest
@@ -31,22 +32,30 @@ VARIABLE = "CONCORD_ORACLE"
 CASES = 5000
 
 
+def command() -> str | None:
+    """The check to run: CONCORD_ORACLE, or harvest-oracle when it is installed.
+    Setting CONCORD_ORACLE to an empty string turns the check off."""
+    if VARIABLE in os.environ:
+        return os.environ[VARIABLE] or None
+    return "harvest-oracle" if shutil.which("harvest-oracle") else None
+
+
 def configured() -> bool:
-    return bool(os.environ.get(VARIABLE))
+    return command() is not None
 
 
 def check(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> EquivalenceResult | None:
     """Whether the function behaves the same compiled from `before` and from `after`,
     or None when no oracle is configured."""
-    command = os.environ.get(VARIABLE)
-    if not command:
+    prefix = command()
+    if prefix is None:
         return None
     evaluations = harvest.evaluate(unit, {"before": before, "after": after})
     for name, e in evaluations.items():
         if e.error:
             return EquivalenceResult(False, "differential-test", f"{name} does not compile")
     done = subprocess.run(
-        [*shlex.split(command), "check", str(evaluations["before"].object), str(evaluations["after"].object),
+        [*shlex.split(prefix), "check", str(evaluations["before"].object), str(evaluations["after"].object),
          "--symbol", symbol, "--unit", unit, "--cases", str(CASES)],
         cwd=harvest.root, capture_output=True, text=True, check=False,
     )  # fmt: skip
