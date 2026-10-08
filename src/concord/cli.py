@@ -21,7 +21,7 @@ from concord.harvest import Harvest
 from concord.lines import editable, inline_chains
 from concord.model import DiffResult
 from concord.order import apply_order, search_order
-from concord.permute import permute
+from concord.permute import near_misses, permute
 from concord.search import _key, search
 
 
@@ -62,9 +62,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_match.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_permute = sub.add_parser("permute", help="random multi-step rewrite search toward a byte match for one function")
-    p_permute.add_argument("function", help="target function symbol")
+    p_permute.add_argument("function", nargs="?", help="target function symbol (with --unit)")
     p_permute.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
-    p_permute.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
+    p_permute.add_argument("--unit", help="Harvest unit, as a source path or report slug")
+    p_permute.add_argument(
+        "--near-miss", type=float, metavar="SCORE",
+        help="search every inexact function of its unit's own source scoring at least SCORE, best first",
+    )  # fmt: skip
     p_permute.add_argument("--budget", type=int, default=256, help="candidate sources to compile")
     p_permute.add_argument("--batch", type=int, default=32, help="candidates compiled per step")
     p_permute.add_argument("--depth", type=int, default=3, help="most rewrites one candidate adds")
@@ -120,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "match":
         return _match(args)
     if args.command == "permute":
-        return _permute(args)
+        return _permute(parser, args)
     if args.command == "sweep":
         return _sweep(args)
     if args.command == "vtables":
@@ -192,12 +196,28 @@ def _match(args: argparse.Namespace) -> int:
     return 0
 
 
-def _permute(args: argparse.Namespace) -> int:
+def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     harvest = Harvest(args.harvest)
+    if args.near_miss is not None:
+        targets = [(unit, symbol) for unit, symbol, _ in near_misses(harvest, args.near_miss)]
+        print(f"{len(targets)} functions score at least {args.near_miss}")
+    elif args.unit and args.function:
+        targets = [(harvest.source(args.unit), args.function)]
+    else:
+        parser.error("pass --unit and a function, or --near-miss")
+    exact = 0
+    for unit, symbol in targets:
+        print(f"=== {unit} {symbol}")
+        exact += _permute_one(harvest, unit, symbol, args)
+    if len(targets) > 1:
+        print(f"{exact} of {len(targets)} functions exact")
+    return 0
+
+
+def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Namespace) -> bool:
     revision = results.commit(harvest.root)
-    source = harvest.source(args.unit)
     original = (harvest.root / "src" / source).read_bytes()
-    result = permute(harvest, args.unit, args.function, args.budget, args.batch, args.seed, args.depth)
+    result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth)
     improved = _key(result.best) > _key(result.baseline)
     results.record(
         args.results,
@@ -205,7 +225,7 @@ def _permute(args: argparse.Namespace) -> int:
             "command": "permute",
             "harvest": revision,
             "unit": source,
-            "symbol": args.function,
+            "symbol": symbol,
             "budget": args.budget,
             "batch": args.batch,
             "depth": args.depth,
@@ -228,7 +248,7 @@ def _permute(args: argparse.Namespace) -> int:
         path = harvest.root / "src" / source
         path.write_bytes(result.source)
         print(f"wrote {path}")
-    return 0
+    return result.best.exact
 
 
 def _sweep(args: argparse.Namespace) -> int:

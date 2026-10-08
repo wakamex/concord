@@ -23,6 +23,10 @@ from concord.model import DiffResult
 from concord.search import _diff, _key
 from concord.transforms import ALL, find_function
 
+# Constructor and destructor variants compiled from the same definition: searching
+# the base-object one (C2, D2) searches the others too.
+TWINS = {"C1E": "C2E", "D1E": "D2E", "D0E": "D2E"}
+
 
 @dataclass
 class PermuteResult:
@@ -89,3 +93,34 @@ def permute(
                 result.best, result.source, result.steps = d, text, steps
     result.reason = result.reason or ("exact" if result.best.exact else "budget spent")
     return result
+
+
+def near_misses(harvest: Harvest, minimum: float) -> list[tuple[str, str, float]]:
+    """(unit source, symbol, score) of every inexact function defined in its unit's
+    own source that scores at least `minimum`, best first. Thunks and the
+    constructor or destructor variants that share a listed twin are left out."""
+    found = {}
+    for verdict in harvest.verdicts():
+        if verdict.row["exact"] or verdict.symbol.startswith(("_ZTh", "_ZTv")):
+            continue
+        unit = harvest.source(verdict.unit)
+        try:
+            score = harvest.diff(verdict).score
+            find_function((harvest.root / "src" / unit).read_bytes(), verdict.symbol)
+        except (KeyError, FileNotFoundError):
+            continue
+        if minimum <= score < 100:
+            found[(unit, verdict.symbol)] = score
+    kept = drop_twins(found)
+    return sorted(((u, s, score) for (u, s), score in found.items() if (u, s) in kept), key=lambda t: -t[2])
+
+
+def drop_twins(functions) -> set[tuple[str, str]]:
+    """The (unit, symbol) pairs left after removing each constructor or destructor
+    variant whose base-object twin in the same unit is also listed."""
+    functions = set(functions)
+    return {
+        (unit, symbol)
+        for unit, symbol in functions
+        if not any(v in symbol and (unit, symbol.replace(v, base, 1)) in functions for v, base in TWINS.items())
+    }
