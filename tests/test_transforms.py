@@ -3,7 +3,9 @@
 import shutil
 import unittest
 
-from concord.transforms import comparisons, find_function, move_declarations, name_temporaries, swap_branches, swap_operands, swap_statements
+from tree_sitter import Parser
+
+from concord.transforms import CPP, _negate, comparisons, find_function, move_declarations, name_temporaries, swap_branches, swap_operands, swap_statements
 
 SOURCE = b"""namespace game {
 int Board::score(int a, int b) const
@@ -43,16 +45,73 @@ BRANCHES = b"""int Board::pick(int a)
 """
 
 
+LAYOUTS = b"""int Board::lay(int a, int b)
+{
+    if (!DrawBack)
+    {
+        drawChildren();
+    }
+    else
+        IGUIElement::draw();
+
+    if (has(a) == true &&
+        has(b))
+    {
+        a = b;
+    }
+    else
+        reset(a);
+
+    if (a > 0) {
+        a--;
+    } else {
+        a++;
+    }
+    return a;
+}
+"""
+
+
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class SwapBranches(unittest.TestCase):
-    def test_each_if_else_swaps_with_a_negated_condition(self):
-        rewrites = list(swap_branches(BRANCHES, find_function(BRANCHES, "_ZN5Board4pickEi")))
-        self.assertEqual(len(rewrites), 3)  # the if without an else is left alone
-        self.assertIn(b"if (a) { a++; } else { return 1; }", rewrites[0].source)
+    def rewrites(self, source, symbol):
+        return [r.source for r in swap_branches(source, find_function(source, symbol))]
 
-    def test_a_moved_else_if_chain_is_braced(self):
-        outer = list(swap_branches(BRANCHES, find_function(BRANCHES, "_ZN5Board4pickEi")))[1].source
-        self.assertIn(b"if (!(a < 2)) { if (a > 9) return 3; else return 4; } else { return 2; }", outer)
+    def test_one_line_ifs_stay_on_one_line(self):
+        rewrites = self.rewrites(BRANCHES, "_ZN5Board4pickEi")
+        self.assertEqual(len(rewrites), 3)  # the if without an else is left alone
+        self.assertIn(b"    if (a) { a++; } else return 1;\n", rewrites[0])
+
+    def test_a_moved_else_if_chain_becomes_a_block(self):
+        outer = self.rewrites(BRANCHES, "_ZN5Board4pickEi")[1]
+        self.assertIn(b"    if (a >= 2) { if (a > 9) return 3; else return 4; } else { return 2; }\n", outer)
+
+    def test_branches_keep_the_files_layout(self):
+        first, second, third = self.rewrites(LAYOUTS, "_ZN5Board3layEii")
+        self.assertIn(b"    if (DrawBack)\n        IGUIElement::draw();\n    else\n    {\n        drawChildren();\n    }\n", first)
+        self.assertIn(b"    if (has(a) != true ||\n        !has(b))\n        reset(a);\n    else\n    {\n        a = b;\n    }\n", second)
+        self.assertIn(b"    if (a <= 0) {\n        a++;\n    } else {\n        a--;\n    }\n", third)
+
+
+class Negate(unittest.TestCase):
+    def negated(self, condition: bytes) -> bytes:
+        tree = Parser(CPP).parse(b"bool f() { return " + condition + b"; }")
+        node = tree.root_node.child(0).child_by_field_name("body").named_children[0].named_children[0]
+        return _negate(node, tree.root_node.text)
+
+    def test_negations_read_as_written_by_hand(self):
+        cases = {
+            b"x": b"!x",
+            b"!x": b"x",
+            b"!(a && b)": b"a && b",
+            b"a.size() < n": b"a.size() >= n",
+            b"a == b && c": b"a != b || !c",
+            b"a || b && c": b"!a && (!b || !c)",
+            b"(a || b) && c": b"!a && !b || !c",
+            b"a + b": b"!(a + b)",
+        }
+        for condition, expected in cases.items():
+            self.assertEqual(self.negated(condition), expected, condition)
 
 
 STATEMENTS = b"""int Board::sum(int a)

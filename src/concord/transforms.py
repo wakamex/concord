@@ -125,21 +125,69 @@ def swap_operands(source: bytes, scope: Node) -> Iterator[Rewrite]:
         )
 
 
-def _negate(condition: Node) -> bytes:
+INVERSE = {b"==": b"!=", b"!=": b"==", b"<": b">=", b">=": b"<", b">": b"<=", b"<=": b">"}
+# Expressions that `!` binds to without parentheses.
+TIGHT = {"identifier", "field_expression", "call_expression", "subscript_expression", "qualified_identifier",
+         "this", "true", "false", "number_literal", "parenthesized_expression", "unary_expression",
+         "pointer_expression"}
+
+
+def _negate(condition: Node, source: bytes) -> bytes:
+    """The condition's negation, written as a person would: `!x` becomes `x`,
+    `a == b` becomes `a != b` and `a < b` becomes `a >= b`, and `&&`/`||` follow
+    De Morgan's laws, keeping the original spacing and line breaks. A relational
+    inversion is not the same test for a NaN operand; the byte comparison against
+    the target decides whether that matters."""
+    if condition.type == "parenthesized_expression":
+        inner = condition.named_children[0]
+        return _negate(inner, source)
     if condition.type == "unary_expression" and condition.child_by_field_name("operator").type == "!":
-        return condition.child_by_field_name("argument").text
+        argument = condition.child_by_field_name("argument")
+        if argument.type == "parenthesized_expression":
+            return argument.named_children[0].text
+        return argument.text
+    if condition.type == "binary_expression":
+        left, right = condition.child_by_field_name("left"), condition.child_by_field_name("right")
+        operator = condition.child_by_field_name("operator")
+        before = source[left.end_byte : operator.start_byte]
+        after = source[operator.end_byte : right.start_byte]
+        if operator.text in INVERSE:
+            return left.text + before + INVERSE[operator.text] + after + right.text
+        if operator.text in (b"&&", b"||"):
+            flipped = b"||" if operator.text == b"&&" else b"&&"
+            parts = []
+            for side in (left, right):
+                negated = _negate(side, source)
+                # an || operand under && keeps its own grouping
+                if flipped == b"&&" and _top_operator(side, source) == b"&&":
+                    negated = b"(" + negated + b")"
+                parts.append(negated)
+            return parts[0] + before + flipped + after + parts[1]
+    if condition.type in TIGHT:
+        return b"!" + condition.text
     return b"!(" + condition.text + b")"
 
 
-def _block(statement: Node) -> bytes:
-    """The statement as a block, so a moved branch cannot capture a following else."""
-    return statement.text if statement.type == "compound_statement" else b"{ " + statement.text + b" }"
+def _top_operator(node: Node, source: bytes) -> bytes | None:
+    """The operator at the top of the node's negation-to-be: the operator of a
+    && or || expression, looking through parentheses."""
+    while node.type == "parenthesized_expression":
+        node = node.named_children[0]
+    if node.type == "binary_expression":
+        return node.child_by_field_name("operator").text
+    return None
+
+
+def _reindent(text: bytes, by: bytes) -> bytes:
+    return text.replace(b"\n", b"\n" + by)
 
 
 def swap_branches(source: bytes, scope: Node) -> Iterator[Rewrite]:
     """One rewrite per if/else in scope: `if (c) A else B` becomes `if (!c) B else A`.
     The condition is still evaluated once and the same branch runs; GCC 4.4 tends
-    to lay out the then-branch as the fall-through."""
+    to lay out the then-branch as the fall-through. The result follows the file's
+    layout: each branch keeps its own text, a block stays a block and a single
+    statement stays unbraced, placed the way the original if placed them."""
     for node in _descendants(scope, "if_statement"):
         if node.child_by_field_name("alternative") is None:
             continue
@@ -148,9 +196,59 @@ def swap_branches(source: bytes, scope: Node) -> Iterator[Rewrite]:
         if condition is None or clause.named_child_count != 1:
             continue  # an init-statement or declaration condition has no simple negation
         then = node.child_by_field_name("consequence")
-        otherwise = node.child_by_field_name("alternative").named_children[-1]
-        swapped = b"if (" + _negate(condition) + b") " + _block(otherwise) + b" else " + _block(then)
+        alternative = node.child_by_field_name("alternative")
+        otherwise = alternative.named_children[-1]
+        indent = source[_line_start(source, node.start_byte) : node.start_byte]
+        if indent.strip():
+            indent = b""
+        layout = _Layout(source, node, clause, then, alternative, otherwise, indent)
+        new_then = otherwise
+        if otherwise.type == "if_statement":  # an else-if becomes a block of its own
+            body = layout.unit + _reindent(otherwise.text, layout.unit) if layout.multiline else otherwise.text
+            new_then_text = b"{" + layout.inner + body + layout.close + b"}"
+            new_then = None
+        swapped = (
+            b"if (" + _negate(condition, source) + b")"
+            + (layout.before(otherwise.type) + otherwise.text if new_then is not None else layout.before("compound_statement") + new_then_text)
+            + layout.middle(otherwise.type if new_then is not None else "compound_statement")
+            + b"else"
+            + layout.before(then.type) + then.text
+        )  # fmt: skip
         yield _rewrite("branch-sense", Cause.BLOCK_ORDER, source, node, swapped, f"if ({condition.text.decode()}) swapped")
+
+
+class _Layout:
+    """How an if statement places its branches: on one line or across lines, and
+    with a block's brace on the if's line or on a line of its own."""
+
+    def __init__(self, source, node, clause, then, alternative, otherwise, indent):
+        self.multiline = b"\n" in node.text
+        self.indent = indent
+        self.unit = b"    "
+        gaps = {  # the whitespace before each branch, by kind
+            then.type == "compound_statement": source[clause.end_byte : then.start_byte],
+            otherwise.type == "compound_statement": source[alternative.child(0).end_byte : otherwise.start_byte],
+        }
+        simple = gaps.get(False)
+        if simple is not None and b"\n" in simple:
+            self.unit = simple.rsplit(b"\n", 1)[1][len(indent) :] or self.unit
+        block = gaps.get(True)
+        if block is None:  # no block in this if: follow the file's habit
+            block = b" " if source.count(b") {") > source.count(b")\n" + indent + b"{") else b"\n" + indent
+        self.block_gap = block if self.multiline else b" "
+        self.simple_gap = (b"\n" + indent + self.unit) if self.multiline else b" "
+        self.inner = (b"\n" + indent + self.unit) if self.multiline else b" "
+        self.close = (b"\n" + indent) if self.multiline else b" "
+
+    def before(self, kind: str) -> bytes:
+        return self.block_gap if kind == "compound_statement" else self.simple_gap
+
+    def middle(self, kind: str) -> bytes:
+        if not self.multiline:
+            return b" "
+        if kind == "compound_statement" and b"\n" not in self.block_gap:
+            return b" "  # } else
+        return b"\n" + self.indent
 
 
 def _descendants(scope: Node, kind: str) -> list[Node]:
