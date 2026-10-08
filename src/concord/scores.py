@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-
 def report(checkout: Path, capture: bool = False, ref: str | None = None) -> dict:
     """Harvest's progress report for the checkout, after recapturing its evidence
     when `capture` is set, or for the evidence committed at git revision `ref`."""
@@ -30,13 +29,15 @@ def report(checkout: Path, capture: bool = False, ref: str | None = None) -> dic
         try:
             output = Path(tmp) / "report.json"
             command = "capture" if capture and ref is None else "report"
-            subprocess.run(
+            done = subprocess.run(
                 ["uv", "--no-config", "run", "--locked", "python", "-m", "hv.progress", command, "--output", str(output)],
                 cwd=root,
-                check=True,
+                check=False,
                 capture_output=True,
                 text=True,
             )
+            if done.returncode:
+                raise RuntimeError(f"hv.progress {command} failed in {root}:\n{done.stderr[-2000:]}")
             return json.loads(output.read_text())
         finally:
             if ref is not None:
