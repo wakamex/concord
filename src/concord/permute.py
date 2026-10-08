@@ -61,7 +61,7 @@ def permute(
     if baseline.error:
         raise RuntimeError(f"the unit's own source does not compile:\n{baseline.error}")
     protected = baseline.exact_functions()
-    others = other_scores(harvest, baseline, symbol)
+    others = other_scores(baseline, symbol)
     current = (source, _diff(harvest, baseline, symbol), [])
     result = PermuteResult(current[1], current[1], source)
     seen = {source}
@@ -91,7 +91,7 @@ def permute(
         for key in sorted({_key(d) for d, _, _, _ in scored if _key(d) >= _key(current[1])}, reverse=True):
             tied = [s for s in scored if _key(s[0]) == key]
             rng.shuffle(tied)
-            choice = next((s for s in tied if not worse_elsewhere(harvest, others, s[3], symbol)), None)
+            choice = next((s for s in tied if not worse_elsewhere(others, s[3], symbol)), None)
             if choice is not None:
                 d, text, steps, _ = choice
                 current = (text, d, steps)

@@ -3,8 +3,8 @@
 Each round diffs the current source's compile against the target, takes the
 transforms for the causes the diff reports, compiles every rewrite they produce
 in one batch, and moves to the best rewrite that improves the function without
-losing any function of the unit that was already exact or lowering the score of
-any other. It stops at an exact
+losing any function of the unit that was already exact or lowering objdiff's
+score of any other. It stops at an exact
 match, when no rewrite improves, or when the rounds run out.
 
 Only rewrites that cannot change behavior are used so far (swapping comparison
@@ -39,7 +39,8 @@ class SearchResult:
 
 
 def _key(diff: DiffResult) -> tuple:
-    return (diff.exact, diff.score, -len(diff.findings))
+    """Exact first, then objdiff's score (what upstream reports), then concord's."""
+    return (diff.exact, diff.fuzzy or 0.0, diff.score, -len(diff.findings))
 
 
 def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4) -> SearchResult:
@@ -48,7 +49,7 @@ def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4) -> SearchR
     if baseline.error:
         raise RuntimeError(f"the unit's own source does not compile:\n{baseline.error}")
     protected = baseline.exact_functions()
-    others = other_scores(harvest, baseline, symbol)
+    others = other_scores(baseline, symbol)
     current = _diff(harvest, baseline, symbol)
     result = SearchResult(current, current, source)
     for _ in range(rounds):
@@ -76,7 +77,7 @@ def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4) -> SearchR
             if _key(d) > _key(current):
                 improving.append((rewrite, d, e))
         improving.sort(key=lambda c: _key(c[1]), reverse=True)
-        best = next(((r, d) for r, d, e in improving if not worse_elsewhere(harvest, others, e, symbol)), None)
+        best = next(((r, d) for r, d, e in improving if not worse_elsewhere(others, e, symbol)), None)
         if best is None:
             result.reason = "no rewrite improves the function"
             break
@@ -90,29 +91,21 @@ def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4) -> SearchR
     return result
 
 
-def other_scores(harvest: Harvest, evaluation: Evaluation, symbol: str) -> dict[str, float]:
-    """Scores of the unit's inexact functions other than the one searched."""
-    scores = {}
-    for section in evaluation.sections:
-        for row in section.get("functions", []):
-            if row["exact"] or row["symbol"] == symbol:
-                continue
-            try:
-                scores[row["symbol"]] = _diff(harvest, evaluation, row["symbol"]).score
-            except (KeyError, FileNotFoundError):
-                continue
-    return scores
+def other_scores(evaluation: Evaluation, symbol: str) -> dict[str, float]:
+    """objdiff scores of the unit's functions other than the one searched."""
+    return {name: score for name, score in evaluation.fuzzy.items() if name != symbol}
 
 
-def worse_elsewhere(harvest: Harvest, before: dict[str, float], evaluation: Evaluation, symbol: str) -> bool:
-    """Whether a candidate lowers the score of any other inexact function of the unit.
-    Exact functions are checked separately, as the protected set."""
-    after = other_scores(harvest, evaluation, symbol)
-    return any(name in after and after[name] < score for name, score in before.items())
+def worse_elsewhere(before: dict[str, float], evaluation: Evaluation, symbol: str) -> bool:
+    """Whether a candidate lowers objdiff's score of any other function of the unit."""
+    after = other_scores(evaluation, symbol)
+    return any(after.get(name, 0.0) < score for name, score in before.items())
 
 
 def _diff(harvest: Harvest, evaluation: Evaluation, symbol: str) -> DiffResult:
     verdict = evaluation.verdict(symbol)
     if verdict is None:
         raise KeyError(f"{symbol} is not in the compiled unit")
-    return harvest.diff(verdict, evaluation.object)
+    diff = harvest.diff(verdict, evaluation.object)
+    diff.fuzzy = evaluation.fuzzy.get(symbol)
+    return diff

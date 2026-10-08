@@ -85,6 +85,7 @@ class DiffResult:
     score: float  # 0.0 to 100.0, where 100.0 is an exact byte match
     exact: bool
     findings: list[DiffFinding] = field(default_factory=list)
+    fuzzy: float | None = None  # objdiff's score of the same compile, as decomp.dev reports it
 
 
 @dataclass

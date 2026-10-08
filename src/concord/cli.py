@@ -108,10 +108,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_rerun.add_argument("--results", type=Path, default=results.LOG, help="search log to read and append to")
     p_rerun.add_argument("--unit", action="append", help="only this unit's functions, as a source path (repeatable)")
 
-    p_scores = sub.add_parser("scores", help="save every function's score, or compare the build against a saved set")
-    p_scores.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
-    p_scores.add_argument("--save", type=Path, help="write the scores of the last hv match to this JSON file")
-    p_scores.add_argument("--against", type=Path, help="compare the last hv match with scores saved earlier")
+    p_scores = sub.add_parser(
+        "scores", help="save the progress Harvest reports upstream, or compare it with a saved snapshot"
+    )
+    p_scores.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_scores.add_argument("--capture", action="store_true", help="recapture Harvest's progress evidence first")
+    p_scores.add_argument("--ref", help="use the evidence committed at this git revision instead of the checkout's")
+    p_scores.add_argument("--save", type=Path, help="write the snapshot to this JSON file")
+    p_scores.add_argument("--against", type=Path, help="compare with a snapshot saved earlier")
 
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
     p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
@@ -304,21 +308,23 @@ def _rerun(args: argparse.Namespace) -> int:
 def _scores(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     if not (args.save or args.against):
         parser.error("pass --save, --against or both")
-    current = scores.snapshot(Harvest(args.harvest))
+    current = scores.snapshot(scores.report(Harvest(args.harvest), args.capture, args.ref))
     if args.save:
-        args.save.write_text(json.dumps(current, indent=0, sort_keys=True))
-        print(f"saved {len(current)} functions to {args.save}")
+        args.save.write_text(json.dumps(current, sort_keys=True))
+        print(f"saved {len(current['functions'])} functions and {len(current['data'])} matched data runs to {args.save}")
     if not args.against:
         return 0
-    changes = scores.compare(json.loads(args.against.read_text()), current)
-    worse = [c for c in changes if c.worse]
+    changes, lost, gained = scores.compare(json.loads(args.against.read_text()), current)
+
+    def show(s: dict | None) -> str:
+        return "absent" if s is None else ("matched" if s["matched"] else f"{s['fuzzy']:.2f}")
+
     for c in changes:
-        fmt = lambda s: "absent" if s is None else ("exact" if s["exact"] else f"{s['score']}")
-        print(f"{'WORSE' if c.worse else 'better':6} {fmt(c.before):>8} -> {fmt(c.after):8} {c.function}")
-    gained = sum(1 for c in changes if c.after and c.after["exact"] and not (c.before and c.before["exact"]))
-    lost = sum(1 for c in changes if c.before and c.before["exact"] and not (c.after and c.after["exact"]))
-    print(f"{len(changes)} functions changed: {gained} newly exact, {lost} no longer exact, {len(worse)} worse")
-    return 1 if worse else 0
+        print(f"{'WORSE' if c.worse else 'better':6} {show(c.before):>8} -> {show(c.after):8} {int(c.address):#x} {c.name}")
+    worse = sum(c.worse for c in changes)
+    newly = sum(1 for c in changes if c.after and c.after["matched"] and not (c.before and c.before["matched"]))
+    print(f"{len(changes)} functions changed: {newly} newly matched, {worse} worse; data bytes matched: +{gained} -{lost}")
+    return 1 if worse or lost else 0
 
 
 def _sweep(args: argparse.Namespace) -> int:

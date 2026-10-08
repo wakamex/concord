@@ -43,6 +43,7 @@ class Evaluation:
     object: Path | None = None
     error: str = ""
     sections: list[dict] = field(default_factory=list)
+    fuzzy: dict[str, float] = field(default_factory=dict)  # objdiff's score by symbol, as decomp.dev reports it
 
     def verdict(self, symbol: str) -> FunctionVerdict | None:
         for section in self.sections:
@@ -115,6 +116,7 @@ class Harvest:
                 Path(row["object"]) if "object" in row else None,
                 row.get("error", ""),
                 row.get("sections", []),
+                row.get("fuzzy", {}),
             )
         return evaluations
 
@@ -142,6 +144,7 @@ class Harvest:
                 Path(row["object"]) if "object" in row else None,
                 row.get("error", ""),
                 row.get("sections", []),
+                row.get("fuzzy", {}),
             )
             for name, row in json.loads(result.stdout).items()
         }

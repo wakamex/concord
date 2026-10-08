@@ -20,7 +20,8 @@ and without -g, so a debug object's line tables locate the code of a normal comp
 
 Either way every compile runs in the pinned toolchain at the unit's own path, in
 parallel lanes, and stdout gets one JSON object mapping each name to
-{"object": path, "exact": bool, "sections": [...]} or {"error": compiler output}.
+{"object": path, "exact": bool, "sections": [...], "fuzzy": {symbol: percent}} or
+{"error": compiler output}, where "fuzzy" is objdiff's score for each function.
 Candidate files must be inside `out`; nothing under the checkout's build/match is
 touched.
 """
@@ -35,7 +36,17 @@ import uuid
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from hv import builds, extents, match, symbols, toolchain, units
+from hv import (
+    builds,
+    delink,
+    extents,
+    match,
+    metrics,
+    objdiff,
+    symbols,
+    toolchain,
+    units,
+)
 from hv.elf import Elf
 
 _shared = None  # (target, known, placements by unit), inherited by forked workers
@@ -46,6 +57,37 @@ def _compare(job: tuple[str, str]) -> dict:
     target, known, placements = _shared
     report = match.compare_object(Elf.load(Path(obj), "ET_REL"), target, known, placements[unit])
     return {"object": obj, "exact": report["exact"], "sections": report["sections"]}
+
+
+def fuzzy_scores(target, known: list, reports: dict[str, dict], out: Path) -> dict[str, dict[str, float]]:
+    """objdiff's fuzzy score of every function in each compared object, measured the
+    way `hv.progress capture` measures it (the pinned objdiff, functionRelocDiffs=
+    data_value), which is the score decomp.dev reports."""
+    tool = objdiff.tool()
+    if builds.sha256_file(tool) not in metrics.OBJDIFF_HASHES:
+        raise ValueError("objdiff executable differs from the pinned release")
+    extents_by_address = {address: size for address, (size, _) in target.function_extents().items()}
+    project = out / f"fuzzy-{uuid.uuid4().hex}"
+    project.mkdir(parents=True)
+    entries = []
+    for name, report in reports.items():
+        obj = Path(report["object"])
+        sections, symbols_ = delink.delink_unit(target, Elf.load(obj, "ET_REL"), report, known, extents_by_address)
+        destination = project / f"{name}.target.o"
+        delink.write_object(destination, sections, symbols_)
+        entries.append({"name": name, "target_path": str(destination), "base_path": str(obj)})
+    (project / "objdiff.json").write_text(json.dumps({"build_target": False, "build_base": False, "units": entries}))
+    output = project / "report.json"
+    subprocess.run(
+        [str(tool), "report", "generate", "-p", str(project), "-c", "functionRelocDiffs=data_value", "-o", str(output)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return {
+        unit["name"]: {f["name"]: f.get("fuzzy_match_percent", 0.0) for f in unit.get("functions", [])}
+        for unit in json.loads(output.read_text())["units"]
+    }
 
 
 def compile_overlays(compiler: toolchain.Compiler, items: dict[str, dict], unit_paths: dict[str, Path]) -> dict:
@@ -168,6 +210,11 @@ def main() -> None:
     with ProcessPoolExecutor(os.cpu_count() or 1, mp_context=multiprocessing.get_context("fork")) as pool:
         for name, report in zip(jobs, pool.map(_compare, jobs.values())):
             result[name] = report
+    if jobs and not request.get("debug"):
+        known_list = [(s.address, s.size, s.name) for s in symbols.load(build)]
+        scores = fuzzy_scores(target, known_list, {name: result[name] for name in jobs}, out)
+        for name in jobs:
+            result[name]["fuzzy"] = scores.get(name, {})
     json.dump(result, sys.stdout)
 
 
