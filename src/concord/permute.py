@@ -9,8 +9,9 @@ helps after another one that changes nothing on its own.
 Each candidate here applies one to `depth` random rewrites, from every transform,
 to the current source. The best candidate of a batch replaces the current source
 when it scores at least as well, so the walk drifts across plateaus instead of
-stopping on them; a candidate that loses a function of the unit that was exact
-is rejected. The best source seen is kept apart from the walk.
+stopping on them; a candidate that loses a function of the unit that was exact,
+or lowers the score of any other function of the unit, is rejected. The best
+source seen is kept apart from the walk.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from dataclasses import dataclass, field
 
 from concord.harvest import Harvest
 from concord.model import DiffResult
-from concord.search import _diff, _key
+from concord.search import _diff, _key, other_scores, worse_elsewhere
 from concord.transforms import ALL, find_function
 
 # Constructor and destructor variants compiled from the same definition: searching
@@ -60,6 +61,7 @@ def permute(
     if baseline.error:
         raise RuntimeError(f"the unit's own source does not compile:\n{baseline.error}")
     protected = baseline.exact_functions()
+    others = other_scores(harvest, baseline, symbol)
     current = (source, _diff(harvest, baseline, symbol), [])
     result = PermuteResult(current[1], current[1], source)
     seen = {source}
@@ -82,15 +84,20 @@ def permute(
             e = evaluations[name]
             if e.error or not protected <= e.exact_functions():
                 continue
-            scored.append((_diff(harvest, e, symbol), text, steps))
+            scored.append((_diff(harvest, e, symbol), text, steps, e))
         if not scored:
             continue
-        top = max(_key(d) for d, _, _ in scored)
-        if top >= _key(current[1]):
-            d, text, steps = rng.choice([s for s in scored if _key(s[0]) == top])
-            current = (text, d, steps)
-            if _key(d) > _key(result.best):
-                result.best, result.source, result.steps = d, text, steps
+        # the best candidates that keep every other function of the unit at least as good
+        for key in sorted({_key(d) for d, _, _, _ in scored if _key(d) >= _key(current[1])}, reverse=True):
+            tied = [s for s in scored if _key(s[0]) == key]
+            rng.shuffle(tied)
+            choice = next((s for s in tied if not worse_elsewhere(harvest, others, s[3], symbol)), None)
+            if choice is not None:
+                d, text, steps, _ = choice
+                current = (text, d, steps)
+                if _key(d) > _key(result.best):
+                    result.best, result.source, result.steps = d, text, steps
+                break
     result.reason = result.reason or ("exact" if result.best.exact else "budget spent")
     return result
 

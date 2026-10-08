@@ -106,6 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_rerun.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_rerun.add_argument("--results", type=Path, default=results.LOG, help="search log to read and append to")
+    p_rerun.add_argument("--unit", action="append", help="only this unit's functions, as a source path (repeatable)")
 
     p_scores = sub.add_parser("scores", help="save every function's score, or compare the build against a saved set")
     p_scores.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
@@ -281,6 +282,8 @@ def _rerun(args: argparse.Namespace) -> int:
     transforms and layout apply, so the result is what concord produces today."""
     harvest = Harvest(args.harvest)
     best = results.partial_gains(results.load(args.results))
+    if args.unit:
+        best = {key: row for key, row in best.items() if key[0] in args.unit}
     print(f"{len(best)} functions with a logged partial gain")
     for (unit, symbol), row in sorted(best.items()):
         print(f"=== {row['command']} {unit} {symbol}")
