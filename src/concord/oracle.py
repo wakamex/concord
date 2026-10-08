@@ -65,31 +65,38 @@ def check(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes)
     return EquivalenceResult(report["verdict"] == "agree", "differential-test", json.dumps(report))
 
 
-def toward_original(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> dict | None:
-    """Cases in which the function differs from the original executable's own code,
-    compiled from `before` and from `after`: {"before": n, "after": m, "cases": N},
-    or None when no oracle is configured. A rewrite that changes behavior is still
-    an improvement when it differs from the original in fewer cases, as when it
-    restores how the original treats NaN."""
+def original_differences(harvest: Harvest, unit: str, symbol: str, sources: dict[str, bytes]) -> dict[str, int] | None:
+    """For each named source, the cases in which the function compiled from it
+    differs from the original executable's own code, from one oracle run that
+    generates the cases and runs the original once. None when no oracle is
+    configured; sources that do not compile are left out."""
     prefix = command()
     if prefix is None:
         return None
-    evaluations = harvest.evaluate(unit, {"before": before, "after": after})
-    if any(e.error for e in evaluations.values()):
-        return None
+    evaluations = harvest.evaluate(unit, sources)
+    built = {name: e.object for name, e in evaluations.items() if not e.error}
+    if not built:
+        return {}
     done = subprocess.run(
         [*shlex.split(prefix), "compare", symbol, "original=image",
-         f"before={evaluations['before'].object}", f"after={evaluations['after'].object}", "--cases", str(CASES)],
+         *(f"{name}={obj}" for name, obj in built.items()), "--cases", str(CASES)],
         cwd=harvest.root, capture_output=True, text=True, check=False,
     )  # fmt: skip
     if done.returncode not in (0, 1):
         raise RuntimeError(f"oracle failed ({done.returncode}):\n{done.stderr[-2000:]}")
     comparison = json.loads(done.stdout)["comparison"]
-    return {
-        "before": comparison["original vs before"]["differ"],
-        "after": comparison["original vs after"]["differ"],
-        "cases": CASES,
-    }
+    return {name: comparison[f"original vs {name}"]["differ"] for name in built}
+
+
+def toward_original(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> dict | None:
+    """Cases in which the function differs from the original code, compiled from
+    `before` and from `after`: {"before": n, "after": m, "cases": N}. A rewrite that
+    changes behavior is still an improvement when it differs from the original in
+    fewer cases, as when it restores how the original treats NaN."""
+    counts = original_differences(harvest, unit, symbol, {"before": before, "after": after})
+    if not counts or len(counts) < 2:
+        return None
+    return {**counts, "cases": CASES}
 
 
 def gate(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> tuple[bool, dict | None]:

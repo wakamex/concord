@@ -42,11 +42,15 @@ def repair(harvest: Harvest, unit: str, symbol: str, source: bytes, floor: float
             score = _diff(harvest, e, symbol).fuzzy or 0.0
             if score > floor and not worse_elsewhere(others, e, symbol) and base.exact_functions() <= e.exact_functions():
                 candidates.append((flip, score))
+        counts = oracle.original_differences(
+            harvest, unit, symbol, {"current": source, **{f"c{n}": flip.source for n, (flip, _) in enumerate(candidates)}}
+        ) if candidates else None  # fmt: skip
         best = None
-        for flip, score in candidates:
-            distance = oracle.toward_original(harvest, unit, symbol, source, flip.source)
-            if distance and distance["after"] < distance["before"] and (best is None or distance["after"] < best[1]["after"]):
-                best = (flip, distance, score)
+        if counts and "current" in counts:
+            for n, (flip, score) in enumerate(candidates):
+                after = counts.get(f"c{n}")
+                if after is not None and after < counts["current"] and (best is None or after < best[1]["after"]):
+                    best = (flip, {"before": counts["current"], "after": after, "cases": oracle.CASES}, score)
         if best is None:
             return source, steps
         flip, distance, score = best
