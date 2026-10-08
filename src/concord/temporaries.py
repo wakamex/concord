@@ -2,10 +2,11 @@
 
 The named-temporary rewrite declares `__typeof__(E) concordTmpN = E;`, which keeps
 it type-correct without type inference but is not source anyone would submit.
-Once a search has finished, `finish` compiles the result with -g, reads each
-temporary's type from its DWARF variable entry, names it after the expression it
-holds (`Items[i].Text` becomes `text`, `getScreenRes()` becomes `screenRes`), and
-keeps the rewritten source only if the function compiles to the same bytes.
+Once a search has finished, the result is compiled with -g, each temporary's type
+is read from its DWARF variable entry, and it is named after the expression it
+holds (`Items[i].Text` becomes `text`, `getScreenRes()` becomes `screenRes`).
+concord.finish keeps the rewritten source only if the function compiles to the
+same bytes.
 """
 
 from __future__ import annotations
@@ -16,46 +17,18 @@ from pathlib import Path
 from elftools.elf.elffile import ELFFile
 from tree_sitter import Node, Parser
 
-from concord.diff import read_function
-from concord.harvest import Harvest
 from concord.transforms import CPP
 
 DECLARATION = re.compile(rb"__typeof__\((?P<expr>.*?)\) (?P<name>concordTmp\d+) = (?P=expr);")
-KEYWORDS = {"default", "delete", "new", "this", "class", "operator", "template", "value", "int", "char", "float"}
+KEYWORDS = {"default", "delete", "new", "this", "class", "operator", "template", "int", "char", "float"}
 
 
-def finish(harvest: Harvest, unit: str, symbol: str, source: bytes) -> bytes | None:
-    """The source with concrete types and names for its temporaries, or None when
-    that changes the function's bytes or a type cannot be read."""
-    if b"concordTmp" not in source:
-        return source
-    obj = harvest.debug_objects([unit], {unit: source}).get(unit)
-    if obj is None:
-        return None
-    types = variable_types(obj)
-    candidates = {}
-    for direct in (True, False):
-        finished = rename(source, types, direct)
-        if finished is not None and finished not in candidates.values():
-            candidates[f"direct{int(direct)}"] = finished
-    evaluations = harvest.evaluate(unit, {"search": source, **candidates})
-    searched = evaluations["search"]
-    if searched.error:
-        return None
-    for name, finished in candidates.items():  # the preferred spelling first
-        e = evaluations[name]
-        if e.error or e.exact_functions() != searched.exact_functions():
-            continue
-        if read_function(e.object, symbol).code == read_function(searched.object, symbol).code:
-            return finished
-    return None
-
-
-def rename(source: bytes, types: dict[str, str], direct: bool = True) -> bytes | None:
+def rename(source: bytes, types: dict[str, str], direct: bool = True, scope: bytes | None = None) -> bytes | None:
     """Replace each `__typeof__` declaration with its type and a name taken from its
     expression, and rename the temporary's uses. With `direct`, a conversion to the
-    declared type is written as direct initialization: `CString<char> name(text);`."""
-    taken = set(re.findall(rb"\b[A-Za-z_]\w*\b", source))
+    declared type is written as direct initialization: `CString<char> name(text);`.
+    A name is new to `scope` (the function's text; the whole source by default)."""
+    taken = set(re.findall(rb"\b[A-Za-z_]\w*\b", source if scope is None else scope))
     for match in list(DECLARATION.finditer(source)):
         name = match["name"].decode()
         if name not in types:

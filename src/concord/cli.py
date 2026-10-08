@@ -18,13 +18,13 @@ from pathlib import Path
 
 from concord import __version__, knowledge, results, scores
 from concord.diff import diff_code, read_function
+from concord.finish import finish
 from concord.harvest import Harvest
 from concord.lines import editable, inline_chains
 from concord.model import DiffResult
 from concord.order import apply_order, search_order
 from concord.permute import near_misses, permute
 from concord.search import _key, search
-from concord.temporaries import finish
 
 
 def _not_implemented(stage: str) -> int:
@@ -185,6 +185,7 @@ def _match(args: argparse.Namespace) -> int:
     revision = results.commit(harvest.root)
     original = (harvest.root / "src" / harvest.source(args.unit)).read_bytes()
     result = search(harvest, args.unit, args.function, rounds=args.rounds)
+    finished = finish(harvest, harvest.source(args.unit), args.function, result.source, original) if result.steps else None
     results.record(
         args.results,
         {
@@ -200,7 +201,8 @@ def _match(args: argparse.Namespace) -> int:
             "after": result.best.score,
             "exact": result.best.exact,
             "steps": [f"{s.rewrite.transform}: {s.rewrite.description}" for s in result.steps],
-            "patch": results.save_patch(args.results, harvest.source(args.unit), original, result.source)
+            "finished": finished is not None if result.steps else None,
+            "patch": results.save_patch(args.results, harvest.source(args.unit), original, finished or result.source)
             if result.steps
             else None,
         },
@@ -210,9 +212,9 @@ def _match(args: argparse.Namespace) -> int:
         print(f"  {step.rewrite.transform}: {step.rewrite.description}  -> score {step.diff.score:.2f}")
     print(f"{result.reason}: score {result.best.score:.2f}, exact {result.best.exact}, {result.tried} rewrites compiled")
     _print_result(result.best, "gcc-4.4.3")
-    if result.steps and args.apply:
+    if result.steps and args.apply and finished is not None:
         path = harvest.root / "src" / harvest.source(args.unit)
-        path.write_bytes(result.source)
+        path.write_bytes(finished)
         print(f"wrote {path}")
     return 0
 
@@ -240,7 +242,7 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
     original = (harvest.root / "src" / source).read_bytes()
     result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth)
     improved = _key(result.best) > _key(result.baseline)
-    finished = finish(harvest, source, symbol, result.source) if improved else None
+    finished = finish(harvest, source, symbol, result.source, original) if improved else None
     results.record(
         args.results,
         {

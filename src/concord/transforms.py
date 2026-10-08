@@ -134,10 +134,9 @@ TIGHT = {"identifier", "field_expression", "call_expression", "subscript_express
 
 def _negate(condition: Node, source: bytes) -> bytes:
     """The condition's negation, written as a person would: `!x` becomes `x`,
-    `a == b` becomes `a != b` and `a < b` becomes `a >= b`, and `&&`/`||` follow
-    De Morgan's laws, keeping the original spacing and line breaks. A relational
-    inversion is not the same test for a NaN operand; the byte comparison against
-    the target decides whether that matters."""
+    `a == b` becomes `a != b`, and `&&`/`||` follow De Morgan's laws, keeping the
+    original spacing and line breaks. `a < b` becomes `!(a < b)`, which stays the
+    same test for a NaN operand."""
     if condition.type == "parenthesized_expression":
         inner = condition.named_children[0]
         return _negate(inner, source)
@@ -151,8 +150,12 @@ def _negate(condition: Node, source: bytes) -> bytes:
         operator = condition.child_by_field_name("operator")
         before = source[left.end_byte : operator.start_byte]
         after = source[operator.end_byte : right.start_byte]
-        if operator.text in INVERSE:
+        if operator.text in (b"==", b"!="):
             return left.text + before + INVERSE[operator.text] + after + right.text
+        if operator.text in INVERSE:
+            # `a < b` and `a >= b` differ when an operand is NaN; finish() inverts
+            # only where GCC compiles both spellings to the same bytes
+            return b"!(" + condition.text + b")"
         if operator.text in (b"&&", b"||"):
             flipped = b"||" if operator.text == b"&&" else b"&&"
             parts = []
@@ -198,13 +201,12 @@ def swap_branches(source: bytes, scope: Node) -> Iterator[Rewrite]:
         then = node.child_by_field_name("consequence")
         alternative = node.child_by_field_name("alternative")
         otherwise = alternative.named_children[-1]
-        indent = source[_line_start(source, node.start_byte) : node.start_byte]
-        if indent.strip():
-            indent = b""
+        line = source[_line_start(source, node.start_byte) : node.start_byte]
+        indent = line[: len(line) - len(line.lstrip(b" \t"))]  # an else-if takes its else's indent
         layout = _Layout(source, node, clause, then, alternative, otherwise, indent)
         new_then = otherwise
         if otherwise.type == "if_statement":  # an else-if becomes a block of its own
-            body = layout.unit + _reindent(otherwise.text, layout.unit) if layout.multiline else otherwise.text
+            body = _reindent(otherwise.text, layout.unit) if layout.multiline else otherwise.text
             new_then_text = b"{" + layout.inner + body + layout.close + b"}"
             new_then = None
         swapped = (

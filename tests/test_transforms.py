@@ -94,13 +94,33 @@ class SwapBranches(unittest.TestCase):
 
     def test_a_moved_else_if_chain_becomes_a_block(self):
         outer = self.rewrites(BRANCHES, "_ZN5Board4pickEi")[1]
-        self.assertIn(b"    if (a >= 2) { if (a > 9) return 3; else return 4; } else { return 2; }\n", outer)
+        self.assertIn(b"    if (!(a < 2)) { if (a > 9) return 3; else return 4; } else { return 2; }\n", outer)
 
     def test_branches_keep_the_files_layout(self):
         first, second, third = self.rewrites(LAYOUTS, "_ZN5Board3layEii")
         self.assertIn(b"    if (DrawBack)\n        IGUIElement::draw();\n    else\n    {\n        drawChildren();\n    }\n", first)
         self.assertIn(b"    if (has(a) != true ||\n        !has(b))\n        reset(a);\n    else\n    {\n        a = b;\n    }\n", second)
-        self.assertIn(b"    if (a <= 0) {\n        a++;\n    } else {\n        a--;\n    }\n", third)
+        self.assertIn(b"    if (!(a > 0)) {\n        a++;\n    } else {\n        a--;\n    }\n", third)
+
+    def test_an_else_if_keeps_its_elses_indent(self):
+        source = b"""int Board::chain(int a)
+{
+    if (a == 1)
+        a = 2;
+    else if (a == 3)
+        a = 4;
+    else if (a == 5)
+    {
+        a = 6;
+    }
+    return a;
+}
+"""
+        swapped = self.rewrites(source, "_ZN5Board5chainEi")[1]  # the inner if: a == 3
+        self.assertIn(
+            b"    else if (a != 3)\n    {\n        if (a == 5)\n        {\n            a = 6;\n        }\n    }\n    else\n        a = 4;\n",
+            swapped,
+        )
 
 
 class Negate(unittest.TestCase):
@@ -114,7 +134,8 @@ class Negate(unittest.TestCase):
             b"x": b"!x",
             b"!x": b"x",
             b"!(a && b)": b"a && b",
-            b"a.size() < n": b"a.size() >= n",
+            b"a.size() < n": b"!(a.size() < n)",  # inverted only where GCC proves it the same
+            b"a != b": b"a == b",
             b"a == b && c": b"a != b || !c",
             b"a || b && c": b"!a && (!b || !c)",
             b"(a || b) && c": b"!a && !b || !c",
