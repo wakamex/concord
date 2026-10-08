@@ -43,5 +43,19 @@ class SearchLog(unittest.TestCase):
         self.assertTrue(results.commit(repo).endswith("-dirty"))
 
 
+class PartialGains(unittest.TestCase):
+    def test_the_largest_gain_per_function_without_exact_or_sweep_rows(self):
+        rows = [
+            {"command": "match", "unit": "a.cpp", "symbol": "f", "before": 90.0, "after": 92.0, "exact": False},
+            {"command": "permute", "unit": "a.cpp", "symbol": "f", "before": 90.0, "after": 95.0, "exact": False},
+            {"command": "permute", "unit": "a.cpp", "symbol": "g", "before": 98.0, "after": 100.0, "exact": True},
+            {"command": "permute", "unit": "a.cpp", "symbol": "h", "before": 97.0, "after": 97.0, "exact": False},
+            {"command": "sweep", "unit": "a.cpp", "reason": "no gain", "patch": None},
+        ]
+        gains = results.partial_gains(rows)
+        self.assertEqual(list(gains), [("a.cpp", "f")])
+        self.assertEqual(gains[("a.cpp", "f")]["after"], 95.0)
+
+
 if __name__ == "__main__":
     unittest.main()

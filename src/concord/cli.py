@@ -11,11 +11,12 @@ partial work.
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 from collections import Counter
 from pathlib import Path
 
-from concord import __version__, knowledge, results
+from concord import __version__, knowledge, results, scores
 from concord.diff import diff_code, read_function
 from concord.harvest import Harvest
 from concord.lines import editable, inline_chains
@@ -100,6 +101,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_sweep.add_argument("--apply", action="store_true", help="write verified pure-reorder gains into the sources")
     p_sweep.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
+    p_rerun = sub.add_parser(
+        "rerun", help="repeat every logged search that improved a function without matching it, and write the gains"
+    )
+    p_rerun.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_rerun.add_argument("--results", type=Path, default=results.LOG, help="search log to read and append to")
+
+    p_scores = sub.add_parser("scores", help="save every function's score, or compare the build against a saved set")
+    p_scores.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_scores.add_argument("--save", type=Path, help="write the scores of the last hv match to this JSON file")
+    p_scores.add_argument("--against", type=Path, help="compare the last hv match with scores saved earlier")
+
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
     p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
 
@@ -131,6 +143,10 @@ def main(argv: list[str] | None = None) -> int:
         return _permute(parser, args)
     if args.command == "sweep":
         return _sweep(args)
+    if args.command == "rerun":
+        return _rerun(args)
+    if args.command == "scores":
+        return _scores(parser, args)
     if args.command == "vtables":
         return _vtables(args)
     return _not_implemented(args.command)
@@ -257,6 +273,47 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
         path.write_bytes(finished)
         print(f"wrote {path}")
     return result.best.exact
+
+
+def _rerun(args: argparse.Namespace) -> int:
+    """Each function's best logged partial gain, searched again with the same command
+    and settings on the current checkout, with the improvement written. The current
+    transforms and layout apply, so the result is what concord produces today."""
+    harvest = Harvest(args.harvest)
+    best = results.partial_gains(results.load(args.results))
+    print(f"{len(best)} functions with a logged partial gain")
+    for (unit, symbol), row in sorted(best.items()):
+        print(f"=== {row['command']} {unit} {symbol}")
+        settings = argparse.Namespace(harvest=args.harvest, results=args.results, unit=unit, function=symbol)
+        try:
+            if row["command"] == "match":
+                _match(argparse.Namespace(**vars(settings), rounds=row["rounds"], apply=True))
+            else:
+                options = {k: row[k] for k in ("budget", "batch", "depth", "seed")}
+                _permute_one(harvest, unit, symbol, argparse.Namespace(**vars(settings), **options, apply=True, apply_improved=True))
+        except (KeyError, RuntimeError) as error:
+            print(f"skipped: {error}")
+    return 0
+
+
+def _scores(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    if not (args.save or args.against):
+        parser.error("pass --save, --against or both")
+    current = scores.snapshot(Harvest(args.harvest))
+    if args.save:
+        args.save.write_text(json.dumps(current, indent=0, sort_keys=True))
+        print(f"saved {len(current)} functions to {args.save}")
+    if not args.against:
+        return 0
+    changes = scores.compare(json.loads(args.against.read_text()), current)
+    worse = [c for c in changes if c.worse]
+    for c in changes:
+        fmt = lambda s: "absent" if s is None else ("exact" if s["exact"] else f"{s['score']}")
+        print(f"{'WORSE' if c.worse else 'better':6} {fmt(c.before):>8} -> {fmt(c.after):8} {c.function}")
+    gained = sum(1 for c in changes if c.after and c.after["exact"] and not (c.before and c.before["exact"]))
+    lost = sum(1 for c in changes if c.before and c.before["exact"] and not (c.after and c.after["exact"]))
+    print(f"{len(changes)} functions changed: {gained} newly exact, {lost} no longer exact, {len(worse)} worse")
+    return 1 if worse else 0
 
 
 def _sweep(args: argparse.Namespace) -> int:

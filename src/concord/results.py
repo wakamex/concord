@@ -59,3 +59,17 @@ def load(log: Path) -> list[dict]:
     if not log.exists():
         return []
     return [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+
+
+def partial_gains(rows: list[dict]) -> dict[tuple[str, str], dict]:
+    """{(unit, symbol): row} of the match or permute run with the largest gain for
+    each function that a logged run improved without making it exact."""
+    best: dict[tuple[str, str], dict] = {}
+    for row in rows:
+        if row.get("command") not in ("match", "permute") or row.get("exact") or row.get("after") is None:
+            continue
+        gain = row["after"] - row["before"]
+        key = (row["unit"], row["symbol"])
+        if gain > 0 and (key not in best or gain > best[key]["after"] - best[key]["before"]):
+            best[key] = row
+    return best
