@@ -38,27 +38,48 @@ Its conceptual ancestors are m2c, objdiff, decomp-permuter and decomp.me; the cl
 
 ## Status
 
-The cause-attributing diff works; the other stages are stubs. See `docs/DESIGN.md` for the full design and `src/concord/` for the interfaces.
+The diff, the transforms and the searches work against Harvest; the seed, types, flag inference and oracle stages are stubs (`concord seed`, `types`, `flags`, `init` and `status` say so). The searches stay safe without the oracle in two ways: every rewrite is meant to preserve behavior, and a change goes upstream only when the target's own matcher proves the function byte-identical, which makes it equivalent at the machine level. `docs/DESIGN.md` has the full design.
 
-`concord diff` disassembles one function from a target object and a candidate object with [Capstone](https://www.capstone-engine.org/), aligns the instructions, and labels each mismatch: register allocation, operand order, block order, inlining, stack or struct layout, immediate, or instruction selection. Pointed at a Harvest checkout after `hv match`, it reads Harvest's delinked target and compiled objects, and for functions whose bytes already match it reports the references or placement that keep Harvest's matcher from proving them exact:
+Upstream results so far, each verified by Harvest's `hv match` on every unit:
+
+| Pull request | Produced by | Functions newly exact |
+| --- | --- | ---: |
+| [banteg/harvest#19](https://github.com/banteg/harvest/pull/19) | `concord sweep` (definition order) | 9 |
+| [banteg/harvest#21](https://github.com/banteg/harvest/pull/21) | `concord sweep` at a deeper budget | 7 |
+| [banteg/harvest#22](https://github.com/banteg/harvest/pull/22) | `concord vtables` (an extra pure virtual in two interfaces) | 3 |
+
+### Requirements
+
+- A Harvest checkout on which `hv match` has run, with its pinned GCC 4.4.3 container image (Harvest's `just toolchain`). concord compiles through Harvest's own toolchain and matcher, under `build/concord/` in that checkout.
+- `c++filt` and `addr2line` from [GNU Binutils](https://www.gnu.org/software/binutils/), and `as` and `g++` for some tests.
+- Python 3.11 or newer and [uv](https://docs.astral.sh/uv/).
+
+### Commands
+
+`concord diff` disassembles one function from a target object and a candidate object with [Capstone](https://www.capstone-engine.org/), aligns the instructions, and labels each mismatch: register allocation, operand order, block order, inlining, stack or struct layout, immediate, or instruction selection. Pointed at a Harvest checkout, it reads Harvest's delinked target and compiled objects. For a function whose bytes already match, it reports the references or placement that keep Harvest's matcher from proving it exact, and when every call to an unknown symbol agrees on its address it names the `hv match --learn` run that places it:
 
 ```sh
 uv run concord diff --harvest ../harvest --unit HarvestFull/harvest/gui/CProfileScreen.cpp _ZN7harvest3gui14CProfileScreen11saveProfileEb
 uv run concord diff --target target.o --candidate candidate.o SYMBOL
-uv run concord survey --harvest ../harvest
+uv run concord survey --harvest ../harvest --lines 20
+uv run concord permute --harvest ../harvest --near-miss 98
 ```
 
-`concord survey` counts the causes over every inexact function in a Harvest build. With `--lines N` it also compiles every unit with `-g` (GCC 4.4 emits the same code either way), follows each finding's inline chain with [addr2line](https://sourceware.org/binutils/docs/binutils/addr2line.html), and lists the N source lines in the checkout behind the most findings; a header line there gathers the findings of every copy inlined from it. `concord vtables` compares every vtable the compiled units emit with the target's, slot by slot; a slot that differs means a class declaration with an extra, missing or misplaced virtual, which shifts the vtable references of every constructor and destructor that uses it.
+`concord survey` counts the causes over every inexact function in a Harvest build. With `--lines N` it also compiles every unit with `-g` (GCC 4.4 emits the same code either way), follows each finding's inline chain with [addr2line](https://sourceware.org/binutils/docs/binutils/addr2line.html), and lists the N source lines in the checkout behind the most findings; a header line there gathers the findings of every copy inlined from it. On Harvest the top lines are all in `CString.h` and `CPosition2d.h`.
 
-`concord sweep --harvest ROOT [--apply]` runs Harvest's definition-order search (`hv search`) on every unit with an inexact function and reports the functions its verification compile confirms as newly exact; with `--apply` it writes a winning order only when it is a pure reorder of the unchanged source. Its first full run produced [banteg/harvest#19](https://github.com/banteg/harvest/pull/19), nine functions across five units.
+`concord vtables` compares every vtable the compiled units emit with the target's, slot by slot; a slot that differs means a class declaration with an extra, missing or misplaced virtual, which shifts the vtable references of every constructor and destructor that uses it.
 
-`concord match --harvest ROOT --unit UNIT SYMBOL` searches source rewrites for one function: it diffs the unit's compile against the target, generates the rewrites for the causes found, compiles them in one batch through Harvest's toolchain (into `build/concord/`, leaving Harvest's own outputs alone), and keeps the best one that improves the function without losing any exact function of the unit. The only transform so far swaps the operands of comparisons in the function's own source. On Harvest's 88 functions whose main difference is operand order it fixed none, because nearly all of those compares come from inlined code; the knowledge base records the details.
+`concord sweep --harvest ROOT [--apply]` runs Harvest's definition-order search (`hv search`) on every unit with an inexact function and reports the functions its verification compile confirms as newly exact; with `--apply` it writes a winning order only when it is a pure reorder of the unchanged source.
 
-`concord permute --harvest ROOT --unit UNIT SYMBOL`, or `--near-miss SCORE` for every function of its own unit's source scoring at least SCORE (one constructor or destructor variant each), is a random multi-step search in the manner of decomp-permuter: each candidate applies one to three random rewrites from every transform (operand swaps, branch sense, swapping independent neighbouring statements, moving declarations, naming a subexpression in a `__typeof__` local), batches are compiled together, and the walk moves to the best candidate that scores at least as well without losing an exact function of the unit. It made `CGUIListBox::draw` exact through a branch-sense flip that the cause-driven `match` never tried, since the diff did not attribute that function's mismatch to block order. With `--apply` it writes only an exact match.
+`concord match --harvest ROOT --unit UNIT SYMBOL` searches source rewrites for one function, directed by the diff: it takes the rewrites for the causes the diff reports (comparison operand swaps for operand order, branch-sense flips for block order), compiles them in one batch through Harvest's toolchain, and keeps the best one that improves the function without losing any exact function of the unit, for up to `--rounds` rounds.
+
+`concord permute --harvest ROOT --unit UNIT SYMBOL`, or `--near-miss SCORE` for every function of its own unit's source scoring at least SCORE (one constructor or destructor variant each), is a random multi-step search in the manner of decomp-permuter. Each candidate applies one to three random rewrites from every transform, whatever the diff reports: operand swaps, branch-sense flips, swapping independent neighbouring statements, moving declarations, and naming a subexpression in a local. Batches are compiled together, and the walk moves to the best candidate that scores at least as well without losing an exact function of the unit, so it can cross plateaus where single rewrites change nothing. Its first sweep made `CGUIListBox::draw` and the `CSystemConfig` constructors exact with branch-sense flips that the diff had not attributed to block order. With `--apply` it writes only an exact match.
+
+Rewrites come out the way a person would write them: a negated condition inverts its comparison or applies De Morgan's laws, and swapped branches keep the file's brace layout. A found match is submitted as concord produced it.
 
 Every `concord match`, `concord permute` and `concord sweep` run appends a line to `results/harvest.jsonl`: the Harvest commit it ran against, the unit and function, the settings and transforms, the scores before and after, and the functions it made exact. An improved source is saved as a patch against that commit in `results/patches/`, applicable with `git apply` from the Harvest checkout. The log is the record of what has been tried, and the knowledge base summarizes what it taught.
 
-The knowledge base in `src/concord/knowledge/` records a compiler's codegen idiosyncrasies, one TOML file per compiler version. Each idiom names the cause the diff reports, the symptom, the source change that fixes it, whether that is confirmed or a hypothesis, and the evidence (a Harvest commit or note). `concord diff` lists the idioms for the causes it finds, and the transform search will read the same entries to choose its moves. Add an idiom whenever a fix makes a function match.
+The knowledge base in `src/concord/knowledge/` records a compiler's codegen idiosyncrasies, one TOML file per compiler version. Each idiom names the cause the diff reports, the symptom, the source change that fixes it, whether that is confirmed or a hypothesis, the limits found when applying it, and the evidence (a Harvest commit or note). `concord diff` lists the idioms for the causes it finds. Add an idiom, or evidence to one, whenever a fix makes a function match.
 
 ## Development
 
@@ -66,8 +87,11 @@ concord uses [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv run concord --help
+uv run --locked ruff check src tests
 uv run --locked python -m unittest discover -s tests
 ```
+
+The Harvest tests in `tests/test_diff.py` run when a Harvest checkout after `hv match` is at `../harvest` or `CONCORD_HARVEST` names one, and skip otherwise. `AGENTS.md` holds the working rules for agents: manual steps in matching work become concord capabilities, and every complete match goes upstream with the partial gains found alongside it.
 
 ## License
 
