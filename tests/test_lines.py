@@ -33,7 +33,9 @@ class InlineChains(unittest.TestCase):
             obj = Path(tmp) / "f.o"
             subprocess.run(["g++", "-O2", "-g", f"-fdebug-prefix-map={tmp}=/work", "-c", "src/f.cpp", "-o", str(obj)], cwd=tmp, check=True)
             function = read_function(obj, "_Z1fii")
-            chain = inline_chains(obj, function.section, [function.start])[0]
+            # which instruction carries the inlined line depends on the GCC version
+            chains = inline_chains(obj, function.section, list(range(function.start, function.start + len(function.code))))
+            chain = next(c for c in chains if len(c) == 2)
             self.assertEqual([(f.path, f.line) for f in chain], [("src/smaller.h", 3), ("src/f.cpp", 4)])
             self.assertEqual(chain[0].function, "smaller(int, int)")
             self.assertEqual(editable(chain), chain[0])
