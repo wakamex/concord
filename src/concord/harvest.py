@@ -146,13 +146,20 @@ class Harvest:
             for name, row in json.loads(result.stdout).items()
         }
 
-    def debug_objects(self, units: list[str]) -> dict[str, Path]:
-        """Compile each unit's checkout source with -g added, for its line tables.
-        Units that fail to compile are left out."""
-        out = self.root / "build" / "concord" / "debug"
-        out.mkdir(parents=True, exist_ok=True)
+    def debug_objects(self, units: list[str], sources: dict[str, bytes] | None = None) -> dict[str, Path]:
+        """Compile each unit with -g added, for its line tables and variable types,
+        from its checkout source or from `sources` (unit source path -> candidate
+        text). Units that fail to compile are left out."""
+        out = self.root / "build" / "concord" / "debug" / uuid.uuid4().hex
+        out.mkdir(parents=True)
         names = {f"u{n}": unit for n, unit in enumerate(units)}
-        request = {"out": str(out), "debug": True, "items": {n: {"unit": u, "overlays": {}} for n, u in names.items()}}
+        overlays = {}
+        for unit, text in (sources or {}).items():
+            path = out / f"{self.slug(unit)}{Path(unit).suffix}"
+            path.write_bytes(text)
+            overlays[unit] = {f"src/{unit}": str(path)}
+        items = {n: {"unit": u, "overlays": overlays.get(u, {})} for n, u in names.items()}
+        request = {"out": str(out), "debug": True, "items": items}
         result = self._driver(json.dumps(request))
         return {names[n]: Path(row["object"]) for n, row in json.loads(result.stdout).items() if "object" in row}
 

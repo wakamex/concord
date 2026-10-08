@@ -143,3 +143,16 @@ fix = "Make the class declarations give each vtable the original's slots: an ext
 evidence = [
   { function = "daisy::gui::CGUIListBox destructors", note = "setIconFont and setNumber declared only in CGUIListBox and CGUITab (banteg/harvest#22): three destructors exact, both interface vtables matched" },
 ]
+
+[[idiom]]
+id = "copy-initialized-temporary"
+cause = "register-allocation"
+status = "hypothesis"
+symptom = "a class temporary built inside an expression, such as a map key converted from a const char*, with registers or stack slots that differ around it"
+fix = "Name the temporary with copy-initialization, `T name = T(arg);`, before the statement that uses it. GCC 4.4 compiles that differently from both the inline temporary and direct initialization, `T name(arg);`."
+before = "AcceptedDragAndDropFileTypes[ox::core::CString<char>(extension)] = accept;"
+after = "ox::core::CString<char> extensionString = ox::core::CString<char>(extension); AcceptedDragAndDropFileTypes[extensionString] = accept;"
+limits = "One function so far, and a partial gain: the copy-initialized local took CIrrDeviceStub::setAcceptsDragAndDropFileType from 98.33 to 99.44, while the direct-initialized one compiled to the original 98.33 bytes."
+evidence = [
+  { function = "daisy::CIrrDeviceStub::setAcceptsDragAndDropFileType", note = "concord permute (named-temporary), finished by concord's DWARF-typed temporaries at harvest 2425fe5" },
+]

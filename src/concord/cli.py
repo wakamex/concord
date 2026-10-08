@@ -23,6 +23,7 @@ from concord.model import DiffResult
 from concord.order import apply_order, search_order
 from concord.permute import near_misses, permute
 from concord.search import _key, search
+from concord.temporaries import finish
 
 
 def _not_implemented(stage: str) -> int:
@@ -74,6 +75,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_permute.add_argument("--depth", type=int, default=3, help="most rewrites one candidate adds")
     p_permute.add_argument("--seed", type=int, default=0)
     p_permute.add_argument("--apply", action="store_true", help="write an exact match over the unit's file")
+    p_permute.add_argument(
+        "--apply-improved", action="store_true", help="write any improvement over the unit's file, exact or partial"
+    )
     p_permute.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_diff = sub.add_parser("diff", help="show the attributed diff for a function")
@@ -219,6 +223,7 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
     original = (harvest.root / "src" / source).read_bytes()
     result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth)
     improved = _key(result.best) > _key(result.baseline)
+    finished = finish(harvest, source, symbol, result.source) if improved else None
     results.record(
         args.results,
         {
@@ -236,7 +241,8 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
             "after": result.best.score,
             "exact": result.best.exact,
             "steps": result.steps,
-            "patch": results.save_patch(args.results, source, original, result.source) if improved else None,
+            "finished": finished is not None if improved else None,
+            "patch": results.save_patch(args.results, source, original, finished or result.source) if improved else None,
         },
     )
     print(f"baseline score {result.baseline.score:.2f}")
@@ -244,9 +250,11 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
         print(f"  {step}")
     print(f"{result.reason}: score {result.best.score:.2f}, exact {result.best.exact}, {result.tried} candidates compiled")
     _print_result(result.best, "gcc-4.4.3")
-    if result.best.exact and args.apply:
+    if improved and finished is None:
+        print("its temporaries could not be given concrete types without changing the bytes; nothing written")
+    elif finished is not None and (result.best.exact and args.apply or args.apply_improved):
         path = harvest.root / "src" / source
-        path.write_bytes(result.source)
+        path.write_bytes(finished)
         print(f"wrote {path}")
     return result.best.exact
 
