@@ -16,12 +16,12 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
-from concord import __version__, knowledge, oracle, results, scores
+from concord import __version__, knowledge, layout, oracle, results, scores
 from concord.diff import diff_code, read_function
 from concord.finish import finish
 from concord.harvest import Harvest
 from concord.lines import editable, inline_chains
-from concord.model import DiffResult
+from concord.model import Cause, DiffResult
 from concord.order import apply_order, search_order
 from concord.permute import near_misses, permute
 from concord.repair import repair
@@ -120,6 +120,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_repair.add_argument("--apply", action="store_true", help="write the repaired source over the unit's file")
     p_repair.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
+    p_layout = sub.add_parser(
+        "layout", help="compare where the original and our compile access memory, to find misplaced fields"
+    )
+    p_layout.add_argument("function", nargs="?", help="target function symbol (with --unit)")
+    p_layout.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_layout.add_argument("--unit", help="Harvest unit, as a source path or report slug")
+    p_layout.add_argument(
+        "--struct-layout", action="store_true", help="every inexact function whose diff names struct layout"
+    )
+
     p_scores = sub.add_parser(
         "scores", help="save the progress Harvest reports upstream, or compare it with a saved snapshot"
     )
@@ -160,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
         return _permute(parser, args)
     if args.command == "sweep":
         return _sweep(args)
+    if args.command == "layout":
+        return _layout(parser, args)
     if args.command == "repair":
         return _repair(args)
     if args.command == "rerun":
@@ -319,6 +331,32 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
         path.write_bytes(finished)
         print(f"wrote {path}")
     return result.best.exact
+
+
+def _layout(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    if args.struct_layout:
+        targets = []
+        for verdict in harvest.verdicts():
+            if verdict.row["exact"] or verdict.symbol.startswith(("_ZTh", "_ZTv")):
+                continue
+            try:
+                findings = harvest.diff(verdict).findings
+            except (KeyError, FileNotFoundError):
+                continue
+            if any(f.cause == Cause.STRUCT_LAYOUT for f in findings):
+                targets.append((harvest.source(verdict.unit), verdict.symbol))
+    elif args.unit and args.function:
+        targets = [(harvest.source(args.unit), args.function)]
+    else:
+        parser.error("pass --unit and a function, or --struct-layout")
+    for unit, symbol in targets:
+        mismatches = layout.compare(layout.accesses(harvest, symbol), layout.accesses(harvest, symbol, unit))
+        print(f"=== {unit} {symbol}: {len(mismatches)} bases differ")
+        for m in mismatches:
+            show = lambda xs: ", ".join(f"+{o:#x}/{n} {a}" for o, n, a in xs) or "-"
+            print(f"  {m.base}: original only {show(m.original)}; ours only {show(m.ours)}")
+    return 0
 
 
 def _repair(args: argparse.Namespace) -> int:
