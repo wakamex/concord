@@ -47,6 +47,7 @@ Upstream results so far, each verified by Harvest's `hv match` on every unit:
 | [banteg/harvest#19](https://github.com/banteg/harvest/pull/19) | `concord sweep` (definition order) | 9 |
 | [banteg/harvest#21](https://github.com/banteg/harvest/pull/21) | `concord sweep` at a deeper budget | 7 |
 | [banteg/harvest#22](https://github.com/banteg/harvest/pull/22) | `concord vtables` (an extra pure virtual in two interfaces) | 3 |
+| [banteg/harvest#23](https://github.com/banteg/harvest/pull/23) | `concord permute` branch flips, `concord diff` pointing at `hv match --learn`, and 20 partial gains from `concord rerun` | 4 |
 
 ### Requirements
 
