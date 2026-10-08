@@ -63,3 +63,45 @@ def check(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes)
         raise RuntimeError(f"oracle failed ({done.returncode}):\n{done.stderr[-2000:]}")
     report = json.loads(done.stdout.strip().splitlines()[-1])
     return EquivalenceResult(report["verdict"] == "agree", "differential-test", json.dumps(report))
+
+
+def toward_original(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> dict | None:
+    """Cases in which the function differs from the original executable's own code,
+    compiled from `before` and from `after`: {"before": n, "after": m, "cases": N},
+    or None when no oracle is configured. A rewrite that changes behavior is still
+    an improvement when it differs from the original in fewer cases, as when it
+    restores how the original treats NaN."""
+    prefix = command()
+    if prefix is None:
+        return None
+    evaluations = harvest.evaluate(unit, {"before": before, "after": after})
+    if any(e.error for e in evaluations.values()):
+        return None
+    done = subprocess.run(
+        [*shlex.split(prefix), "compare", symbol, "original=image",
+         f"before={evaluations['before'].object}", f"after={evaluations['after'].object}", "--cases", str(CASES)],
+        cwd=harvest.root, capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    if done.returncode not in (0, 1):
+        raise RuntimeError(f"oracle failed ({done.returncode}):\n{done.stderr[-2000:]}")
+    comparison = json.loads(done.stdout)["comparison"]
+    return {
+        "before": comparison["original vs before"]["differ"],
+        "after": comparison["original vs after"]["differ"],
+        "cases": CASES,
+    }
+
+
+def gate(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> tuple[bool, dict | None]:
+    """Whether a partial gain may be kept, with the evidence: it behaves like
+    `before`, or it changes behavior and differs from the original code in fewer
+    cases than `before` does. (True, None) when no oracle is configured."""
+    same = check(harvest, unit, symbol, before, after)
+    if same is None:
+        return True, None
+    record = {"same": json.loads(same.detail)}
+    if same.equivalent:
+        return True, record
+    record["original"] = toward_original(harvest, unit, symbol, before, after)
+    closer = record["original"] is not None and record["original"]["after"] < record["original"]["before"]
+    return closer, record

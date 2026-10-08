@@ -24,6 +24,8 @@ from concord.lines import editable, inline_chains
 from concord.model import DiffResult
 from concord.order import apply_order, search_order
 from concord.permute import near_misses, permute
+from concord.repair import repair
+from concord.search import _diff as _search_diff
 from concord.search import _key, search
 
 
@@ -108,6 +110,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_rerun.add_argument("--results", type=Path, default=results.LOG, help="search log to read and append to")
     p_rerun.add_argument("--unit", action="append", help="only this unit's functions, as a source path (repeatable)")
 
+    p_repair = sub.add_parser(
+        "repair", help="flip NaN-sense comparisons in one function where that brings it closer to the original's behavior"
+    )
+    p_repair.add_argument("function", help="target function symbol")
+    p_repair.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_repair.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
+    p_repair.add_argument("--base", default="master", help="git revision whose score the result must stay above")
+    p_repair.add_argument("--apply", action="store_true", help="write the repaired source over the unit's file")
+    p_repair.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
+
     p_scores = sub.add_parser(
         "scores", help="save the progress Harvest reports upstream, or compare it with a saved snapshot"
     )
@@ -148,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
         return _permute(parser, args)
     if args.command == "sweep":
         return _sweep(args)
+    if args.command == "repair":
+        return _repair(args)
     if args.command == "rerun":
         return _rerun(args)
     if args.command == "scores":
@@ -189,13 +203,17 @@ def _match(args: argparse.Namespace) -> int:
     revision = results.commit(harvest.root)
     original = (harvest.root / "src" / harvest.source(args.unit)).read_bytes()
     result = search(harvest, args.unit, args.function, rounds=args.rounds)
-    finished = finish(harvest, harvest.source(args.unit), args.function, result.source, original) if result.steps else None
+    result.source, repairs = repair(harvest, harvest.source(args.unit), args.function, result.source, result.baseline.fuzzy or 0.0)
+    changed = bool(result.steps or repairs)
+    finished = finish(harvest, harvest.source(args.unit), args.function, result.source, original) if changed else None
     verdict = None
     if finished is not None and not result.best.exact:
-        verdict = oracle.check(harvest, harvest.source(args.unit), args.function, original, finished)
-        if verdict is not None and not verdict.equivalent:
-            print(f"the oracle found a behavior change; nothing written: {verdict.detail}")
+        kept, verdict = oracle.gate(harvest, harvest.source(args.unit), args.function, original, finished)
+        if not kept:
+            print(f"the rewrite changes behavior without moving closer to the original; nothing written: {verdict}")
             finished = None
+        elif verdict and "original" in verdict:
+            print(f"the rewrite changes behavior toward the original: {verdict['original']}")
     results.record(
         args.results,
         {
@@ -211,10 +229,11 @@ def _match(args: argparse.Namespace) -> int:
             "after": result.best.score,
             "exact": result.best.exact,
             "steps": [f"{s.rewrite.transform}: {s.rewrite.description}" for s in result.steps],
-            "finished": finished is not None if result.steps else None,
-            "oracle": None if verdict is None else json.loads(verdict.detail),
+            "repairs": repairs,
+            "finished": finished is not None if changed else None,
+            "oracle": verdict,
             "patch": results.save_patch(args.results, harvest.source(args.unit), original, finished or result.source)
-            if result.steps
+            if changed
             else None,
         },
     )
@@ -223,7 +242,7 @@ def _match(args: argparse.Namespace) -> int:
         print(f"  {step.rewrite.transform}: {step.rewrite.description}  -> score {step.diff.score:.2f}")
     print(f"{result.reason}: score {result.best.score:.2f}, exact {result.best.exact}, {result.tried} rewrites compiled")
     _print_result(result.best, "gcc-4.4.3")
-    if result.steps and args.apply and finished is not None:
+    if changed and args.apply and finished is not None:
         path = harvest.root / "src" / harvest.source(args.unit)
         path.write_bytes(finished)
         print(f"wrote {path}")
@@ -252,14 +271,17 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
     revision = results.commit(harvest.root)
     original = (harvest.root / "src" / source).read_bytes()
     result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth)
-    improved = _key(result.best) > _key(result.baseline)
+    result.source, repairs = repair(harvest, source, symbol, result.source, result.baseline.fuzzy or 0.0)
+    improved = _key(result.best) > _key(result.baseline) or bool(repairs)
     finished = finish(harvest, source, symbol, result.source, original) if improved else None
     verdict = None
     if finished is not None and not result.best.exact:
-        verdict = oracle.check(harvest, source, symbol, original, finished)
-        if verdict is not None and not verdict.equivalent:
-            print(f"the oracle found a behavior change; nothing written: {verdict.detail}")
+        kept, verdict = oracle.gate(harvest, source, symbol, original, finished)
+        if not kept:
+            print(f"the rewrite changes behavior without moving closer to the original; nothing written: {verdict}")
             finished = None
+        elif verdict and "original" in verdict:
+            print(f"the rewrite changes behavior toward the original: {verdict['original']}")
     results.record(
         args.results,
         {
@@ -277,14 +299,17 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
             "after": result.best.score,
             "exact": result.best.exact,
             "steps": result.steps,
+            "repairs": repairs,
             "finished": finished is not None if improved else None,
-            "oracle": None if verdict is None else json.loads(verdict.detail),
+            "oracle": verdict,
             "patch": results.save_patch(args.results, source, original, finished or result.source) if improved else None,
         },
     )
     print(f"baseline score {result.baseline.score:.2f}")
     for step in result.steps:
         print(f"  {step}")
+    for step in repairs:
+        print(f"  repair {step['rewrite']}: original differences {step['original_differences']}")
     print(f"{result.reason}: score {result.best.score:.2f}, exact {result.best.exact}, {result.tried} candidates compiled")
     _print_result(result.best, "gcc-4.4.3")
     if improved and finished is None and verdict is None:
@@ -294,6 +319,35 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
         path.write_bytes(finished)
         print(f"wrote {path}")
     return result.best.exact
+
+
+def _repair(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    unit = harvest.source(args.unit)
+    path = harvest.root / "src" / unit
+    current = path.read_bytes()
+    base = subprocess.run(
+        ["git", "-C", str(harvest.root), "show", f"{args.base}:src/{unit}"], capture_output=True, check=True
+    ).stdout
+    floor = _search_diff(harvest, harvest.evaluate(unit, {"base": base})["base"], args.function).fuzzy or 0.0
+    repaired, repairs = repair(harvest, unit, args.function, current, floor)
+    for step in repairs:
+        print(f"  {step['rewrite']}: differs from the original in {step['original_differences']['before']} -> "
+              f"{step['original_differences']['after']} of {step['original_differences']['cases']} cases, score {step['fuzzy']:.2f}")  # fmt: skip
+    if not repairs:
+        print(f"no NaN-sense flip brings the function closer to the original while scoring above {floor:.2f} ({args.base})")
+        return 0
+    finished = finish(harvest, unit, args.function, repaired, current) or repaired
+    results.record(
+        args.results,
+        {"command": "repair", "harvest": results.commit(harvest.root), "unit": unit, "symbol": args.function,
+         "base": args.base, "floor": floor, "repairs": repairs,
+         "patch": results.save_patch(args.results, unit, current, finished)},
+    )  # fmt: skip
+    if args.apply:
+        path.write_bytes(finished)
+        print(f"wrote {path}")
+    return 0
 
 
 def _rerun(args: argparse.Namespace) -> int:

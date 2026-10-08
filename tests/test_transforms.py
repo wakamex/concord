@@ -10,6 +10,7 @@ from concord.transforms import (
     _negate,
     comparisons,
     find_function,
+    flip_nan_sense,
     move_declarations,
     name_temporaries,
     swap_branches,
@@ -196,6 +197,16 @@ class NameTemporaries(unittest.TestCase):
         # not the call statement itself, f(a) behind &&, or the assigned b.c
         self.assertEqual([r.description for r in rewrites], ["line 4: x * 2 named", "line 5: x[1] named", "line 3: a + b.c named", "line 3: b.c named"])
         self.assertIn(b"    __typeof__(x * 2) concordTmp0 = x * 2;\n    call(concordTmp0, a && f(a));", rewrites[0].source)
+
+
+@unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
+class FlipNanSense(unittest.TestCase):
+    def test_relational_comparisons_change_their_nan_sense_and_equality_is_left_alone(self):
+        source = b"int Board::f(float t)\n{\n    if (!(t > 4.0f)) return 1;\n    if (t <= 2.0f) return 2;\n    if (t == 3.0f) return 3;\n    return 0;\n}\n"
+        rewrites = [r.source for r in flip_nan_sense(source, find_function(source, "_ZN5Board1fEf"))]
+        self.assertEqual(len(rewrites), 2)
+        self.assertIn(b"    if (t <= 4.0f) return 1;\n", rewrites[0])
+        self.assertIn(b"    if (!(t > 2.0f)) return 2;\n", rewrites[1])
 
 
 if __name__ == "__main__":

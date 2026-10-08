@@ -424,4 +424,32 @@ def _ancestors(node: Node, stop: Node) -> list[Node]:
 
 TRANSFORMS = {Cause.OPERAND_ORDER: [swap_operands], Cause.BLOCK_ORDER: [swap_branches]}
 # Every rewrite, for searches that do not pick rewrites by cause.
-ALL = [swap_operands, swap_branches, swap_statements, move_declarations, name_temporaries]
+def flip_nan_sense(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per relational comparison in scope that changes how it treats
+    NaN: `a > b` becomes `!(a <= b)` and `!(a <= b)` becomes `a > b`. For integers
+    the two are the same test; for floats they differ exactly when an operand is
+    NaN. This is the one transform meant to change behavior, so that source whose
+    NaN handling differs from the original can be brought back to it; the oracle
+    accepts such a rewrite only when it moves the function closer to the original
+    code."""
+    for node in _descendants(scope, "binary_expression"):
+        operator = node.child_by_field_name("operator")
+        if operator.text not in INVERSE or operator.text in (b"==", b"!="):
+            continue
+        parent = node.parent
+        negated = (
+            parent is not None
+            and parent.type == "parenthesized_expression"
+            and parent.parent is not None
+            and parent.parent.type == "unary_expression"
+            and parent.parent.child_by_field_name("operator").type == "!"
+        )
+        left, right = node.child_by_field_name("left"), node.child_by_field_name("right")
+        inverted = left.text + source[left.end_byte : operator.start_byte] + INVERSE[operator.text] + source[operator.end_byte : right.start_byte] + right.text
+        if negated:
+            yield _rewrite("nan-sense", Cause.BLOCK_ORDER, source, parent.parent, inverted, f"{parent.parent.text.decode()} as {inverted.decode()}")
+        else:
+            yield _rewrite("nan-sense", Cause.BLOCK_ORDER, source, node, b"!(" + inverted + b")", f"{node.text.decode()} as !({inverted.decode()})")
+
+
+ALL = [swap_operands, swap_branches, swap_statements, move_declarations, name_temporaries, flip_nan_sense]
