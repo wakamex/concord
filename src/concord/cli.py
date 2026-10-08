@@ -414,7 +414,7 @@ def _rerun(args: argparse.Namespace) -> int:
 def _scores(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     if not (args.save or args.against):
         parser.error("pass --save, --against or both")
-    current = scores.snapshot(scores.report(Harvest(args.harvest), args.capture, args.ref))
+    current = scores.snapshot(scores.report(args.harvest, args.capture, args.ref))
     if args.save:
         args.save.write_text(json.dumps(current, sort_keys=True))
         print(f"saved {len(current['functions'])} functions and {len(current['data'])} matched data runs to {args.save}")

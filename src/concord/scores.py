@@ -17,17 +17,16 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from concord.harvest import Harvest
 
 
-def report(harvest: Harvest, capture: bool = False, ref: str | None = None) -> dict:
+def report(checkout: Path, capture: bool = False, ref: str | None = None) -> dict:
     """Harvest's progress report for the checkout, after recapturing its evidence
     when `capture` is set, or for the evidence committed at git revision `ref`."""
     with tempfile.TemporaryDirectory() as tmp:
-        root = harvest.root
+        root = checkout.resolve()
         if ref is not None:
             root = Path(tmp) / "worktree"
-            subprocess.run(["git", "-C", str(harvest.root), "worktree", "add", "-q", "--detach", str(root), ref], check=True)
+            subprocess.run(["git", "-C", str(checkout), "worktree", "add", "-q", "--detach", str(root), ref], check=True)
         try:
             output = Path(tmp) / "report.json"
             command = "capture" if capture and ref is None else "report"
@@ -41,7 +40,7 @@ def report(harvest: Harvest, capture: bool = False, ref: str | None = None) -> d
             return json.loads(output.read_text())
         finally:
             if ref is not None:
-                subprocess.run(["git", "-C", str(harvest.root), "worktree", "remove", "--force", str(root)], check=True)
+                subprocess.run(["git", "-C", str(checkout), "worktree", "remove", "--force", str(root)], check=True)
 
 
 def snapshot(progress: dict) -> dict:
