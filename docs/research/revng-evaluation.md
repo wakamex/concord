@@ -1,6 +1,6 @@
 # rev.ng for Harvest matching
 
-This evaluation was run against the Harvest matching decompilation in `../harvest`. Repository paths below, such as `src/`, `config/1.18-linux-amd64/symbols.tsv`, `docs/matching.md`, `tools/` and `build/`, are relative to that checkout.
+This evaluation was run against [Harvest](https://github.com/banteg/harvest), a matching decompilation, in a local checkout. Repository paths below, such as `src/`, `config/1.18-linux-amd64/symbols.tsv`, `docs/matching.md`, `tools/` and `build/`, are relative to that checkout.
 
 Question: can this machine's patched rev.ng make material progress on the Linux amd64 matching percentage, either by drafting new units faster or by closing the inexact functions that recovered units still have?
 

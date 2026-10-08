@@ -32,7 +32,7 @@ The decompiler plays two separate roles. A source-shaped decompile is the seed, 
 
 ## Origin and name
 
-concord came out of work on the Harvest matching decompilation (`../harvest`, a GCC 4.4.3 Linux amd64 C++ game). There the functions left inexact differ in codegen artifacts, and closing them is mostly humans guessing source forms. The two pieces that would automate that loop, a cause-attributing diff and a transformation search gated by a semantics check, did not exist for x86-64 and C++, so concord is built around them.
+concord came out of work on [Harvest](https://github.com/banteg/harvest), a matching decompilation of a GCC 4.4.3 Linux amd64 C++ game. There the functions left inexact differ in codegen artifacts, and closing them is mostly humans guessing source forms. The two pieces that would automate that loop, a cause-attributing diff and a transformation search gated by a semantics check, did not exist for x86-64 and C++, so concord is built around them.
 
 Its conceptual ancestors are m2c, objdiff, decomp-permuter and decomp.me; the closest is decomp-permuter, to which concord adds directed search and an oracle. The name follows that lineage and names the goal state: the recompiled object in agreement with the target byte for byte. parity (byte parity with the target) was the runner-up.
 
@@ -68,3 +68,7 @@ concord uses [uv](https://docs.astral.sh/uv/).
 uv run concord --help
 uv run --locked python -m unittest discover -s tests
 ```
+
+## License
+
+concord is under the [MIT License](LICENSE). `results/harvest.jsonl` and the knowledge base quote short fragments of Harvest source as evidence. The source patches that `concord match` and `concord permute` save under `results/patches/` stay local and untracked, since Harvest carries no license that would allow redistributing them.

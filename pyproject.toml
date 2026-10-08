@@ -3,6 +3,8 @@ name = "concord"
 version = "0.0.0"
 description = "Matching recompilation for x86-64 and C++: search for source that recompiles byte-identical to a target."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "capstone>=5.0.9",
@@ -20,3 +22,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/concord"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.10",
+]
