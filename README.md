@@ -48,6 +48,7 @@ Upstream results so far, each verified by Harvest's `hv match` on every unit:
 | [banteg/harvest#21](https://github.com/banteg/harvest/pull/21) | `concord sweep` at a deeper budget | 7 |
 | [banteg/harvest#22](https://github.com/banteg/harvest/pull/22) | `concord vtables` (an extra pure virtual in two interfaces) | 3 |
 | [banteg/harvest#23](https://github.com/banteg/harvest/pull/23) | `concord permute` branch flips, `concord diff` pointing at `hv match --learn`, and 20 partial gains from `concord rerun` | 4 |
+| [banteg/harvest#26](https://github.com/banteg/harvest/pull/26) | `concord permute --near-miss 95` (a branch flip), with a NaN-sense repair and 2 partial gains checked by harvest-oracle | 1 |
 
 ### Requirements
 
