@@ -29,7 +29,7 @@ class Names(unittest.TestCase):
             b"Config->getAttribute(L\"x\")": "attribute",
             b"isVisible()": "visible",
             b"ox::core::CString<char>(extension)": "extensionString",
-            b"a + b": "value",
+            b"a + b": "a",  # a binary expression is named after its first operand
         }
         for expression, name in cases.items():
             self.assertEqual(_name_for(expression), name, expression)
