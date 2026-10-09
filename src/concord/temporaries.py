@@ -33,7 +33,9 @@ def rename(source: bytes, types: dict[str, str], direct: bool = True, scope: byt
         name = match["name"].decode()
         if name not in types:
             return None
-        chosen = _fresh(_name_for(match["expr"]), taken)
+        at = source.find(match.group(0)) + len(match.group(0))  # earlier replacements moved it
+        target = _assigned_name(source[at:], match["name"])
+        chosen = _fresh(target if target and target.encode() not in taken else _name_for(match["expr"]), taken)
         taken.add(chosen.encode())
         declared = f"{types[name]} {chosen} = ".encode() + match["expr"] + b";"
         node = _expression(match["expr"])
@@ -109,6 +111,11 @@ def _name_for(text: bytes) -> str:
                 return _name_for(arguments[0].text) + kind[:1].upper() + kind[1:]
             node = function
             continue
+        if node.type == "pointer_expression" and node.child_by_field_name("operator").type == "&":
+            return _name_for(node.child_by_field_name("argument").text) + "Pointer"
+        if node.type == "binary_expression":  # named after its first operand: cos(a) * r is cos
+            node = node.child_by_field_name("left")
+            continue
         if node.type in ("subscript_expression", "pointer_expression", "parenthesized_expression", "cast_expression"):
             node = node.child_by_field_name("argument") or node.child_by_field_name("value") or node.named_children[-1]
             continue
@@ -119,6 +126,41 @@ def _name_for(text: bytes) -> str:
         break
     word = re.sub(r"^(get|is)(?=[A-Z])", "", word)
     return word[:1].lower() + word[1:] or "value"
+
+
+def _assigned_name(rest: bytes, temporary: bytes) -> str | None:
+    """A name from what the statement after the declaration assigns the temporary's
+    value to, as a person names a value after where it goes: `m_currentChantLine =
+    t;` gives currentChantLine, and a temporary added to the rest of the value is its
+    offset: `JumpSpeed.Y = position.Y + t;` gives jumpSpeedYOffset. None when that
+    statement assigns to a plain local, whose name is already taken, uses the
+    temporary some other way, or does not assign."""
+    statement = rest.split(b";", 1)[0]
+    found = re.match(rb"\s*(?P<lhs>[^;=!<>]+?)\s*[-+*/|&^]?=(?!=)(?P<rhs>.*)", statement, re.DOTALL)
+    if found is None or temporary in found["lhs"] or temporary not in found["rhs"]:
+        return None
+    parts = []
+    node = _expression(found["lhs"])
+    while node.type == "field_expression":
+        parts.append(node.child_by_field_name("field").text.decode())
+        node = node.child_by_field_name("argument")
+    if node.type == "identifier" and node.text != b"this":
+        word = node.text.decode()
+        if not parts and not re.match(r"m_|[A-Z]", word):
+            return None  # a local: its own name
+        parts.append(word)
+    if not parts:
+        return None
+    rhs = found["rhs"].strip()
+    if rhs == temporary:
+        suffix = ""  # the whole value
+    elif re.fullmatch(rb"[^;]*[-+]\s*" + temporary + rb"|" + temporary + rb"\s*[-+][^;]*", rhs):
+        suffix = "Offset"  # added to or subtracted from the rest
+    else:
+        return None
+    words = [re.sub(r"^m_", "", w) for w in reversed(parts)]
+    name = words[0][:1].lower() + words[0][1:] + "".join(w[:1].upper() + w[1:] for w in words[1:])
+    return (re.sub(r"^(get|is)(?=[A-Z])", "", name) + suffix) or None
 
 
 def _fresh(word: str, taken: set[bytes]) -> str:
