@@ -61,8 +61,10 @@ def seed(root: Path, unit: str) -> SeedResult:
         return result
     if ".text: not placed" in output:
         result.placements = _place(root, unit)
-        if result.placements:
-            _register(root, unit, result.placements)
+    elif ".bss: not placed" in output:
+        result.placements = _place_bss(root, unit)
+    if result.placements:
+        _register(root, unit, result.placements)
     for _ in range(2):  # a learned address can let the next run learn another
         output = _match(root, unit, learn=True)
     found = re.search(r"functions (\d+)/(\d+)", output)
@@ -73,41 +75,73 @@ def seed(root: Path, unit: str) -> SeedResult:
     return result
 
 
-NAMESPACES = ("core", "video", "scene", "io", "gui")
+NAMESPACES = ("core", "video", "scene", "io", "gui", "event")
+DEFINITION = re.compile(r"^\s*(?:class|struct)\s+(\w+)\s*(?::[^;{]*)?\{|^\s*enum\s+(\w+)\s*\{([^}]*)\}", re.MULTILINE | re.DOTALL)
 DECLARATION = re.compile(r"^\s*(?:class|struct|enum)\s+(\w+)\s*[;{:\n]|^\s*typedef\b[^;]*?(\w+)\s*;", re.MULTILINE)
 
 
-def _declared(directory: Path) -> set[str]:
-    names = set()
-    for header in directory.rglob("*.h"):
-        for found in DECLARATION.finditer(header.read_text(errors="replace")):
-            names.add(found[1] or found[2])
-    return names
+@dataclass
+class Index:
+    """What a tree of headers declares: every name, the header that defines each
+    class, struct or enum, and the namespace-level enumerators."""
+
+    names: set[str] = field(default_factory=set)
+    headers: dict[str, str] = field(default_factory=dict)
+    enumerators: set[str] = field(default_factory=set)
+
+
+_indexes: dict[Path, Index] = {}
+
+
+def _index(root: Path, directory: Path) -> Index:
+    if directory not in _indexes:
+        index = Index()
+        for header in sorted(directory.rglob("*.h")):
+            text = header.read_text(errors="replace")
+            index.names |= {found[1] or found[2] for found in DECLARATION.finditer(text)}
+            for found in DEFINITION.finditer(text):
+                name = found[1] or found[2]
+                index.headers.setdefault(name, header.relative_to(root / "src").as_posix())
+                if found[3]:
+                    index.enumerators |= set(re.findall(r"^\s*(\w+)", found[3], re.MULTILINE))
+        _indexes[directory] = index
+    return _indexes[directory]
 
 
 def qualify(root: Path, text: str) -> str:
     """Point Irrlicht names at Harvest's ox declarations. `video::SMaterial` names
-    ox::video::SMaterial when Harvest declares it there and daisy does not, and each
-    daisy namespace block of the text gets a using-directive for its ox counterpart,
-    so an unqualified base class such as ISceneNode resolves. Neither changes the
-    generated code or the mangled names of what the text defines."""
+    ox::video::SMaterial when Harvest declares it there and daisy does not; an
+    enumerator Harvest declares in another ox namespace, such as ELL_ERROR in
+    ox::event, is qualified; each daisy namespace block of the text gets a
+    using-directive for its ox counterpart, so an unqualified base class such as
+    ISceneNode resolves; and the header defining each ox type the text names is
+    included, since Harvest's versions of Irrlicht headers often only
+    forward-declare them. None of this changes the generated code or the mangled
+    names of what the text defines."""
+    used = set()
     for ns in NAMESPACES:
-        ox, daisy = _declared(root / "src" / "ox" / ns), _declared(root / "src" / "daisy" / ns)
-        for name in ox - daisy:
+        ox, daisy = _index(root, root / "src" / "ox" / ns), _index(root, root / "src" / "daisy" / ns)
+        for name in ox.names - daisy.names:
             text = re.sub(r"(?<![\w:])" + ns + "::" + name + r"\b", f"ox::{ns}::{name}", text)
-        if (root / "src" / "ox" / ns).is_dir() and re.search(r"namespace " + ns + r"\s*\{", text):
+        opened = re.search(r"namespace " + ns + r"\s*\{", text) is not None
+        for name in ox.enumerators - daisy.names:
+            if not opened:
+                text = re.sub(r"(?<![\w:])" + name + r"\b", f"ox::{ns}::{name}", text)
+        if (root / "src" / "ox" / ns).is_dir() and opened:
             text = re.sub(r"(namespace " + ns + r"\s*\{)", r"\1\nusing namespace ox::" + ns + ";", text, count=1)
             # a using-directive needs the namespace declared first
             text = re.sub(r"^(namespace daisy\b)", "namespace ox { namespace " + ns + " {} }\n\\1", text, count=1, flags=re.MULTILINE)
-    # include the header of each ox type the text uses, which Irrlicht reached through
-    # headers whose Harvest versions only forward-declare it
+            used.add(ns)
     needed = []
-    for ns, name in sorted(set(re.findall(r"\box::(\w+)::([A-Z]\w+)", text))):
-        header = f"ox/{ns}/{name}.h"
-        if (root / "src" / header).exists() and f'#include "{header}"' not in text:
-            needed.append(f'#include "{header}"\n')
+    words = set(re.findall(r"\b[A-Z]\w+\b", text))
+    for ns in NAMESPACES:
+        index = _index(root, root / "src" / "ox" / ns)
+        for name in sorted(words & set(index.headers)):
+            qualified = re.search(r"\box::" + ns + "::" + name + r"\b", text)
+            if (ns in used or qualified) and f'#include "{index.headers[name]}"' not in text:
+                needed.append(f'#include "{index.headers[name]}"\n')
     if needed:
-        text = re.sub(r"^(#include [^\n]*\n)", lambda m: m[1] + "".join(needed), text, count=1, flags=re.MULTILINE)
+        text = re.sub(r"^(#include [^\n]*\n)", lambda m: m[1] + "".join(dict.fromkeys(needed)), text, count=1, flags=re.MULTILINE)
     return text
 
 
@@ -255,6 +289,31 @@ def _place(root: Path, unit: str) -> dict[str, int]:
         if address is not None:
             placements[".bss"] = address
     return placements
+
+
+def _place_bss(root: Path, unit: str) -> dict[str, int]:
+    """The .bss of a unit whose .text the matcher placed from a known symbol: the
+    object the static initializer, at its offset in that .text, passes to
+    std::ios_base::Init."""
+    import json
+
+    slug = unit.replace("/", "__").removesuffix(".cpp")
+    sections = json.loads((root / "build" / "match" / BUILD / f"{slug}.json").read_text())["sections"]
+    text = next((int(s["address"], 16) for s in sections if s["name"] == ".text" and s.get("address")), None)
+    if text is None:
+        return {}
+    with open(root / "build" / "match" / BUILD / f"{slug}.o", "rb") as stream:
+        elf = ELFFile(stream)
+        index = next(i for i, s in enumerate(elf.iter_sections()) if s.name == ".text")
+        inits = [
+            s["st_value"]
+            for s in elf.get_section_by_name(".symtab").iter_symbols()
+            if s["st_shndx"] == index and s.name.startswith("_GLOBAL__I")
+        ]
+    if not inits:
+        return {}
+    address = _ios_init_object(root, text + inits[0])
+    return {".bss": address} if address is not None else {}
 
 
 def _extents(root: Path) -> list[tuple[int, int]]:
