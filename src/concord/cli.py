@@ -390,6 +390,8 @@ def _seed(args: argparse.Namespace) -> int:
                 print(f"           {line}")
         else:
             print(f"{'exact' if result.exact == result.functions else 'partial':10} {unit}  functions {result.exact}/{result.functions}  {placed}")
+            for conflict in result.port_conflicts:
+                print(f"           the port also defines {conflict}; remove the port's copy")
             exact += result.exact == result.functions
     if len(args.units) > 1:
         print(f"{exact} of {len(args.units)} units exact")

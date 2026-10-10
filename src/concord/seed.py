@@ -33,6 +33,7 @@ class SeedResult:
     unit: str
     exact: int = 0
     functions: int = 0
+    port_conflicts: list[str] = field(default_factory=list)  # functions port/src also defines
     placements: dict[str, int] = field(default_factory=dict)
     written: list[str] = field(default_factory=list)
     error: str = ""
@@ -87,6 +88,7 @@ def seed(root: Path, unit: str, complete_types: bool = False) -> SeedResult:
         _register(root, unit, result.placements)
     for _ in range(2):  # a learned address can let the next run learn another
         output = _match(root, unit, learn=True)
+    result.port_conflicts = port_conflicts(root, unit)
     found = re.search(r"functions (\d+)/(\d+)", output)
     if found:
         result.exact, result.functions = int(found[1]), int(found[2])
@@ -247,6 +249,44 @@ def _compiles(root: Path, unit: str, header: str) -> bool:
     except (OSError, RuntimeError, KeyError):
         return False
     return not evaluation.error
+
+
+def port_conflicts(root: Path, unit: str) -> list[str]:
+    """Functions the unit defines that Harvest's port also defines in port/src.
+    The port links every unit in units.toml except those its build.zig replaces, so
+    a stub it kept for a function no unit had yet becomes a duplicate symbol once
+    the unit is recovered; such a stub goes when the unit arrives."""
+    port = root / "port" / "src"
+    slug = unit.replace("/", "__").removesuffix(".cpp")
+    obj = root / "build" / "match" / BUILD / f"{slug}.o"
+    if not port.is_dir() or not obj.exists():
+        return []
+    with open(obj, "rb") as stream:
+        elf = ELFFile(stream)
+        text = {i for i, s in enumerate(elf.iter_sections()) if s.name == ".text"}
+        names = [
+            s.name
+            for s in elf.get_section_by_name(".symtab").iter_symbols()
+            if s["st_info"]["bind"] == "STB_GLOBAL" and s["st_info"]["type"] == "STT_FUNC" and s["st_shndx"] in text
+        ]
+    demangled = subprocess.run(["c++filt"], input="\n".join(names), capture_output=True, text=True, check=True).stdout
+    sources = [(path, path.read_text(errors="replace")) for path in port.rglob("*.cpp")]
+    conflicts = []
+    for name in demangled.splitlines():
+        parts = name.split("(")[0].split("::")
+        if len(parts) >= 2 and parts[-2][:1].isupper():
+            # a member: defined out of line as Class::method(
+            pattern, scope = re.escape("::".join(parts[-2:])) + r"\s*\(", None
+        else:
+            # a free function: defined by name inside its namespace
+            pattern = r"^[\w:<>*& ]*\b" + re.escape(parts[-1]) + r"\s*\([^;{]*\)\s*\{"
+            scope = parts[-2] if len(parts) >= 2 else None
+        for path, source in sources:
+            if scope and not re.search(r"namespace " + re.escape(scope) + r"\b", source):
+                continue
+            if re.search(pattern, source, re.MULTILINE):
+                conflicts.append(f"{name} in {path.relative_to(root).as_posix()}")
+    return conflicts
 
 
 def _has_static_initializer(root: Path, unit: str) -> bool:
