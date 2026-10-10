@@ -19,7 +19,7 @@ class CliTest(unittest.TestCase):
     def test_unbuilt_subcommands_are_stubs(self):
         # Each wired subcommand returns the stub code until implemented.
         self.assertEqual(main(["status"]), 2)
-        self.assertEqual(main(["seed", "some_function"]), 2)
+        self.assertEqual(main(["types"]), 2)
 
     def test_parser_knows_the_pipeline_stages(self):
         help_text = build_parser().format_help()
