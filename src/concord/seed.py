@@ -21,7 +21,8 @@ from pathlib import Path
 
 from elftools.elf.elffile import ELFFile
 
-from concord.harvest import BUILD
+from concord.complete import TYPES, complete, missing_members
+from concord.harvest import BUILD, Harvest
 from concord.irrlicht import translate
 
 IRRLICHT = Path("third_party/irrlicht-0.7")
@@ -55,6 +56,21 @@ def seed(root: Path, unit: str) -> SeedResult:
     result.written += _headers(root, target, text, set())
     _register(root, unit, {})
     output = _match(root, unit, learn=False)
+    tried: set[tuple[str, str]] = set()
+    for _ in range(4):  # each round can expose members the previous errors hid
+        missing = missing_members(output) - tried
+        if not missing:
+            break
+        tried |= missing
+        before = {h: (root / "src" / h).read_text() for h in {TYPES[t][0] for t, _ in missing}}
+        changed = complete(root, missing)
+        # keep a header's new members only if every member compiles: one that calls an
+        # Irrlicht helper Harvest lacks would break every unit including the header
+        broken = [h for h in changed if not _compiles(root, unit, h)]
+        for header in broken:
+            (root / "src" / header).write_text(before[header])
+        output = _match(root, unit, learn=False)
+        result.written += [h for h in changed if h not in broken]
     if "error:" in output or "returned non-zero" in output:
         result.error = "\n".join(line for line in output.splitlines() if "error" in line)[:3000]
         _unregister(root, unit)
@@ -90,13 +106,13 @@ class Index:
     enumerators: set[str] = field(default_factory=set)
 
 
-_indexes: dict[Path, Index] = {}
+_indexes: dict[tuple[Path, bool], Index] = {}
 
 
-def _index(root: Path, directory: Path) -> Index:
-    if directory not in _indexes:
+def _index(root: Path, directory: Path, recursive: bool = True) -> Index:
+    if (directory, recursive) not in _indexes:
         index = Index()
-        for header in sorted(directory.rglob("*.h")):
+        for header in sorted(directory.rglob("*.h") if recursive else directory.glob("*.h")):
             text = header.read_text(errors="replace")
             index.names |= {found[1] or found[2] for found in DECLARATION.finditer(text)}
             for found in DEFINITION.finditer(text):
@@ -104,8 +120,20 @@ def _index(root: Path, directory: Path) -> Index:
                 index.headers.setdefault(name, header.relative_to(root / "src").as_posix())
                 if found[3]:
                     index.enumerators |= set(re.findall(r"^\s*(\w+)", found[3], re.MULTILINE))
-        _indexes[directory] = index
-    return _indexes[directory]
+        _indexes[(directory, recursive)] = index
+    return _indexes[(directory, recursive)]
+
+
+def _in_code(pattern: str, replacement: str, text: str) -> str:
+    """re.sub outside preprocessor lines and string literals."""
+    lines = []
+    for line in text.split("\n"):
+        if not line.lstrip().startswith("#"):
+            parts = line.split('"')
+            parts[::2] = [re.sub(pattern, replacement, part) for part in parts[::2]]
+            line = '"'.join(parts)
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def qualify(root: Path, text: str) -> str:
@@ -119,15 +147,22 @@ def qualify(root: Path, text: str) -> str:
     forward-declare them. None of this changes the generated code or the mangled
     names of what the text defines."""
     used = set()
+    opened = {ns for ns in NAMESPACES if re.search(r"namespace " + ns + r"\s*\{", text)}
+    reachable = set()  # names visible unqualified: daisy's own and those of opened ox namespaces
     for ns in NAMESPACES:
-        ox, daisy = _index(root, root / "src" / "ox" / ns), _index(root, root / "src" / "daisy" / ns)
-        for name in ox.names - daisy.names:
-            text = re.sub(r"(?<![\w:])" + ns + "::" + name + r"\b", f"ox::{ns}::{name}", text)
-        opened = re.search(r"namespace " + ns + r"\s*\{", text) is not None
-        for name in ox.enumerators - daisy.names:
-            if not opened:
-                text = re.sub(r"(?<![\w:])" + name + r"\b", f"ox::{ns}::{name}", text)
-        if (root / "src" / "ox" / ns).is_dir() and opened:
+        reachable |= set(_index(root, root / "src" / "daisy" / ns).headers)
+        if ns in opened:
+            reachable |= _index(root, root / "src" / "ox" / ns).names
+    for ns in NAMESPACES:
+        # daisy's forward declarations of ox types do not make them daisy's
+        ox, daisy = _index(root, root / "src" / "ox" / ns), set(_index(root, root / "src" / "daisy" / ns).headers)
+        for name in ox.names - daisy:
+            text = _in_code(r"(?<![\w:])" + ns + "::" + name + r"\b", f"ox::{ns}::{name}", text)
+        if ns not in opened:
+            # a bare name only an unopened ox namespace declares, such as SEvent or ELL_ERROR
+            for name in ((set(ox.headers) | ox.enumerators) - reachable) & set(re.findall(r"\b\w+\b", text)):
+                text = _in_code(r"(?<![\w:.>])" + name + r"\b(?!\s*\()", f"ox::{ns}::{name}", text)
+        if (root / "src" / "ox" / ns).is_dir() and ns in opened:
             text = re.sub(r"(namespace " + ns + r"\s*\{)", r"\1\nusing namespace ox::" + ns + ";", text, count=1)
             # a using-directive needs the namespace declared first
             text = re.sub(r"^(namespace daisy\b)", "namespace ox { namespace " + ns + " {} }\n\\1", text, count=1, flags=re.MULTILINE)
@@ -140,6 +175,10 @@ def qualify(root: Path, text: str) -> str:
             qualified = re.search(r"\box::" + ns + "::" + name + r"\b", text)
             if (ns in used or qualified) and f'#include "{index.headers[name]}"' not in text:
                 needed.append(f'#include "{index.headers[name]}"\n')
+    top = _index(root, root / "src" / "ox", recursive=False)
+    for name in sorted(words & set(top.headers)):
+        if re.search(r"\box::" + name + r"\b", text) and f'#include "{top.headers[name]}"' not in text:
+            needed.append(f'#include "{top.headers[name]}"\n')
     if needed:
         text = re.sub(r"^(#include [^\n]*\n)", lambda m: m[1] + "".join(dict.fromkeys(needed)), text, count=1, flags=re.MULTILINE)
     return text
@@ -185,13 +224,47 @@ def provenance(text: str, original: str) -> str:
     return text.replace(IRRLICHT_NOTICE, notice, 1)
 
 
+def _compiles(root: Path, unit: str, header: str) -> bool:
+    """Whether a file including the header and explicitly instantiating its class
+    (which compiles every member of a template) compiles with the unit's flags."""
+    ox_type = next(t for t, (h, _, _) in TYPES.items() if h == header)
+    namespace = header.split("/")[1]
+    probe = f'#include "{header}"\n'
+    text = (root / "src" / header).read_text()
+    if re.search(r"template\s*<\s*class \w+\s*>\s*(class|struct) " + ox_type + r"\b", text):
+        probe += f"template class ox::{namespace}::{ox_type}<float>;\n"
+    # compile as a unit the last hv match built, since the one being seeded may not build yet
+    host = next((p.name.removesuffix(".json") for p in sorted((root / "build" / "match" / BUILD).glob("*.json"))), None)
+    if host is None:
+        return False
+    try:
+        harvest = Harvest(root)
+        evaluation = harvest.evaluate(harvest.source(host), {"probe": probe.encode()})["probe"]
+    except (OSError, RuntimeError, KeyError):
+        return False
+    return not evaluation.error
+
+
 def _has_static_initializer(root: Path, unit: str) -> bool:
     with open(root / "reference" / "1.18-mac-i386" / "functions.csv") as stream:
         return any(row["unit"] == unit and row["symbol"].startswith("_GLOBAL__I") for row in csv.DictReader(stream))
 
 
 def _resolvable(root: Path, directory: Path, name: str) -> bool:
-    return any((base / name).exists() for base in (directory, root / "src", root / "src" / "HarvestFull"))
+    """Whether the include names a header Harvest has, other than one an earlier
+    seed wrote and git does not track yet, which is translated again."""
+    for base in (directory, root / "src", root / "src" / "HarvestFull"):
+        path = base / name
+        if path.exists() and not _seeded(root, path):
+            return True
+    return False
+
+
+def _seeded(root: Path, path: Path) -> bool:
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", str(path)], cwd=root, capture_output=True, check=False
+    ).returncode == 0
+    return not tracked and "Recovered for Harvest's daisy namespace" in path.read_text(errors="replace")
 
 
 def _headers(root: Path, source: Path, text: str, seen: set[str]) -> list[str]:
@@ -284,8 +357,9 @@ def _place(root: Path, unit: str) -> dict[str, int]:
     if best is None:
         return {}
     placements = {".text": best[1]}
-    if has_bss and ours[0][2].startswith("_GLOBAL__I"):
-        address = _ios_init_object(root, best[1])
+    init = next((offset for offset, _, name in ours if name.startswith("_GLOBAL__I")), None)
+    if has_bss and init is not None:
+        address = _ios_init_object(root, best[1] + init)
         if address is not None:
             placements[".bss"] = address
     return placements

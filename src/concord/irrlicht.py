@@ -75,10 +75,14 @@ def translate(source: str) -> str:
     source = re.sub(r"\birr::", "daisy::", source)
     for name, replacement in sorted(TYPES.items(), key=lambda kv: -len(kv[0])):
         source = re.sub(r"(?<![\w:])" + re.escape(name) + r"\b", replacement, source)
+        if replacement.endswith(">"):  # GCC 4.4 reads the >> of nested template arguments as a shift
+            source = source.replace(replacement + ">", replacement + " >")
     for name, replacement in TYPEDEFS.items():
         source = re.sub(r"\b" + name + r"\b", replacement, source)
     for name, replacement in HEADERS.items():
         source = source.replace(f'#include "{name}"', f'#include "{replacement}"')
     source = re.sub(r"^(?!#include)(.*?)(?<![\w:/])IUnknown\b", r"\1ox::IUnknown", source, flags=re.MULTILINE)
+    source = re.sub(r'^#include "irrTypes.h"\n', "", source, flags=re.MULTILINE)  # its typedefs are translated away
+
     source = re.sub(r"\s*#ifdef _DEBUG\s*\n\s*setDebugName\([^)]*\);\s*\n\s*#endif", "", source)
     return source
