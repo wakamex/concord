@@ -156,3 +156,14 @@ limits = "One function so far, and a partial gain: the copy-initialized local to
 evidence = [
   { function = "daisy::CIrrDeviceStub::setAcceptsDragAndDropFileType", note = "concord permute (named-temporary), finished by concord's DWARF-typed temporaries at harvest 2425fe5" },
 ]
+
+[[idiom]]
+id = "header-contents-change-codegen"
+cause = "register-allocation"
+status = "confirmed"
+symptom = "adding inline members to a widely included header changes the code of functions that never call them"
+fix = "Keep additions out of shared headers: put a new unit's helpers in a header only it includes (as Harvest's ox/video/ColorPacking.h does), and check any shared-header change against the whole build."
+limits = "Seen once: Irrlicht members added to SColor.h, CRect.h, CVector3d.h, CAabbox3d.h, CLine3d.h and CTriangle3d.h made 3 to 4 functions in other units score lower, including two exact ones; reverting the headers removed every regression."
+evidence = [
+  { function = "harvest::entity::CEntityManager::CEntityManager, daisy::video::CSpritePackage::removeAnimationState", note = "concord seed with header completion at harvest b3240dd plus #27" },
+]

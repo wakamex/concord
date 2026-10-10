@@ -38,7 +38,7 @@ class SeedResult:
     error: str = ""
 
 
-def seed(root: Path, unit: str) -> SeedResult:
+def seed(root: Path, unit: str, complete_types: bool = False) -> SeedResult:
     """Seed `unit` (a path under src/, such as daisy/video/Software/CTRFlat.cpp)."""
     result = SeedResult(unit)
     irrlicht = root / IRRLICHT / "source" / "Irrlicht" / Path(unit).name
@@ -57,7 +57,11 @@ def seed(root: Path, unit: str) -> SeedResult:
     _register(root, unit, {})
     output = _match(root, unit, learn=False)
     tried: set[tuple[str, str]] = set()
-    for _ in range(4):  # each round can expose members the previous errors hid
+    # Completing ox headers is opt-in: adding Irrlicht's inline members to SColor.h,
+    # CRect.h and CVector3d.h, even unused ones, changed GCC 4.4's code in units that
+    # include them (CEntityManager::CEntityManager and CSpritePackage::removeAnimationState
+    # stopped matching), so a completion needs a whole-build regression check first.
+    for _ in range(4 if complete_types else 0):  # each round can expose members the previous errors hid
         missing = missing_members(output) - tried
         if not missing:
             break

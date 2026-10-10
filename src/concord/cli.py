@@ -50,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_seed = sub.add_parser("seed", help="seed daisy units from Irrlicht 0.7 and place them in the target")
     p_seed.add_argument("units", nargs="+", help="units to seed, as paths under src/ (daisy/.../File.cpp)")
     p_seed.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_seed.add_argument(
+        "--complete",
+        action="store_true",
+        help="add Irrlicht's members to Harvest's ox core headers when a unit needs them "
+        "(can change code in other units; check the whole build with concord scores)",
+    )
 
     p_types = sub.add_parser("types", help="load recovered class and struct layout")
     p_types.add_argument("--debug-map", help="cross-platform debug map")
@@ -373,7 +379,7 @@ def _seed(args: argparse.Namespace) -> int:
     exact = 0
     for unit in args.units:
         try:
-            result = seed(args.harvest.resolve(), unit)
+            result = seed(args.harvest.resolve(), unit, args.complete)
         except (OSError, ValueError, subprocess.CalledProcessError) as error:
             print(f"error      {unit}: {error}")
             continue
