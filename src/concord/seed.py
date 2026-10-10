@@ -46,7 +46,7 @@ def seed(root: Path, unit: str) -> SeedResult:
         return result
     target = root / "src" / unit
     target.parent.mkdir(parents=True, exist_ok=True)
-    text = translate(irrlicht.read_text(encoding="latin-1"))
+    text = provenance(qualify(root, translate(irrlicht.read_text(encoding="latin-1"))), f"source/Irrlicht/{irrlicht.name}")
     if _has_static_initializer(root, unit):
         text = re.sub(r"^#include", "#include <iostream>\n#include", text, count=1, flags=re.MULTILINE)
     target.write_text(text)
@@ -57,6 +57,7 @@ def seed(root: Path, unit: str) -> SeedResult:
     output = _match(root, unit, learn=False)
     if "error:" in output or "returned non-zero" in output:
         result.error = "\n".join(line for line in output.splitlines() if "error" in line)[:3000]
+        _unregister(root, unit)
         return result
     if ".text: not placed" in output:
         result.placements = _place(root, unit)
@@ -67,7 +68,47 @@ def seed(root: Path, unit: str) -> SeedResult:
     found = re.search(r"functions (\d+)/(\d+)", output)
     if found:
         result.exact, result.functions = int(found[1]), int(found[2])
+    else:
+        result.error = output.strip().splitlines()[-1] if output.strip() else "hv match printed no result"
     return result
+
+
+NAMESPACES = ("core", "video", "scene", "io", "gui")
+DECLARATION = re.compile(r"^\s*(?:class|struct|enum)\s+(\w+)\s*[;{:\n]|^\s*typedef\b[^;]*?(\w+)\s*;", re.MULTILINE)
+
+
+def _declared(directory: Path) -> set[str]:
+    names = set()
+    for header in directory.rglob("*.h"):
+        for found in DECLARATION.finditer(header.read_text(errors="replace")):
+            names.add(found[1] or found[2])
+    return names
+
+
+def qualify(root: Path, text: str) -> str:
+    """Point Irrlicht names at Harvest's ox declarations. `video::SMaterial` names
+    ox::video::SMaterial when Harvest declares it there and daisy does not, and each
+    daisy namespace block of the text gets a using-directive for its ox counterpart,
+    so an unqualified base class such as ISceneNode resolves. Neither changes the
+    generated code or the mangled names of what the text defines."""
+    for ns in NAMESPACES:
+        ox, daisy = _declared(root / "src" / "ox" / ns), _declared(root / "src" / "daisy" / ns)
+        for name in ox - daisy:
+            text = re.sub(r"(?<![\w:])" + ns + "::" + name + r"\b", f"ox::{ns}::{name}", text)
+        if (root / "src" / "ox" / ns).is_dir() and re.search(r"namespace " + ns + r"\s*\{", text):
+            text = re.sub(r"(namespace " + ns + r"\s*\{)", r"\1\nusing namespace ox::" + ns + ";", text, count=1)
+            # a using-directive needs the namespace declared first
+            text = re.sub(r"^(namespace daisy\b)", "namespace ox { namespace " + ns + " {} }\n\\1", text, count=1, flags=re.MULTILINE)
+    # include the header of each ox type the text uses, which Irrlicht reached through
+    # headers whose Harvest versions only forward-declare it
+    needed = []
+    for ns, name in sorted(set(re.findall(r"\box::(\w+)::([A-Z]\w+)", text))):
+        header = f"ox/{ns}/{name}.h"
+        if (root / "src" / header).exists() and f'#include "{header}"' not in text:
+            needed.append(f'#include "{header}"\n')
+    if needed:
+        text = re.sub(r"^(#include [^\n]*\n)", lambda m: m[1] + "".join(needed), text, count=1, flags=re.MULTILINE)
+    return text
 
 
 COLOR_PACKING = Path("src/ox/video/ColorPacking.h")
@@ -97,6 +138,19 @@ def _color_helpers(root: Path, text: str) -> list[str]:
     return [COLOR_PACKING.relative_to("src").as_posix()]
 
 
+IRRLICHT_NOTICE = '// This file is part of the "Irrlicht Engine".\n// For conditions of distribution and use, see copyright notice in Irrlicht.h\n'
+
+
+def provenance(text: str, original: str) -> str:
+    """Replace Irrlicht's file notice with the one Harvest's Irrlicht-derived files
+    carry: where the code came from, its license, and that it is a recovery."""
+    notice = (
+        f"// Adapted from Irrlicht 0.7 {original} (license: third_party/irrlicht-0.7/include/irrlicht.h).\n"
+        "// Recovered for Harvest's daisy namespace; not the original source.\n"
+    )
+    return text.replace(IRRLICHT_NOTICE, notice, 1)
+
+
 def _has_static_initializer(root: Path, unit: str) -> bool:
     with open(root / "reference" / "1.18-mac-i386" / "functions.csv") as stream:
         return any(row["unit"] == unit and row["symbol"].startswith("_GLOBAL__I") for row in csv.DictReader(stream))
@@ -112,19 +166,23 @@ def _headers(root: Path, source: Path, text: str, seen: set[str]) -> list[str]:
     header Harvest has under another directory at that header."""
     written = []
     for name in re.findall(r'^#include "([^"]+)"', text, flags=re.MULTILINE):
-        if name in seen or _resolvable(root, source.parent, name):
+        if _resolvable(root, source.parent, name):
             continue
-        seen.add(name)
-        existing = [p for p in (root / "src").rglob(name)]
+        existing = sorted((root / "src" / "ox").rglob(name)) or sorted((root / "src").rglob(name))
         if len(existing) == 1:
             relative = existing[0].relative_to(root / "src").as_posix()
             source.write_text(source.read_text().replace(f'#include "{name}"', f'#include "{relative}"'))
             continue
+        if name in seen:
+            continue
+        seen.add(name)
         for directory in ("source/Irrlicht", "include"):
             original = root / IRRLICHT / directory / name
             if original.exists():
                 header = source.parent / name
-                translated = translate(original.read_text(encoding="latin-1"))
+                translated = provenance(
+                    qualify(root, translate(original.read_text(encoding="latin-1"))), f"{directory}/{name}"
+                )
                 header.write_text(translated)
                 written.append(header.relative_to(root / "src").as_posix())
                 written += _headers(root, header, translated, seen)
@@ -139,6 +197,13 @@ def _register(root: Path, unit: str, placements: dict[str, int]) -> None:
     pattern = re.compile(r'^\["' + re.escape(unit) + r'"\]\n(?:"[^"\n]+" = 0x[0-9a-f]+\n|#[^\n]*\n)*', re.MULTILINE)
     text = pattern.sub(block, text) if pattern.search(text) else text.rstrip("\n") + "\n\n" + block
     path.write_text(text)
+
+
+def _unregister(root: Path, unit: str) -> None:
+    """Drop a unit that does not compile, so the rest of the build still matches."""
+    path = root / "config" / BUILD / "units.toml"
+    pattern = re.compile(r'\n*^\["' + re.escape(unit) + r'"\]\n(?:"[^"\n]+" = 0x[0-9a-f]+\n|#[^\n]*\n)*', re.MULTILINE)
+    path.write_text(pattern.sub("\n", path.read_text()))
 
 
 def _match(root: Path, unit: str, learn: bool) -> str:

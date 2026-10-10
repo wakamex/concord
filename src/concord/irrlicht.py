@@ -71,6 +71,7 @@ HEADERS = {
 def translate(source: str) -> str:
     """The Irrlicht source with daisy's namespace and ox's types and headers."""
     source = re.sub(r"\bnamespace irr\b", "namespace daisy", source)
+    source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui)::)", "", source)  # qualified again below
     source = re.sub(r"\birr::", "daisy::", source)
     for name, replacement in sorted(TYPES.items(), key=lambda kv: -len(kv[0])):
         source = re.sub(r"(?<![\w:])" + re.escape(name) + r"\b", replacement, source)
