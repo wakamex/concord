@@ -21,6 +21,14 @@ TYPEDEFS = {
 # Irrlicht core and video types and their ox counterparts in Harvest's headers.
 TYPES = {
     "core::rect": "ox::core::CRect",
+    "core::array": "ox::TArray",
+    "core::list": "ox::TList",
+    "core::stringc": "ox::core::CString<char>",
+    "core::stringw": "ox::core::CString<wchar_t>",
+    "core::aabbox3df": "ox::core::CAabbox3d<float>",
+    "core::line3df": "ox::core::CLine3d<float>",
+    "core::triangle3df": "ox::core::CTriangle3d<float>",
+    "core::vector2df": "ox::core::CVector2d<float>",
     "core::vector2d": "ox::core::CVector2d",
     "core::position2d": "ox::core::CPosition2d",
     "core::dimension2d": "ox::core::CDimension2d",
@@ -50,6 +58,13 @@ HEADERS = {
     "SColor.h": "ox/video/SColor.h\"\n#include \"ox/video/ColorPacking.h",
     "IImage.h": "ox/video/IImage.h",
     "IUnknown.h": "ox/IUnknown.h",
+    "array.h": "ox/TArray.h",
+    "irrList.h": "ox/TList.h",
+    "irrString.h": "ox/core/CString.h",
+    "aabbox3d.h": "ox/core/CAabbox3d.h",
+    "matrix4.h": "ox/core/CMatrix4.h",
+    "line3d.h": "ox/core/CLine3d.h",
+    "triangle3d.h": "ox/core/CTriangle3d.h",
 }
 
 

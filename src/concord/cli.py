@@ -27,6 +27,7 @@ from concord.permute import near_misses, permute
 from concord.repair import repair
 from concord.search import _diff as _search_diff
 from concord.search import _key, search
+from concord.seed import seed
 
 
 def _not_implemented(stage: str) -> int:
@@ -46,9 +47,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("target", help="path to the target binary")
     p_init.add_argument("--toolchain", required=True, help="pinned toolchain image id")
 
-    p_seed = sub.add_parser("seed", help="seed candidates from a decompiler")
-    p_seed.add_argument("function", help="target function name")
-    p_seed.add_argument("--backend", default="ghidra", choices=["ghidra", "binaryninja"])
+    p_seed = sub.add_parser("seed", help="seed daisy units from Irrlicht 0.7 and place them in the target")
+    p_seed.add_argument("units", nargs="+", help="units to seed, as paths under src/ (daisy/.../File.cpp)")
+    p_seed.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
 
     p_types = sub.add_parser("types", help="load recovered class and struct layout")
     p_types.add_argument("--debug-map", help="cross-platform debug map")
@@ -163,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         parser.print_help()
         return 0
+    if args.command == "seed":
+        return _seed(args)
     if args.command == "diff":
         return _diff(parser, args)
     if args.command == "survey":
@@ -363,6 +366,23 @@ def _layout(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         for m in mismatches:
             show = lambda xs: ", ".join(f"+{o:#x}/{n} {a}" for o, n, a in xs) or "-"
             print(f"  {m.base}: original only {show(m.original)}; ours only {show(m.ours)}")
+    return 0
+
+
+def _seed(args: argparse.Namespace) -> int:
+    exact = 0
+    for unit in args.units:
+        result = seed(args.harvest.resolve(), unit)
+        placed = " ".join(f"{k}={v:#x}" for k, v in result.placements.items())
+        if result.error:
+            print(f"error      {unit}: {result.error.splitlines()[0] if result.error else ''}")
+            for line in result.error.splitlines()[1:6]:
+                print(f"           {line}")
+        else:
+            print(f"{'exact' if result.exact == result.functions else 'partial':10} {unit}  functions {result.exact}/{result.functions}  {placed}")
+            exact += result.exact == result.functions
+    if len(args.units) > 1:
+        print(f"{exact} of {len(args.units)} units exact")
     return 0
 
 
