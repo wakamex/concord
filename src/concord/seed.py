@@ -45,6 +45,7 @@ def seed(root: Path, unit: str) -> SeedResult:
         result.error = f"no Irrlicht source {irrlicht.name}"
         return result
     target = root / "src" / unit
+    target.parent.mkdir(parents=True, exist_ok=True)
     text = translate(irrlicht.read_text(encoding="latin-1"))
     if _has_static_initializer(root, unit):
         text = re.sub(r"^#include", "#include <iostream>\n#include", text, count=1, flags=re.MULTILINE)

@@ -372,7 +372,11 @@ def _layout(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
 def _seed(args: argparse.Namespace) -> int:
     exact = 0
     for unit in args.units:
-        result = seed(args.harvest.resolve(), unit)
+        try:
+            result = seed(args.harvest.resolve(), unit)
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
+            print(f"error      {unit}: {error}")
+            continue
         placed = " ".join(f"{k}={v:#x}" for k, v in result.placements.items())
         if result.error:
             print(f"error      {unit}: {result.error.splitlines()[0] if result.error else ''}")
