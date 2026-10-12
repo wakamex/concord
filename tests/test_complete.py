@@ -1,11 +1,19 @@
 """Completing Harvest's ox core types with Irrlicht's members."""
 
-import unittest
-
 import tempfile
+import unittest
 from pathlib import Path
 
-from concord.complete import _indent, _members, _rename, absent, complete, missing_members, settle, worse
+from concord.complete import (
+    _indent,
+    _members,
+    _rename,
+    absent,
+    complete,
+    missing_members,
+    settle,
+    worse,
+)
 
 AABBOX = """namespace irr { namespace core {
 template <class T> class aabbox3d

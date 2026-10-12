@@ -25,8 +25,8 @@ from pathlib import Path
 from tree_sitter import Node, Parser
 
 from concord.harvest import Harvest
-from concord.irrlicht import translate
 from concord.irrlicht import TYPES as IRRLICHT_TYPES
+from concord.irrlicht import translate
 from concord.transforms import CPP
 
 # Harvest's ox type -> (its header under src/, Irrlicht's header under include/, Irrlicht's class)
@@ -69,15 +69,14 @@ def complete(root: Path, missing: set[tuple[str, str]]) -> list[str]:
                 continue
         text = path.read_text()
         namespace = "::".join(header.split("/")[:-1]) + "::"  # the header's own: ox::core::
-        rename = lambda d: _rename(d).replace(namespace, "")  # noqa: E731
-        added = "".join(_indent(rename(d)) + "\n\n" for d in definitions)
-        added += "".join("    " + " ".join(rename(d).split()) + "\n" for d in declarations)
+        added = "".join(_indent(_rename(d, namespace)) + "\n\n" for d in definitions)
+        added += "".join("    " + " ".join(_rename(d, namespace).split()) + "\n" for d in declarations)
         public = re.search(r"^(class|struct) " + ox_type + r"\b[^{]*\{\s*\n(\s*public:\s*\n)?", text, re.MULTILINE)
         close = re.search(r"\n\}[^\n]*\n\}[^\n]*\n+#endif\s*$", text)
         if public is None or (outside and close is None):
             continue
         if outside:
-            bodies = "".join("\n" + _outdent(rename(d)) + "\n" for d in outside)
+            bodies = "".join("\n" + _outdent(_rename(d, namespace)) + "\n" for d in outside)
             text = text[: close.start()] + bodies + text[close.start() :]
         text = text[: public.end()] + added + text[public.end() :]
         path.write_text(text)
@@ -234,16 +233,17 @@ def _defines(node: Node, member: str) -> bool:
     return node.type == "function_definition" and _name(node) == member
 
 
-def _rename(definition: str) -> str:
+def _rename(definition: str, namespace: str = "") -> str:
     """Translate a member body written inside Irrlicht's core namespace, where the
-    core templates are named bare (vector3d<T>) rather than core::vector3d<T>."""
+    core templates are named bare (vector3d<T>) rather than core::vector3d<T>.
+    `namespace` (ox::core::) is the destination's own and is left off its names."""
     text = translate(definition)
     for name, replacement in sorted(IRRLICHT_TYPES.items(), key=lambda kv: -len(kv[0])):
         if name.startswith("core::"):  # the alias as written inside the namespace: vector3df
             text = re.sub(r"(?<![\w:])" + re.escape(name.removeprefix("core::")) + r"\b(?!\s*<)", replacement, text)
     for ox_type, (_, _, irrlicht_class) in TYPES.items():
         text = re.sub(r"(?<![\w:])" + irrlicht_class + r"\b", ox_type, text)
-    return text
+    return text.replace(namespace, "") if namespace else text
 
 
 def _outdent(definition: str) -> str:
