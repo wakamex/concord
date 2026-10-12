@@ -17,6 +17,7 @@ from collections import Counter
 from pathlib import Path
 
 from concord import __version__, knowledge, layout, oracle, results, scores
+from concord.complete import TYPES, complete, settle
 from concord.diff import diff_code, read_function
 from concord.finish import finish
 from concord.harvest import Harvest
@@ -28,8 +29,8 @@ from concord.phase import PHASES, scan, spans
 from concord.repair import repair
 from concord.search import _diff as _search_diff
 from concord.search import _key, search
-from concord.seed import seed
-from concord.unguard import unguard
+from concord.seed import _bring_includes, header, seed
+from concord.unguard import definitions, irrlicht_definitions, unguard
 
 
 def _not_implemented(stage: str) -> int:
@@ -167,6 +168,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_phase.add_argument("--phases", type=int, default=PHASES, help="extra declaration counts to try, from 0")
     p_phase.add_argument("--save", type=Path, help="write every function's exact phases to this JSON file")
 
+    p_complete = sub.add_parser(
+        "complete", help="add Irrlicht members to a partial ox core header, if the units including it are no worse"
+    )
+    p_complete.add_argument("members", nargs="+", help="TYPE.member, such as CMatrix4.transformVect")
+    p_complete.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_complete.add_argument("--allow-worse", action="append", default=[], metavar="SYMBOL")
+
+    p_header = sub.add_parser("header", help="translate an Irrlicht header Harvest lacks to the path the Mac debug map records")
+    p_header.add_argument("names", nargs="+", help="Irrlicht header file names, such as ITriangleSelector.h")
+    p_header.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+
     p_unguard = sub.add_parser(
         "unguard", help="expose what a Harvest header keeps behind HARVEST_PORT to the matching build"
     )
@@ -175,6 +187,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_unguard.add_argument("--class", dest="cls", help="class whose port definitions become inline (default: the header's name)")
     p_unguard.add_argument("--port", help="port source under the checkout that defines the class's members")
     p_unguard.add_argument("--include", action="append", default=[], help="header the inline bodies need (repeatable)")
+    p_unguard.add_argument("--irrlicht", help="Irrlicht header under third_party/irrlicht-0.7 that defines the class inline")
+    p_unguard.add_argument(
+        "--unit", help="unit that emits the class's members; with --irrlicht, each member takes Irrlicht's body when it scores no lower there"
+    )
 
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
     p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
@@ -219,12 +235,15 @@ def main(argv: list[str] | None = None) -> int:
         return _scores(parser, args)
     if args.command == "vtables":
         return _vtables(args)
-    if args.command == "unguard":
-        path = args.harvest / "src" / args.header
-        source = (args.harvest / args.port).read_text() if args.port else ""
-        path.write_text(unguard(path.read_text(), args.cls or Path(args.header).stem, source, tuple(args.include)))
-        print(f"exposed {args.header}" + (f" with the members {args.port} defines" if args.port else ""))
+    if args.command == "header":
+        for name in args.names:
+            written = header(args.harvest.resolve(), name)
+            print(f"{name}: " + (", ".join(written) if written else "nothing written (Harvest has it, or Irrlicht does not)"))
         return 0
+    if args.command == "complete":
+        return _complete(args)
+    if args.command == "unguard":
+        return _unguard(args)
     if args.command == "phase":
         return _phase(args)
     return _not_implemented(args.command)
@@ -431,6 +450,67 @@ def _seed(args: argparse.Namespace) -> int:
     if len(args.units) > 1:
         print(f"{exact} of {len(args.units)} units exact")
     return 0
+
+
+def _unguard(args: argparse.Namespace) -> int:
+    root = args.harvest.resolve()
+    path = root / "src" / args.header
+    cls = args.cls or Path(args.header).stem
+    header = path.read_text()
+    bodies = definitions((root / args.port).read_text(), cls) if args.port else {}
+    taken = []
+    if args.irrlicht and args.unit:
+        original = (root / "third_party" / "irrlicht-0.7" / args.irrlicht).read_text(encoding="latin-1")
+        candidates = {name: body for name, body in irrlicht_definitions(original, cls, cls).items() if name in bodies}
+        harvest = Harvest(root)
+        build = lambda chosen: unguard(header, list(chosen.values()), tuple(args.include)).encode()
+        items = {"port": (args.unit, {f"src/{args.header}": build(bodies)})}
+        for index, (name, body) in enumerate(candidates.items()):
+            items[f"m{index}"] = (args.unit, {f"src/{args.header}": build({**bodies, name: body})})
+        evaluations = harvest.evaluate_overlays(items)
+        for index, (name, body) in enumerate(candidates.items()):
+            symbols = [s for s in evaluations["port"].fuzzy if _member(s) == f"{cls}::{name}"]
+            swapped = evaluations[f"m{index}"]
+            if symbols and not swapped.error and all(swapped.fuzzy.get(s, 0) >= evaluations["port"].fuzzy[s] for s in symbols):
+                bodies[name] = body
+                taken.append(name)
+    path.write_text(unguard(header, list(bodies.values()), tuple(args.include)))
+    print(f"exposed {args.header}" + (f" with the members {args.port} defines" if args.port else ""))
+    if taken:
+        print(f"  Irrlicht's body for {', '.join(taken)}")
+    return 0
+
+
+def _member(symbol: str) -> str:
+    """Class::member of a mangled member function."""
+    name = subprocess.run(["c++filt", symbol], capture_output=True, text=True, check=False).stdout.split("(")[0]
+    return "::".join(name.strip().split("::")[-2:])
+
+
+def _complete(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    failed = 0
+    for item in args.members:
+        ox_type, member = item.split(".", 1)
+        header = TYPES[ox_type][0]
+        path = harvest.root / "src" / header
+        before = path.read_text()
+        if not complete(harvest.root, {(ox_type, member)}):
+            print(f"skipped    {item}: Irrlicht's class has no such member, or {header} already has it")
+            continue
+        allowed = frozenset(args.allow_worse)
+        settled = settle(harvest, {header: before}, allowed)
+        if not settled:  # the member may need a header its Irrlicht original includes
+            path.write_text(before)
+            complete(harvest.root, {(ox_type, member)})
+            settled = _bring_includes(harvest.root, ox_type) and settle(harvest, {header: before}, allowed)
+        if settled:
+            print(f"added      {item} to {header}", flush=True)
+        else:
+            path.write_text(before)
+            failed += 1
+            print(f"rejected   {item}: functions in units including {header} get worse", flush=True)
+    return 1 if failed else 0
 
 
 def _phase(args: argparse.Namespace) -> int:

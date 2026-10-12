@@ -126,6 +126,21 @@ def seed(root: Path, unit: str, complete_types: bool = False, allowed: frozenset
     return result
 
 
+def header(root: Path, name: str) -> list[str]:
+    """Translate one Irrlicht header Harvest lacks, and the headers it includes, to
+    the paths the Mac debug map records; return what was written."""
+    probe = root / "src" / "concord_header_probe.cpp"
+    probe.write_text(f'#include "{name}"\n')
+    try:
+        written = _headers(root, probe, probe.read_text(), set())
+    finally:
+        probe.unlink()
+    _indexes.clear()
+    for path in written:
+        (root / "src" / path).write_text(qualify(root, (root / "src" / path).read_text(), path))
+    return written
+
+
 NAMESPACES = ("core", "video", "scene", "io", "gui", "event")
 DEFINITION = re.compile(r"^\s*(?:class|struct)\s+(\w+)\s*(?::[^;{]*)?\{|^\s*enum\s+(\w+)\s*\{([^}]*)\}", re.MULTILINE | re.DOTALL)
 DECLARATION = re.compile(r"^\s*(?:class|struct|enum)\s+(\w+)\s*[;{:\n]|^\s*typedef\b[^;]*?(\w+)\s*;", re.MULTILINE)
