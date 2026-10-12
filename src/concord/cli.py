@@ -24,6 +24,7 @@ from concord.lines import editable, inline_chains
 from concord.model import Cause, DiffResult
 from concord.order import apply_order, search_order
 from concord.permute import near_misses, permute
+from concord.phase import PHASES, scan, spans
 from concord.repair import repair
 from concord.search import _diff as _search_diff
 from concord.search import _key, search
@@ -149,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_scores.add_argument("--save", type=Path, help="write the snapshot to this JSON file")
     p_scores.add_argument("--against", type=Path, help="compare with a snapshot saved earlier")
 
+    p_phase = sub.add_parser(
+        "phase", help="find functions whose code depends on the number of declarations before them"
+    )
+    p_phase.add_argument("units", nargs="*", help="units to scan (default: every unit hv match built)")
+    p_phase.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_phase.add_argument("--phases", type=int, default=PHASES, help="extra declaration counts to try, from 0")
+    p_phase.add_argument("--save", type=Path, help="write every function's exact phases to this JSON file")
+
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
     p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
 
@@ -192,6 +201,8 @@ def main(argv: list[str] | None = None) -> int:
         return _scores(parser, args)
     if args.command == "vtables":
         return _vtables(args)
+    if args.command == "phase":
+        return _phase(args)
     return _not_implemented(args.command)
 
 
@@ -395,6 +406,35 @@ def _seed(args: argparse.Namespace) -> int:
             exact += result.exact == result.functions
     if len(args.units) > 1:
         print(f"{exact} of {len(args.units)} units exact")
+    return 0
+
+
+def _phase(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    units = args.units or sorted(harvest.source(path.stem) for path in harvest.reports.glob("*.json"))
+    saved, locked, witnesses = {}, 0, 0
+    for unit in units:
+        try:
+            result = scan(harvest, unit, args.phases)
+        except (OSError, RuntimeError, KeyError) as error:
+            print(f"error      {unit}: {str(error).strip().splitlines()[-1]}")
+            continue
+        saved[result.unit] = {symbol: sorted(phases) for symbol, phases in result.exact_at.items()}
+        locked += len(result.locked)
+        witnesses += len(result.witnesses)
+        best = result.best
+        print(
+            f"{result.unit}: exact {result.exact(0)}/{len(result.exact_at)}, locked {len(result.locked)}, "
+            f"witnesses {len(result.witnesses)}" + (f", best phase {best} with {result.exact(best)}" if best else ""),
+            flush=True,
+        )
+        for label, group in (("locked", result.locked), ("witness", result.witnesses)):
+            names = subprocess.run(["c++filt"], input="\n".join(sorted(group)), capture_output=True, text=True, check=False)
+            for name, symbol in zip(names.stdout.splitlines(), sorted(group), strict=True):
+                print(f"  {label:8} exact at {spans(group[symbol]):12} {name}")
+        if args.save:
+            args.save.write_text(json.dumps({"phases": args.phases, "units": saved}, indent=1, sort_keys=True))
+    print(f"{locked} locked functions (right body, wrong declaration count) and {witnesses} witnesses in {len(saved)} units")
     return 0
 
 

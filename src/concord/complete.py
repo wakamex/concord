@@ -5,10 +5,10 @@ declare only what recovered units use so far ("Partial" in their notices).
 daisy's own copies had Irrlicht's full set, so when a seeded file calls a member
 Harvest's header lacks, such as CAabbox3d::reset, the member is Irrlicht's.
 `complete` copies every overload of that member from Irrlicht's class into
-Harvest's, translated. An inline member is emitted only where it is used, yet
-adding members to these widely included headers still changed GCC 4.4's code in
-units that include them, so seeding completes headers only when asked, and the
-result needs a whole-build check with concord scores.
+Harvest's, translated. Every added member also shifts GCC 4.4's declaration
+numbering in each unit that includes the header, which changes the code of the
+functions concord phase lists as witnesses there, so seeding completes headers
+only when asked, and the result needs a whole-build check with concord scores.
 
 std::vector-based containers (ox::TArray, ox::TList) are left alone: daisy
 replaced Irrlicht's containers, so Irrlicht's members are not theirs.

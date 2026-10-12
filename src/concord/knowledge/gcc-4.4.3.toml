@@ -158,12 +158,13 @@ evidence = [
 ]
 
 [[idiom]]
-id = "header-contents-change-codegen"
-cause = "register-allocation"
+id = "declaration-count-phase"
+cause = "operand-order"
 status = "confirmed"
-symptom = "adding inline members to a widely included header changes the code of functions that never call them"
-fix = "Keep additions out of shared headers: put a new unit's helpers in a header only it includes (as Harvest's ox/video/ColorPacking.h does), and check any shared-header change against the whole build."
-limits = "Seen once: Irrlicht members added to SColor.h, CRect.h, CVector3d.h, CAabbox3d.h, CLine3d.h and CTriangle3d.h made 3 to 4 functions in other units score lower, including two exact ones; reverting the headers removed every regression."
+symptom = "a function's comparison operands swap (cmp ecx, edx for cmp edx, ecx, with the branch condition mirrored) when any declaration is added or removed earlier in the translation unit, such as an unused inline member in a header it includes"
+fix = "Leave the body alone and correct the declaration count before it. GCC 4.4 numbers every declaration it parses and keeps a function's variables in a hash table keyed by that number, 31 slots wide for most functions, so the order it visits them in depends on the count modulo 31. `concord phase` compiles a unit with 0 to 30 extra declarations and reports the functions that are exact only at another count (locked: the body is right, the headers declare too few or too many things) and the ones exact only at the present count (witnesses: they stop matching when a header they include changes)."
+limits = "The padding is a measurement, not a fix: what a locked function lacks are real declarations of the original headers. A change to a shared header shifts every unit that includes it, so it trades witnesses for locked functions unless the units' counts are corrected together."
 evidence = [
-  { function = "harvest::entity::CEntityManager::CEntityManager, daisy::video::CSpritePackage::removeAnimationState", note = "concord seed with header completion at harvest b3240dd plus #27" },
+  { function = "daisy::video::CSpritePackage::removeAnimationState", note = "exact with 0, 31 and 62 extra declarations and at no other count up to 61; position of the declaration in the unit does not matter (start, middle or end of ox/core/CVector3d.h, or a free template after the class)" },
+  { function = "daisy::video::CSpritePackage::addNewImage", note = "exact at every count except 5 and 30 modulo 31" },
 ]
