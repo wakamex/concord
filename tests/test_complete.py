@@ -45,8 +45,12 @@ class Complete(unittest.TestCase):
         )
         self.assertEqual(missing_members(output), {("CAabbox3d", "reset"), ("CVector3d", "getInterpolated")})
 
+    def test_an_unmatched_constructor_call_names_the_irrlicht_class(self):
+        output = "x.h:161: error: no matching function for call to 'ox::core::CAabbox3d<float>::CAabbox3d(ox::core::CVector3d<float>&)'\n"
+        self.assertEqual(missing_members(output), {("CAabbox3d", "aabbox3d")})
+
     def test_every_overload_is_taken_and_translated(self):
-        members = [_indent(_rename(m)) for m in _members(AABBOX, "aabbox3d", "reset")]
+        members = [_indent(_rename(m, "ox::core::")) for m in _members(AABBOX, "aabbox3d", "reset")]
         self.assertEqual(len(members), 2)
         self.assertEqual(members[0], "    void reset(T x, T y, T z)\n    {\n        MaxEdge.set(x,y,z);\n        MinEdge = MaxEdge;\n    }")
         self.assertIn("void reset(const CVector3d<T>& initValue)", members[1])
@@ -191,6 +195,13 @@ class Settle(unittest.TestCase):
         self.assertTrue(settle(harvest, {"ox/core/CAabbox3d.h": OX_AABBOX}))
         self.assertIn("void repair()", self.header.read_text())
         self.assertNotIn("isEmpty", self.header.read_text())
+
+    def test_an_overload_the_header_has_is_not_added_again(self):
+        self.header.write_text(OX_AABBOX.replace("    CVector3d<T> MinEdge;", "    void reset(T x, T y, T z) {}\n    CVector3d<T> MinEdge;"))
+        complete(self.root, {("CAabbox3d", "reset")})
+        text = self.header.read_text()
+        self.assertEqual(text.count("void reset(T x, T y, T z)"), 1)
+        self.assertIn("void reset(const CVector3d<T>& initValue)", text)
 
     def test_settle_fails_when_no_count_within_reach_suits(self):
         harvest = self.harvest(period=31)

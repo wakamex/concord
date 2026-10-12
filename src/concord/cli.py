@@ -29,6 +29,7 @@ from concord.repair import repair
 from concord.search import _diff as _search_diff
 from concord.search import _key, search
 from concord.seed import seed
+from concord.unguard import unguard
 
 
 def _not_implemented(stage: str) -> int:
@@ -166,6 +167,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_phase.add_argument("--phases", type=int, default=PHASES, help="extra declaration counts to try, from 0")
     p_phase.add_argument("--save", type=Path, help="write every function's exact phases to this JSON file")
 
+    p_unguard = sub.add_parser(
+        "unguard", help="expose what a Harvest header keeps behind HARVEST_PORT to the matching build"
+    )
+    p_unguard.add_argument("header", help="header under src/, such as ox/scene/ISceneNode.h")
+    p_unguard.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_unguard.add_argument("--class", dest="cls", help="class whose port definitions become inline (default: the header's name)")
+    p_unguard.add_argument("--port", help="port source under the checkout that defines the class's members")
+    p_unguard.add_argument("--include", action="append", default=[], help="header the inline bodies need (repeatable)")
+
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
     p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
 
@@ -209,6 +219,12 @@ def main(argv: list[str] | None = None) -> int:
         return _scores(parser, args)
     if args.command == "vtables":
         return _vtables(args)
+    if args.command == "unguard":
+        path = args.harvest / "src" / args.header
+        source = (args.harvest / args.port).read_text() if args.port else ""
+        path.write_text(unguard(path.read_text(), args.cls or Path(args.header).stem, source, tuple(args.include)))
+        print(f"exposed {args.header}" + (f" with the members {args.port} defines" if args.port else ""))
+        return 0
     if args.command == "phase":
         return _phase(args)
     return _not_implemented(args.command)

@@ -38,6 +38,9 @@ TYPES = {
     "core::aabbox3d": "ox::core::CAabbox3d",
     "core::line3d": "ox::core::CLine3d",
     "core::triangle3d": "ox::core::CTriangle3d",
+    "core::plane3df": "ox::core::CPlane3d<float>",
+    "core::plane3d": "ox::core::CPlane3d",
+    "core::quaternion": "ox::core::CQuaternion",
     "video::IImage": "ox::video::IImage",
     "video::SColor": "ox::video::SColor",
     "video::ITexture": "ox::video::ITexture",
@@ -65,12 +68,15 @@ HEADERS = {
     "matrix4.h": "ox/core/CMatrix4.h",
     "line3d.h": "ox/core/CLine3d.h",
     "triangle3d.h": "ox/core/CTriangle3d.h",
+    "plane3d.h": "ox/core/CPlane3d.h",
+    "quaternion.h": "ox/core/CQuaternion.h",
 }
 
 
-def translate(source: str) -> str:
-    """The Irrlicht source with daisy's namespace and ox's types and headers."""
-    source = re.sub(r"\bnamespace irr\b", "namespace daisy", source)
+def translate(source: str, namespace: str = "daisy") -> str:
+    """The Irrlicht source with ox's types and headers, in daisy's namespace, or in
+    ox's for one of Irrlicht's public types, which daisy kept there."""
+    source = re.sub(r"\bnamespace irr\b", f"namespace {namespace}", source)
     source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui)::)", "", source)  # qualified again below
     source = re.sub(r"\birr::", "daisy::", source)
     for name, replacement in sorted(TYPES.items(), key=lambda kv: -len(kv[0])):
@@ -85,4 +91,60 @@ def translate(source: str) -> str:
     source = re.sub(r'^#include "irrTypes.h"\n', "", source, flags=re.MULTILINE)  # its typedefs are translated away
 
     source = re.sub(r"\s*#ifdef _DEBUG\s*\n\s*setDebugName\([^)]*\);\s*\n\s*#endif", "", source)
-    return source
+    # daisy's logger takes the level explicitly where Irrlicht's defaulted it
+    source = re.sub(r"\bos::Printer::log\(([^,()]+)\);", r"os::Printer::log(\1, ELL_INFORMATION);", source)
+    for pattern, replacement in CONTAINER_CALLS:
+        source = re.sub(pattern, replacement, source)
+    return _unqualify_in_class(source)
+
+
+# Irrlicht's core::array and core::list calls as calls on the std::vector and
+# std::list that ox::TArray and ox::TList derive from.
+OBJECT = r"((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+(?:\[[^\]\n]*\])?)"
+CONTAINER_CALLS = [
+    (OBJECT + r"\.const_pointer\(\)", r"&\1[0]"),
+    (OBJECT + r"\.pointer\(\)", r"&\1[0]"),
+    (OBJECT + r"->const_pointer\(\)", r"&(*\1)[0]"),
+    (OBJECT + r"->pointer\(\)", r"&(*\1)[0]"),
+    (r"(\.|->)set_used\(", r"\1resize("),
+    (r"(\.|->)reallocate\(", r"\1reserve("),
+    (r"(\.|->)getLast\(\)", r"\1back()"),
+    (r"::Iterator\b", "::iterator"),
+]
+
+
+def _unqualify_in_class(source: str) -> str:
+    """Drop the class's own name from a member declared inside it
+    (`quaternion quaternion::operator*(...) const;`), which MSVC accepted and GCC
+    does not."""
+    classes = set(re.findall(r"^\s*(?:class|struct)\s+(\w+)\s*(?::[^;{]*)?$", source, re.MULTILINE))
+    lines = []
+    for line in source.split("\n"):
+        if line.rstrip().endswith(";") and "=" not in line.replace("operator=", "") and line[:1] in " \t":
+            for name in classes:
+                line = re.sub(r"\b" + name + r"::(?=operator\b|~?\w+\s*\()", "", line)
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def bare(source: str, namespace: str = "") -> str:
+    """Rename the core types a text names without qualification, as code written
+    inside Irrlicht's core namespace does: vector3df, matrix4, plane3d<T>.
+    `namespace` (ox::core::) is the destination's own and is left off its names."""
+    lines = []
+    for line in source.split("\n"):
+        if not line.lstrip().startswith("#"):
+            for name, replacement in sorted(TYPES.items(), key=lambda kv: -len(kv[0])):
+                if name.startswith("core::"):
+                    line = re.sub(r"(?<![\w:])" + re.escape(name.removeprefix("core::")) + r"\b", replacement, line)
+                    if replacement.endswith(">"):
+                        line = line.replace(replacement + ">", replacement + " >")
+                    # the constructor and destructor of a renamed class: CQuaternion::quaternion(
+                    own = replacement.split("::")[-1]
+                    line = re.sub(r"\b" + own + r"::(~?)" + re.escape(name.removeprefix("core::")) + r"\b", own + r"::\1" + own, line)
+            if namespace:
+                line = line.replace(namespace, "")
+        if re.fullmatch(r"\s*typedef (.+) \1;\s*", line):
+            continue  # Irrlicht's alias for a type already written out: typedef plane3d<f32> plane3df
+        lines.append(line)
+    return "\n".join(lines)

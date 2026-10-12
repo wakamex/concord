@@ -25,8 +25,7 @@ from pathlib import Path
 from tree_sitter import Node, Parser
 
 from concord.harvest import Harvest
-from concord.irrlicht import TYPES as IRRLICHT_TYPES
-from concord.irrlicht import translate
+from concord.irrlicht import bare, translate
 from concord.transforms import CPP
 
 # Harvest's ox type -> (its header under src/, Irrlicht's header under include/, Irrlicht's class)
@@ -46,9 +45,15 @@ TYPES = {
 MISSING = re.compile(r"'(?:class|struct|const class|const struct) ox::(?:core|video)::(\w+)(?:<[^']*>)?' has no member named '(\w+)'")
 
 
+NO_CONSTRUCTOR = re.compile(r"no matching function for call to 'ox::(?:core|video)::(\w+)(?:<[^']*?>)?::\1\(")
+
+
 def missing_members(compiler_output: str) -> set[tuple[str, str]]:
-    """(ox type, member) pairs the compiler reports missing, for types this module completes."""
-    return {(t, m) for t, m in MISSING.findall(compiler_output) if t in TYPES}
+    """(ox type, member) pairs the compiler reports missing, for types this module
+    completes. A constructor call that matches no overload names the type's
+    Irrlicht class as the member."""
+    missing = {(t, m) for t, m in MISSING.findall(compiler_output) if t in TYPES}
+    return missing | {(t, TYPES[t][2]) for t in NO_CONSTRUCTOR.findall(compiler_output) if t in TYPES}
 
 
 def complete(root: Path, missing: set[tuple[str, str]]) -> list[str]:
@@ -68,6 +73,11 @@ def complete(root: Path, missing: set[tuple[str, str]]) -> list[str]:
             if not declarations or not outside:
                 continue
         text = path.read_text()
+        # an overload the header already has, such as one of several constructors, is not added again
+        squeezed = "".join(text.split())
+        definitions = [d for d in definitions if _signature(_rename(d, "::".join(header.split("/")[:-1]) + "::")) not in squeezed]
+        if not definitions and not declarations:
+            continue
         namespace = "::".join(header.split("/")[:-1]) + "::"  # the header's own: ox::core::
         added = "".join(_indent(_rename(d, namespace)) + "\n\n" for d in definitions)
         added += "".join("    " + " ".join(_rename(d, namespace).split()) + "\n" for d in declarations)
@@ -237,13 +247,15 @@ def _rename(definition: str, namespace: str = "") -> str:
     """Translate a member body written inside Irrlicht's core namespace, where the
     core templates are named bare (vector3d<T>) rather than core::vector3d<T>.
     `namespace` (ox::core::) is the destination's own and is left off its names."""
-    text = translate(definition)
-    for name, replacement in sorted(IRRLICHT_TYPES.items(), key=lambda kv: -len(kv[0])):
-        if name.startswith("core::"):  # the alias as written inside the namespace: vector3df
-            text = re.sub(r"(?<![\w:])" + re.escape(name.removeprefix("core::")) + r"\b(?!\s*<)", replacement, text)
+    text = bare(translate(definition))
     for ox_type, (_, _, irrlicht_class) in TYPES.items():
         text = re.sub(r"(?<![\w:])" + irrlicht_class + r"\b", ox_type, text)
     return text.replace(namespace, "") if namespace else text
+
+
+def _signature(definition: str) -> str:
+    """The definition up to its body or initializer list, without whitespace."""
+    return "".join(re.split(r"\)\s*(?:const\s*)?[:{]", definition, maxsplit=1)[0].split())
 
 
 def _outdent(definition: str) -> str:

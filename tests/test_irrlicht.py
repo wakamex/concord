@@ -2,7 +2,7 @@
 
 import unittest
 
-from concord.irrlicht import translate
+from concord.irrlicht import bare, translate
 
 
 class Translate(unittest.TestCase):
@@ -26,6 +26,28 @@ class Translate(unittest.TestCase):
         out = translate("core::array<core::vector3df> a; value = (value >> 16);")
         self.assertIn("ox::TArray<ox::core::CVector3d<float> > a;", out)
         self.assertIn("(value >> 16)", out)
+
+    def test_container_calls_become_vector_and_list_calls(self):
+        out = translate("Vertices.set_used(4); return Indices.const_pointer(); b->Vertices.reallocate(n); core::list<T>::Iterator it;")
+        self.assertIn("Vertices.resize(4);", out)
+        self.assertIn("return &Indices[0];", out)
+        self.assertIn("b->Vertices.reserve(n);", out)
+        self.assertIn("ox::TList<T>::iterator it;", out)
+
+    def test_a_member_qualified_inside_its_class_loses_the_qualifier(self):
+        source = "class quaternion\n{\n\tquaternion quaternion::operator*(const quaternion& other) const;\n};\ninline quaternion quaternion::operator*(const quaternion& other) const\n{\n}\n"
+        out = translate(source)
+        self.assertIn("\tquaternion operator*(const quaternion& other) const;", out)
+        self.assertIn("inline quaternion quaternion::operator*(", out)
+
+    def test_bare_core_names_and_constructors_are_renamed_inside_the_namespace(self):
+        source = "class quaternion\n{\n\tquaternion(const matrix4& mat);\n\tvector3df v;\n};\ninline quaternion::quaternion(const matrix4& mat)\n{\n}\ntypedef plane3d<f32> plane3df;\n"
+        out = bare(translate(source), "ox::core::")
+        self.assertIn("class CQuaternion", out)
+        self.assertIn("\tCQuaternion(const CMatrix4& mat);", out)
+        self.assertIn("\tCVector3d<float> v;", out)
+        self.assertIn("inline CQuaternion::CQuaternion(const CMatrix4& mat)", out)
+        self.assertNotIn("typedef", out)
 
 
 if __name__ == "__main__":
