@@ -58,6 +58,14 @@ def build_parser() -> argparse.ArgumentParser:
         "(can change code in other units; check the whole build with concord scores)",
     )
 
+    p_seed.add_argument(
+        "--allow-worse",
+        action="append",
+        default=[],
+        metavar="SYMBOL",
+        help="with --complete, accept a completion that makes this function of another unit worse (repeatable)",
+    )
+
     p_types = sub.add_parser("types", help="load recovered class and struct layout")
     p_types.add_argument("--debug-map", help="cross-platform debug map")
     p_types.add_argument("--rtti", action="store_true", help="scan RTTI and vtables from the target")
@@ -390,17 +398,17 @@ def _seed(args: argparse.Namespace) -> int:
     exact = 0
     for unit in args.units:
         try:
-            result = seed(args.harvest.resolve(), unit, args.complete)
-        except (OSError, ValueError, subprocess.CalledProcessError) as error:
-            print(f"error      {unit}: {error}")
+            result = seed(args.harvest.resolve(), unit, args.complete, frozenset(args.allow_worse))
+        except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
+            print(f"error      {unit}: {str(error).strip().splitlines()[-1]}", flush=True)
             continue
         placed = " ".join(f"{k}={v:#x}" for k, v in result.placements.items())
         if result.error:
-            print(f"error      {unit}: {result.error.splitlines()[0] if result.error else ''}")
+            print(f"error      {unit}: {result.error.splitlines()[0] if result.error else ''}", flush=True)
             for line in result.error.splitlines()[1:6]:
                 print(f"           {line}")
         else:
-            print(f"{'exact' if result.exact == result.functions else 'partial':10} {unit}  functions {result.exact}/{result.functions}  {placed}")
+            print(f"{'exact' if result.exact == result.functions else 'partial':10} {unit}  functions {result.exact}/{result.functions}  {placed}", flush=True)
             for conflict in result.port_conflicts:
                 print(f"           the port also defines {conflict}; remove the port's copy")
             exact += result.exact == result.functions

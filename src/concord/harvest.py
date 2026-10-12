@@ -175,10 +175,15 @@ class Harvest:
 
     def dependents(self, path: str) -> list[str]:
         """Units whose last `hv match` compile read the file (path under the checkout)."""
+        registered = (self.root / "config" / self.build / "units.toml").read_text()
         found = []
         for depfile in sorted(self.reports.glob("*.d")):
+            if not depfile.with_suffix(".json").exists():
+                continue  # left by a unit that did not compile
             if path in {os.path.normpath(word) for word in depfile.read_text().split()}:
-                found.append(self.source(depfile.stem))
+                unit = self.source(depfile.stem)
+                if f'["{unit}"]' in registered:  # a report can outlive its unit
+                    found.append(unit)
         return found
 
     def verdict(self, unit: str, symbol: str) -> FunctionVerdict:

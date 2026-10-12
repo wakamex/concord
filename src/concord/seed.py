@@ -21,7 +21,7 @@ from pathlib import Path
 
 from elftools.elf.elffile import ELFFile
 
-from concord.complete import TYPES, complete, missing_members
+from concord.complete import TYPES, complete, missing_members, settle
 from concord.harvest import BUILD, Harvest
 from concord.irrlicht import translate
 
@@ -39,7 +39,7 @@ class SeedResult:
     error: str = ""
 
 
-def seed(root: Path, unit: str, complete_types: bool = False) -> SeedResult:
+def seed(root: Path, unit: str, complete_types: bool = False, allowed: frozenset[str] = frozenset()) -> SeedResult:
     """Seed `unit` (a path under src/, such as daisy/video/Software/CTRFlat.cpp)."""
     result = SeedResult(unit)
     irrlicht = root / IRRLICHT / "source" / "Irrlicht" / Path(unit).name
@@ -61,7 +61,9 @@ def seed(root: Path, unit: str, complete_types: bool = False) -> SeedResult:
     # Completing ox headers is opt-in: each member added to SColor.h, CRect.h or
     # CVector3d.h shifts the declaration numbering of every unit including it, and
     # functions sensitive to it (concord phase) stop matching, as
-    # CSpritePackage::removeAnimationState did.
+    # CSpritePackage::removeAnimationState did. A completion stays only if settle
+    # finds those units no worse.
+    originals: dict[str, str] = {}
     for _ in range(4 if complete_types else 0):  # each round can expose members the previous errors hid
         missing = missing_members(output) - tried
         if not missing:
@@ -74,8 +76,21 @@ def seed(root: Path, unit: str, complete_types: bool = False) -> SeedResult:
         broken = [h for h in changed if not _compiles(root, unit, h)]
         for header in broken:
             (root / "src" / header).write_text(before[header])
+        for header in changed:
+            if header not in broken:
+                originals.setdefault(header, before[header])
         output = _match(root, unit, learn=False)
-        result.written += [h for h in changed if h not in broken]
+    unsettled = []
+    for header, text in sorted(originals.items()):  # one at a time: each has its own includers
+        if settle(Harvest(root), {header: text}, allowed):
+            result.written.append(header)
+        else:
+            (root / "src" / header).write_text(text)
+            unsettled.append(header)
+    if unsettled:
+        result.error = "completing " + ", ".join(unsettled) + " makes functions in other units worse"
+        _unregister(root, unit)
+        return result
     if "error:" in output or "returned non-zero" in output:
         result.error = "\n".join(line for line in output.splitlines() if "error" in line)[:3000]
         _unregister(root, unit)
