@@ -82,38 +82,43 @@ class Unguard(unittest.TestCase):
         self.assertTrue(text.rstrip().endswith("#endif"))
         self.assertIn("#ifndef OX_SCENE_INODE_H", text)
 
-    def test_port_definitions_become_inline_and_call_members(self):
+    def test_port_definitions_give_bodies_that_call_members(self):
         found = definitions(PORT, "INode")
         self.assertEqual(list(found), ["INode", "getTransformedBoundingBox"])
-        constructor, box = found.values()
-        self.assertTrue(constructor.startswith("inline INode::INode(INode* parent, IManager* manager) : Parent(parent)"))
-        self.assertIn("AbsoluteTransformation.transformBox(box);", box)
-        self.assertIn("box.repair();", box)
+        self.assertEqual(found["INode"], " : Parent(parent), Manager(manager), Visible(true)\n{\n}")
+        self.assertIn("AbsoluteTransformation.transformBox(box);", found["getTransformedBoundingBox"])
+        self.assertIn("box.repair();", found["getTransformedBoundingBox"])
 
-    def test_the_inline_block_follows_the_class_and_is_left_out_of_the_port(self):
-        text = unguard(HEADER, list(definitions(PORT, "INode").values()), ("ox/scene/IAnimator.h",))
-        block = text[text.index("#ifndef HARVEST_PORT") :]
-        self.assertLess(text.index("};"), text.index("#ifndef HARVEST_PORT"))
-        self.assertIn('#include "ox/scene/IAnimator.h"\n\nnamespace ox {\nnamespace scene {\n\ninline INode::INode(', block)
-        self.assertNotIn("helper", block)
-        self.assertTrue(block.rstrip().endswith("} // end namespace scene\n} // end namespace ox\n#endif\n\n#endif"))
+    def test_bodies_go_inside_the_class_so_it_has_no_key_function(self):
+        bodies = {"INode": "\n    : Parent(parent)\n{\n    attach();\n}", "render": " { draw(); }", "missing": "{}"}
+        text = unguard(HEADER.replace("virtual void render() = 0;", "virtual void render();"), bodies, ("ox/scene/IAnimator.h",))
+        self.assertIn("    INode(INode* parent, IManager* manager)\n        : Parent(parent)\n    {\n        attach();\n    }\n", text)
+        self.assertIn("    virtual void render() { draw(); }\n", text)
+        self.assertNotIn("INode::", text)
+        self.assertNotIn("HARVEST_PORT", text)
 
-    def test_a_header_without_port_definitions_is_only_exposed(self):
-        self.assertEqual(unguard(HEADER, []), expose(HEADER))
+    def test_needed_headers_are_included_once(self):
+        header = HEADER.replace("\nnamespace ox {", '\n#include "../IUnknown.h"\n\nnamespace ox {', 1)
+        text = unguard(header, {}, ("ox/scene/IAnimator.h", "ox/IUnknown.h"))
+        self.assertIn('#include "../IUnknown.h"\n#include "ox/scene/IAnimator.h"\n', text)
+        self.assertEqual(text.count("IUnknown.h"), 1)
 
-    def test_irrlicht_members_are_written_as_definitions_after_the_class(self):
+    def test_a_header_without_bodies_is_only_exposed(self):
+        self.assertEqual(unguard(HEADER), expose(HEADER))
+
+    def test_irrlicht_members_give_translated_bodies(self):
         original = (
             "namespace irr { namespace scene {\nclass ISceneNode : public IUnknown\n{\npublic:\n"
             "\tISceneNode(ISceneNode* parent, const core::vector3df& position = core::vector3df(0,0,0)) : Parent(parent) {}\n"
             "\tvirtual void setVisible(bool isVisible = true)\n\t{\n\t\tIsVisible = isVisible;\n\t}\n"
-            "\tvirtual const core::vector3df getPosition() const\n\t{\n\t\treturn RelativeTranslation;\n\t}\n"
+            "\tvirtual const core::vector3df getPosition() const\n\t{\n\t\tcore::vector3df p = RelativeTranslation;\n\t\treturn p;\n\t}\n"
             "};\n} }\n"
         )
-        found = irrlicht_definitions(original, "ISceneNode", "ISceneNode")
+        found = irrlicht_definitions(original, "ISceneNode")
         self.assertEqual(list(found), ["ISceneNode", "setVisible", "getPosition"])
-        self.assertEqual(found["ISceneNode"], "inline ISceneNode::ISceneNode(ISceneNode* parent, const ox::core::CVector3d<float>& position) : Parent(parent) {}")
-        self.assertEqual(found["setVisible"], "inline void ISceneNode::setVisible(bool isVisible)\n{\n    IsVisible = isVisible;\n}")
-        self.assertTrue(found["getPosition"].startswith("inline const ox::core::CVector3d<float> ISceneNode::getPosition() const\n{"))
+        self.assertEqual(found["ISceneNode"], " : Parent(parent) {}")
+        self.assertEqual(found["setVisible"], "\n\t{\n\t\tIsVisible = isVisible;\n\t}")
+        self.assertIn("ox::core::CVector3d<float> p = RelativeTranslation;", found["getPosition"])
 
 
 if __name__ == "__main__":

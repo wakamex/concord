@@ -187,6 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_unguard.add_argument("--class", dest="cls", help="class whose port definitions become inline (default: the header's name)")
     p_unguard.add_argument("--port", help="port source under the checkout that defines the class's members")
     p_unguard.add_argument("--include", action="append", default=[], help="header the inline bodies need (repeatable)")
+    p_unguard.add_argument("--base", metavar="REV", help="start from the header at this git revision instead of the working file")
     p_unguard.add_argument("--irrlicht", help="Irrlicht header under third_party/irrlicht-0.7 that defines the class inline")
     p_unguard.add_argument(
         "--unit", help="unit that emits the class's members; with --irrlicht, each member takes Irrlicht's body when it scores no lower there"
@@ -457,24 +458,29 @@ def _unguard(args: argparse.Namespace) -> int:
     path = root / "src" / args.header
     cls = args.cls or Path(args.header).stem
     header = path.read_text()
+    if args.base:  # the header as committed, to choose bodies again once a unit emits the members
+        shown = subprocess.run(["git", "-C", str(root), "show", f"{args.base}:src/{args.header}"], capture_output=True, text=True, check=True)
+        header = shown.stdout
+    includes = tuple(args.include)
     bodies = definitions((root / args.port).read_text(), cls) if args.port else {}
     taken = []
     if args.irrlicht and args.unit:
         original = (root / "third_party" / "irrlicht-0.7" / args.irrlicht).read_text(encoding="latin-1")
-        candidates = {name: body for name, body in irrlicht_definitions(original, cls, cls).items() if name in bodies}
-        harvest = Harvest(root)
-        build = lambda chosen: unguard(header, list(chosen.values()), tuple(args.include)).encode()
-        items = {"port": (args.unit, {f"src/{args.header}": build(bodies)})}
+        candidates = {name: body for name, body in irrlicht_definitions(original, cls).items() if name in bodies}
+        items = {"port": (args.unit, {f"src/{args.header}": unguard(header, bodies, includes).encode()})}
         for index, (name, body) in enumerate(candidates.items()):
-            items[f"m{index}"] = (args.unit, {f"src/{args.header}": build({**bodies, name: body})})
-        evaluations = harvest.evaluate_overlays(items)
-        for index, (name, body) in enumerate(candidates.items()):
+            items[f"m{index}"] = (args.unit, {f"src/{args.header}": unguard(header, {**bodies, name: body}, includes).encode()})
+        evaluations = Harvest(root).evaluate_overlays(items)
+        if evaluations["port"].error:
+            print(evaluations["port"].error[-1500:])
+            return 1
+        for index, name in enumerate(candidates):
             symbols = [s for s in evaluations["port"].fuzzy if _member(s) == f"{cls}::{name}"]
             swapped = evaluations[f"m{index}"]
             if symbols and not swapped.error and all(swapped.fuzzy.get(s, 0) >= evaluations["port"].fuzzy[s] for s in symbols):
-                bodies[name] = body
+                bodies[name] = candidates[name]
                 taken.append(name)
-    path.write_text(unguard(header, list(bodies.values()), tuple(args.include)))
+    path.write_text(unguard(header, bodies, includes))
     print(f"exposed {args.header}" + (f" with the members {args.port} defines" if args.port else ""))
     if taken:
         print(f"  Irrlicht's body for {', '.join(taken)}")
