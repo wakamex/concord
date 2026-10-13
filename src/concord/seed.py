@@ -381,6 +381,21 @@ def port_conflicts(root: Path, unit: str) -> list[str]:
     return conflicts
 
 
+def replace_in_port(root: Path, unit: str) -> bool:
+    """List the unit among those the port replaces with its own implementation
+    (`replaced` in port/build.zig), which is how Harvest keeps a recovered unit out
+    of the port when port/src already implements it. False when it is listed."""
+    path = root / "port" / "build.zig"
+    text = path.read_text()
+    found = re.search(r"^const replaced = \[_\]\[\]const u8\{\n(.*?)^\};", text, re.MULTILINE | re.DOTALL)
+    if found is None or f'"{unit}"' in found[1]:
+        return False
+    sources = sorted({conflict.split(" in ")[1] for conflict in port_conflicts(root, unit)})
+    entry = f"    // Recovered from Irrlicht 0.7; the port keeps its own {', '.join(sources)}.\n    \"{unit}\",\n"
+    path.write_text(text[: found.end(1)] + entry + text[found.end(1) :])
+    return True
+
+
 def _has_static_initializer(root: Path, unit: str) -> bool:
     with open(root / "reference" / "1.18-mac-i386" / "functions.csv") as stream:
         return any(row["unit"] == unit and row["symbol"].startswith("_GLOBAL__I") for row in csv.DictReader(stream))

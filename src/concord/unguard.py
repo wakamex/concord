@@ -104,7 +104,10 @@ def irrlicht_definitions(original: str, cls: str) -> dict[str, str]:
 def _function_declarator(node: Node) -> Node | None:
     declarator = node.child_by_field_name("declarator")
     while declarator is not None and declarator.type != "function_declarator":
-        declarator = declarator.child_by_field_name("declarator")
+        # a reference declarator (SMaterial& getMaterial(int)) holds the next one as a plain child
+        declarator = declarator.child_by_field_name("declarator") or next(
+            (child for child in declarator.named_children if child.type.endswith("declarator")), None
+        )
     return declarator
 
 

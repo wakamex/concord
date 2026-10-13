@@ -29,7 +29,7 @@ from concord.phase import PHASES, scan, spans
 from concord.repair import repair
 from concord.search import _diff as _search_diff
 from concord.search import _key, search
-from concord.seed import _bring_includes, header, seed
+from concord.seed import _bring_includes, header, replace_in_port, seed
 from concord.unguard import definitions, irrlicht_definitions, unguard
 
 
@@ -452,8 +452,8 @@ def _seed(args: argparse.Namespace) -> int:
                 print(f"           {line}")
         else:
             print(f"{'exact' if result.exact == result.functions else 'partial':10} {unit}  functions {result.exact}/{result.functions}  {placed}", flush=True)
-            for conflict in result.port_conflicts:
-                print(f"           the port also defines {conflict}; remove the port's copy")
+            if result.port_conflicts and replace_in_port(args.harvest.resolve(), unit):
+                print(f"           the port defines {len(result.port_conflicts)} of its functions; listed as replaced in port/build.zig")
             exact += result.exact == result.functions
     if len(args.units) > 1:
         print(f"{exact} of {len(args.units)} units exact")

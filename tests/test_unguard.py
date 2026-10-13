@@ -59,6 +59,12 @@ core::CAabbox3d<float> INode::getTransformedBoundingBox()
     return box;
 }
 
+video::SMaterial& INode::getMaterial(int i)
+{
+    static video::SMaterial none;
+    return none;
+}
+
 void helper()
 {
 }
@@ -84,7 +90,7 @@ class Unguard(unittest.TestCase):
 
     def test_port_definitions_give_bodies_that_call_members(self):
         found = definitions(PORT, "INode")
-        self.assertEqual(list(found), ["INode", "getTransformedBoundingBox"])
+        self.assertEqual(list(found), ["INode", "getTransformedBoundingBox", "getMaterial"])
         self.assertEqual(found["INode"], " : Parent(parent), Manager(manager), Visible(true)\n{\n}")
         self.assertIn("AbsoluteTransformation.transformBox(box);", found["getTransformedBoundingBox"])
         self.assertIn("box.repair();", found["getTransformedBoundingBox"])
