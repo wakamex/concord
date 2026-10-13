@@ -30,12 +30,10 @@ from dataclasses import dataclass, field
 
 from tree_sitter import Node
 
-from concord.diff import read_function
 from concord.harvest import Harvest
-from concord.lines import inline_chains
 from concord.model import Cause
 from concord.permute import drop_twins, permute
-from concord.search import _diff, search
+from concord.search import _diff, attributed_lines, search
 from concord.transforms import (
     Rewrite,
     _descendants,
@@ -204,6 +202,44 @@ def cases(harvest: Harvest, sample: list[tuple[str, str]], seed: int = 0, per_ki
     return kept
 
 
+TWO_EDITS = "two edits"
+
+
+def pairs(harvest: Harvest, sample: list[tuple[str, str]], seed: int = 0, count: int | None = None) -> list[Case]:
+    """Cases two changes away from a match: for each function, two mutations of
+    kinds concord can undo, the second applied to the result of the first, kept
+    when together they stop only that function matching. At most `count` cases."""
+    rng = random.Random(seed)
+    known = [mutation for mutation, undoable in MUTATIONS.values() if undoable]
+    found = []
+    by_unit: dict[str, list[str]] = {}
+    for unit, symbol in sample:
+        by_unit.setdefault(unit, []).append(symbol)
+    for unit, symbols in sorted(by_unit.items()):
+        source = (harvest.root / "src" / unit).read_bytes()
+        candidates = {}
+        for symbol in symbols:
+            text, steps = source, []
+            for mutation in rng.sample(known, 2):
+                rewrites = list(mutation(text, find_function(text, symbol)))
+                if not rewrites:
+                    break
+                rewrite = rng.choice(rewrites)
+                text, steps = rewrite.source, [*steps, rewrite.description]
+            if len(steps) == 2:
+                candidates[f"c{len(candidates)}"] = (symbol, "; ".join(steps), text)
+        if not candidates:
+            continue
+        evaluations = harvest.evaluate(unit, {"base": source, **{n: text for n, (_, _, text) in candidates.items()}})
+        exact = evaluations["base"].exact_functions()
+        for name, (symbol, description, text) in candidates.items():
+            evaluation = evaluations[name]
+            if evaluation.error or symbol not in exact or exact - evaluation.exact_functions() != {symbol}:
+                continue
+            found.append(Case(unit, symbol, TWO_EDITS, description, text, evaluation.fuzzy.get(symbol, 0.0)))
+    return found if count is None else rng.sample(found, min(count, len(found)))
+
+
 @dataclass
 class Outcome:
     case: Case
@@ -213,21 +249,25 @@ class Outcome:
     permute_tried: int
 
 
-def solve(harvest: Harvest, case: Case, budget: int = 128, seed: int = 0) -> Outcome:
-    directed = search(harvest, case.unit, case.symbol, source=case.source)
-    randomized = permute(harvest, case.unit, case.symbol, budget=budget, seed=seed, source=case.source)
-    return Outcome(case, directed.best.exact, directed.tried, randomized.best.exact, randomized.tried)
+def solve(harvest: Harvest, case: Case, budget: int = 128, seed: int = 0, directed: bool = True) -> Outcome:
+    """Run both searches on the case; `directed` is permute's own setting."""
+    by_cause = search(harvest, case.unit, case.symbol, source=case.source)
+    found = permute(harvest, case.unit, case.symbol, budget=budget, seed=seed, source=case.source, directed=directed)
+    return Outcome(case, by_cause.best.exact, by_cause.tried, found.best.exact, found.tried)
 
 
-def table(outcomes: list[Outcome]) -> list[tuple[str, bool, int, int, int, float]]:
+def table(outcomes: list[Outcome]) -> list[tuple[str, bool, int, int, int, float, float]]:
     """(mutation, concord has the inverse, cases, recovered by match, recovered by
-    permute, mean score after the mutation), in MUTATIONS' order."""
+    permute, mean score after the mutation, mean candidates permute compiled per
+    case it recovered), in MUTATIONS' order with two-edit cases last."""
     rows = []
-    for name, (_, known) in MUTATIONS.items():
+    for name, known in [*((name, known) for name, (_, known) in MUTATIONS.items()), (TWO_EDITS, True)]:
         group = [o for o in outcomes if o.case.mutation == name]
         if group:
             mean = sum(o.case.score for o in group) / len(group)
-            rows.append((name, known, len(group), sum(o.match for o in group), sum(o.permute for o in group), mean))
+            tried = [o.permute_tried for o in group if o.permute]
+            cost = sum(tried) / len(tried) if tried else 0.0
+            rows.append((name, known, len(group), sum(o.match for o in group), sum(o.permute for o in group), mean, cost))
     return rows
 
 
@@ -279,14 +319,8 @@ def locate(harvest: Harvest, case: Case) -> Located:
     evaluation = harvest.evaluate(case.unit, {"case": case.source})["case"]
     diff = _diff(harvest, evaluation, case.symbol)
     result.causes = [finding.cause.value for finding in diff.findings]
-    located = [finding for finding in diff.findings if finding.candidate is not None]
-    obj = harvest.debug_objects([case.unit], {case.unit: case.source}).get(case.unit)
-    if obj is None or not located:
-        return result
-    function = read_function(obj, case.symbol)
-    for chain in inline_chains(obj, function.section, [function.start + finding.candidate for finding in located]):
-        # every frame in the unit's own source: the innermost may be an inlined helper defined above
-        result.attributed |= {frame.line for frame in chain if frame.path == f"src/{case.unit}" and first <= frame.line <= last}
+    lines = attributed_lines(harvest, case.unit, case.symbol, case.source, diff)
+    result.attributed = {line for line in lines if first <= line <= last}
     return result
 
 

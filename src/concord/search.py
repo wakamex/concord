@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from concord.diff import read_function
 from concord.harvest import Evaluation, Harvest
+from concord.lines import inline_chains
 from concord.model import DiffResult
 from concord.transforms import TRANSFORMS, Rewrite, find_function
 
@@ -110,3 +112,20 @@ def _diff(harvest: Harvest, evaluation: Evaluation, symbol: str) -> DiffResult:
     diff = harvest.diff(verdict, evaluation.object)
     diff.fuzzy = evaluation.fuzzy.get(symbol)
     return diff
+
+
+def attributed_lines(harvest: Harvest, unit: str, symbol: str, source: bytes, diff: DiffResult) -> set[int]:
+    """Lines of the unit's source that the differing code of `symbol` comes from:
+    the unit is compiled from `source` with debug information and each finding of
+    the diff is traced through its inline chain. Empty when no finding has a place
+    in the candidate or the debug compile fails."""
+    unit = harvest.source(unit)
+    located = [finding for finding in diff.findings if finding.candidate is not None]
+    obj = harvest.debug_objects([unit], {unit: source}).get(unit) if located else None
+    if obj is None:
+        return set()
+    function = read_function(obj, symbol)
+    lines = set()
+    for chain in inline_chains(obj, function.section, [function.start + finding.candidate for finding in located]):
+        lines |= {frame.line for frame in chain if frame.path == f"src/{unit}"}
+    return lines

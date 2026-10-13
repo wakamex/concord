@@ -185,6 +185,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench.add_argument("--per-kind", type=int, help="most cases to keep of each kind of change")
     p_bench.add_argument("--budget", type=int, default=128, help="candidate sources permute may compile per case")
     p_bench.add_argument("--seed", type=int, default=0)
+    p_bench.add_argument("--two-edits", type=int, default=0, metavar="N", help="also take up to N cases two changes away from a match")
+    p_bench.add_argument("--undirected", action="store_true", help="run permute without its single-edit stage and location ordering")
     p_bench.add_argument(
         "--locate",
         action="store_true",
@@ -505,12 +507,14 @@ def _bench(args: argparse.Namespace) -> int:
     pool = bench.functions(harvest)
     sample = random.Random(args.seed).sample(pool, min(args.functions, len(pool)))
     found = bench.cases(harvest, sample, args.seed, args.per_kind)
+    if args.two_edits:
+        found += bench.pairs(harvest, sample, args.seed, args.two_edits)
     print(f"{len(found)} cases from {len(sample)} of {len(pool)} exact functions", flush=True)
     if args.locate:
         return _bench_locate(harvest, found, args)
     outcomes = []
     for case in found:
-        outcome = bench.solve(harvest, case, args.budget, args.seed)
+        outcome = bench.solve(harvest, case, args.budget, args.seed, not args.undirected)
         outcomes.append(outcome)
         if args.save:
             row = {
@@ -518,7 +522,7 @@ def _bench(args: argparse.Namespace) -> int:
                 "mutation": case.mutation, "description": case.description, "score": case.score,
                 "match": outcome.match, "match_tried": outcome.match_tried,
                 "permute": outcome.permute, "permute_tried": outcome.permute_tried,
-                "budget": args.budget, "seed": args.seed,
+                "budget": args.budget, "seed": args.seed, "directed": not args.undirected,
             }  # fmt: skip
             results.record(args.save, row)
         print(
@@ -526,9 +530,9 @@ def _bench(args: argparse.Namespace) -> int:
             f"{case.mutation:26} {case.score:6.2f}  {_member(case.symbol)}",
             flush=True,
         )
-    print(f"\n{'mutation':27} {'inverse':8} {'cases':>5} {'match':>6} {'permute':>8} {'score after':>12}")
-    for name, known, count, by_match, by_permute, mean in bench.table(outcomes):
-        print(f"{name:27} {'yes' if known else 'no':8} {count:5} {by_match:6} {by_permute:8} {mean:12.2f}")
+    print(f"\n{'mutation':27} {'inverse':8} {'cases':>5} {'match':>6} {'permute':>8} {'score after':>12} {'compiles':>9}")
+    for name, known, count, by_match, by_permute, mean, cost in bench.table(outcomes):
+        print(f"{name:27} {'yes' if known else 'no':8} {count:5} {by_match:6} {by_permute:8} {mean:12.2f} {cost:9.1f}")
     total = len(outcomes)
     either = sum(o.match or o.permute for o in outcomes)
     print(f"{'all':27} {'':8} {total:5} {sum(o.match for o in outcomes):6} {sum(o.permute for o in outcomes):8}   either: {either}")
