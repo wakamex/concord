@@ -182,6 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_bench.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_bench.add_argument("--functions", type=int, default=40, help="exact functions to sample")
+    p_bench.add_argument("--per-kind", type=int, help="most cases to keep of each kind of change")
     p_bench.add_argument("--budget", type=int, default=128, help="candidate sources permute may compile per case")
     p_bench.add_argument("--seed", type=int, default=0)
     p_bench.add_argument("--save", type=Path, help="write every case and its outcome to this JSON Lines file")
@@ -498,7 +499,7 @@ def _bench(args: argparse.Namespace) -> int:
     harvest = Harvest(args.harvest)
     pool = bench.functions(harvest)
     sample = random.Random(args.seed).sample(pool, min(args.functions, len(pool)))
-    found = bench.cases(harvest, sample, args.seed)
+    found = bench.cases(harvest, sample, args.seed, args.per_kind)
     print(f"{len(found)} cases from {len(sample)} of {len(pool)} exact functions", flush=True)
     outcomes = []
     for case in found:

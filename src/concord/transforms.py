@@ -391,6 +391,59 @@ def name_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
             )
 
 
+def inline_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per local that is initialized where it is declared and used
+    once, in the next statement: `T x = e; f(x);` becomes `f(e);`. This undoes
+    name_temporaries, and removes a temporary the source's author named where the
+    original had none. A local whose address is taken or that is written again is
+    left alone, as is a use under `&&`, `||` or `?:`, where `e` would no longer be
+    evaluated every time. The declared type's conversion goes with the
+    declaration, so a rewrite that depended on it changes the bytes or fails to
+    compile."""
+    # a temporary name_temporaries introduced: its expression goes back where the name stands
+    typeof = re.compile(rb"^[ \t]*__typeof__\((?P<expr>.*)\) (?P<name>concordTmp\d+) = (?P=expr);\n", re.MULTILINE)
+    for found in typeof.finditer(source, scope.start_byte, scope.end_byte):
+        uses = list(re.finditer(rb"\b" + found["name"] + rb"\b", source[found.end() : scope.end_byte]))
+        if len(uses) == 1:
+            at = found.end() + uses[0].start()
+            text = source[: found.start()] + source[found.end() : at] + found["expr"] + source[at + len(found["name"]) :]
+            line = source.count(b"\n", 0, found.start()) + 1
+            yield Rewrite("named-temporary", Cause.REGISTER_ALLOCATION, f"line {line}: {found['name'].decode()} inlined into its one use", text)
+    for block in _descendants(scope, "compound_statement"):
+        statements = [c for c in block.named_children if c.type != "comment"]
+        for index, (declaration, use) in enumerate(pairwise(statements)):
+            declarators = [c for c in declaration.named_children if c.type == "init_declarator"] if declaration.type == "declaration" else []
+            if len(declarators) != 1 or use.type not in SIMPLE | {"return_statement", "if_statement"}:
+                continue
+            name, value = declarators[0].child_by_field_name("declarator"), declarators[0].child_by_field_name("value")
+            if name is None or value is None or name.type != "identifier" or value.type in ("initializer_list", "argument_list"):
+                continue
+            head = use.child_by_field_name("condition") if use.type == "if_statement" else use  # not the branches of an if
+            uses = [i for i in _descendants(head, "identifier") if i.text == name.text]
+            later = [i for s in statements[index + 1 :] for i in _descendants(s, "identifier") if i.text == name.text]
+            if len(uses) != 1 or len(later) != 1 or _written(uses[0]):
+                continue
+            if any(
+                a.type in ("conditional_expression", "lambda_expression")
+                or (a.type == "binary_expression" and a.child_by_field_name("operator").type in ("&&", "||"))
+                for a in _ancestors(uses[0], use)
+            ):
+                continue
+            inlined = value.text if value.type in TIGHT or uses[0].parent.type in ("argument_list", "init_declarator", "return_statement") else b"(" + value.text + b")"
+            text = source[: uses[0].start_byte] + inlined + source[uses[0].end_byte :]
+            start = _line_start(source, declaration.start_byte)
+            end = source.find(b"\n", declaration.end_byte) + 1
+            if source[start : declaration.start_byte].strip() or source[declaration.end_byte : end].strip():
+                start, end = declaration.start_byte, declaration.end_byte  # shares its line with other code
+            line = source.count(b"\n", 0, declaration.start_byte) + 1
+            yield Rewrite(
+                "named-temporary",
+                Cause.REGISTER_ALLOCATION,
+                f"line {line}: {name.text.decode()} inlined into its one use",
+                text[:start] + text[end:],
+            )
+
+
 def _written(node: Node) -> bool:
     """Whether the expression is assigned, incremented or has its address taken,
     where a named copy would change what is written."""
@@ -452,4 +505,4 @@ def flip_nan_sense(source: bytes, scope: Node) -> Iterator[Rewrite]:
             yield _rewrite("nan-sense", Cause.BLOCK_ORDER, source, node, b"!(" + inverted + b")", f"{node.text.decode()} as !({inverted.decode()})")
 
 
-ALL = [swap_operands, swap_branches, swap_statements, move_declarations, name_temporaries, flip_nan_sense]
+ALL = [swap_operands, swap_branches, swap_statements, move_declarations, name_temporaries, inline_temporaries, flip_nan_sense]

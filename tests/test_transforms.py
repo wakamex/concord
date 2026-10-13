@@ -11,6 +11,7 @@ from concord.transforms import (
     comparisons,
     find_function,
     flip_nan_sense,
+    inline_temporaries,
     move_declarations,
     name_temporaries,
     swap_branches,
@@ -201,6 +202,31 @@ class NameTemporaries(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class FlipNanSense(unittest.TestCase):
+    def test_a_single_use_temporary_is_inlined_into_the_next_statement(self):
+        source = (
+            b"int f(int a, int b)\n{\n    int kept = a - b;\n    use(kept);\n    use(kept);\n"
+            b"    int sum = a + b;\n    int twice = sum * 2;\n"
+            b"    int out = twice;\n    out++;\n"
+            b"    int flag = a > b;\n    if (b && flag)\n        return 0;\n"
+            b"    int last = g(a);\n    return last;\n}\n"
+        )
+        scope = Parser(CPP).parse(source).root_node
+        rewrites = {r.description: r.source for r in inline_temporaries(source, scope)}
+        self.assertEqual(
+            sorted(rewrites),
+            ["line 13: last inlined into its one use", "line 6: sum inlined into its one use", "line 7: twice inlined into its one use"],
+        )
+        self.assertIn(b"    use(kept);\n    int twice = (a + b) * 2;\n", rewrites["line 6: sum inlined into its one use"])
+        self.assertIn(b"    int out = sum * 2;\n    out++;", rewrites["line 7: twice inlined into its one use"])
+        self.assertIn(b"        return 0;\n    return g(a);\n}", rewrites["line 13: last inlined into its one use"])
+
+    def test_inlining_undoes_naming(self):
+        source = b"void f(int a, int b)\n{\n    use(a + b);\n}\n"
+        scope = Parser(CPP).parse(source).root_node
+        named = next(r.source for r in name_temporaries(source, scope) if b"= a + b;" in r.source)
+        [inlined] = inline_temporaries(named, Parser(CPP).parse(named).root_node)
+        self.assertEqual(inlined.source, source)
+
     def test_relational_comparisons_change_their_nan_sense_and_equality_is_left_alone(self):
         source = b"int Board::f(float t)\n{\n    if (!(t > 4.0f)) return 1;\n    if (t <= 2.0f) return 2;\n    if (t == 3.0f) return 3;\n    return 0;\n}\n"
         rewrites = [r.source for r in flip_nan_sense(source, find_function(source, "_ZN5Board1fEf"))]

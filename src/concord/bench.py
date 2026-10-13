@@ -9,10 +9,13 @@ of change and by search.
 
 Mutations come in two groups. The first are rewrites concord can undo with a
 rewrite it has (swap a comparison's operands, swap an if's branches, swap
-adjacent statements, move a declaration), so they measure whether a search
-finds that rewrite among the others. The second are changes it has no rewrite
-to undo (name a temporary, swap the operands of a commutative operator, write a
-for loop as a while loop): they measure what the searches cannot reach.
+adjacent statements, move a declaration, name a temporary, inline one), so they
+measure whether a search finds that rewrite among the others. The second are
+changes it has no rewrite to undo (swap the operands of a commutative operator,
+write a for loop as a while loop, spell out a compound assignment, split a
+declaration from its initializer, nest the two halves of an `&&` condition):
+they measure what the searches cannot reach. Each kind is capped at the same
+number of cases, so a common kind does not decide the totals.
 Real near misses are harder than either, since nothing says one rewrite
 separates them from a match; the benchmark is a floor to compare versions of
 concord against, not a forecast of yield.
@@ -35,6 +38,7 @@ from concord.transforms import (
     _descendants,
     _rewrite,
     find_function,
+    inline_temporaries,
     move_declarations,
     name_temporaries,
     swap_branches,
@@ -62,13 +66,59 @@ def while_loop(source: bytes, scope: Node) -> Iterator[Rewrite]:
     for node in _descendants(scope, "for_statement"):
         fields = {name: node.child_by_field_name(name) for name in ("initializer", "condition", "update", "body")}
         body = fields["body"]
-        if None in fields.values() or body.type != "compound_statement" or _descendants(body, "continue_statement"):
+        if None in fields.values() or _descendants(body, "continue_statement"):
             continue
         initializer = fields["initializer"].text
         initializer += b"" if initializer.rstrip().endswith(b";") else b";"
-        inner = body.text[: body.text.rindex(b"}")].rstrip() + b"\n" + fields["update"].text + b";\n}"
+        braced = body.text if body.type == "compound_statement" else b"{\n" + body.text + b"\n}"
+        inner = braced[: braced.rindex(b"}")].rstrip() + b"\n" + fields["update"].text + b";\n}"
         replacement = b"{ " + initializer + b" while (" + fields["condition"].text + b") " + inner + b" }"
         yield _rewrite("bench-while-loop", Cause.BLOCK_ORDER, source, node, replacement, "for loop as a while loop")
+
+
+EXPANDS = {"+=": b"+", "-=": b"-", "*=": b"*", "|=": b"|", "&=": b"&"}
+
+
+def expand_assignment(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`a += b` as `a = a + (b)`, for a target with no side effects."""
+    for node in _descendants(scope, "assignment_expression"):
+        left, right = node.child_by_field_name("left"), node.child_by_field_name("right")
+        operator = node.child_by_field_name("operator").type
+        if operator in EXPANDS and left.type in PLAIN:
+            value = right.text if right.type in PLAIN else b"(" + right.text + b")"
+            expanded = left.text + b" = " + left.text + b" " + EXPANDS[operator] + b" " + value
+            yield _rewrite("bench-expand-assignment", Cause.INSTRUCTION_SELECTION, source, node, expanded, f"{node.text.decode()} spelled out")
+
+
+def split_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`int x = e;` as `int x; x = e;`, for a non-const local of a built-in type."""
+    for node in _descendants(scope, "declaration"):
+        kinds = [c.type for c in node.named_children]
+        if kinds != ["primitive_type", "init_declarator"] or node.parent.type != "compound_statement":
+            continue
+        declarator = node.named_children[1]
+        name, value = declarator.child_by_field_name("declarator"), declarator.child_by_field_name("value")
+        if name is None or value is None or name.type != "identifier" or value.type in ("initializer_list", "argument_list"):
+            continue
+        indent = source[source.rfind(b"\n", 0, node.start_byte) + 1 : node.start_byte]
+        if indent.strip():
+            continue
+        split = node.named_children[0].text + b" " + name.text + b";\n" + indent + name.text + b" = " + value.text + b";"
+        yield _rewrite("bench-split-declaration", Cause.REGISTER_ALLOCATION, source, node, split, f"{name.text.decode()} declared, then assigned")
+
+
+def nest_condition(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`if (a && b) X` without an else as `if (a) { if (b) X }`."""
+    for node in _descendants(scope, "if_statement"):
+        clause, body = node.child_by_field_name("condition"), node.child_by_field_name("consequence")
+        inner = clause.named_children[0] if clause is not None and len(clause.named_children) == 1 else None
+        if node.child_by_field_name("alternative") is not None or inner is None or inner.type != "binary_expression":
+            continue
+        if inner.child_by_field_name("operator").type != "&&":
+            continue
+        left, right = inner.child_by_field_name("left"), inner.child_by_field_name("right")
+        nested = b"if (" + left.text + b") { if (" + right.text + b") " + body.text + b" }"
+        yield _rewrite("bench-nest-condition", Cause.BLOCK_ORDER, source, node, nested, "the halves of && as nested ifs")
 
 
 # name -> (mutation, whether concord has a rewrite that undoes it)
@@ -77,9 +127,13 @@ MUTATIONS = {
     "swap if branches": (swap_branches, True),
     "swap adjacent statements": (swap_statements, True),
     "move a declaration": (move_declarations, True),
-    "name a temporary": (name_temporaries, False),  # no rewrite removes a named temporary
+    "name a temporary": (name_temporaries, True),
+    "inline a temporary": (inline_temporaries, True),
     "swap commutative operands": (commute, False),
     "for loop as while loop": (while_loop, False),
+    "spell out an assignment": (expand_assignment, False),
+    "split a declaration": (split_declaration, False),
+    "nest an && condition": (nest_condition, False),
 }
 
 
@@ -111,10 +165,10 @@ def functions(harvest: Harvest) -> list[tuple[str, str]]:
     return sorted(drop_twins(found))
 
 
-def cases(harvest: Harvest, sample: list[tuple[str, str]], seed: int = 0) -> list[Case]:
+def cases(harvest: Harvest, sample: list[tuple[str, str]], seed: int = 0, per_kind: int | None = None) -> list[Case]:
     """One case per function and mutation that applies and stops only that
-    function matching. The rewrite used is chosen at random among those the
-    mutation offers."""
+    function matching, at most `per_kind` of each mutation, chosen at random. The
+    rewrite used is chosen at random among those the mutation offers."""
     rng = random.Random(seed)
     found = []
     by_unit: dict[str, list[str]] = {}
@@ -138,7 +192,13 @@ def cases(harvest: Harvest, sample: list[tuple[str, str]], seed: int = 0) -> lis
             if evaluation.error or symbol not in exact or exact - evaluation.exact_functions() != {symbol}:
                 continue  # no effect on the bytes, or an effect beyond the function
             found.append(Case(unit, symbol, mutation, rewrite.description, rewrite.source, evaluation.fuzzy.get(symbol, 0.0)))
-    return found
+    if per_kind is None:
+        return found
+    kept = []
+    for name in MUTATIONS:
+        group = [case for case in found if case.mutation == name]
+        kept += rng.sample(group, min(per_kind, len(group)))
+    return kept
 
 
 @dataclass

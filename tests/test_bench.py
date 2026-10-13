@@ -4,7 +4,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from concord.bench import MUTATIONS, Case, Outcome, cases, commute, table, while_loop
+from concord.bench import (
+    MUTATIONS,
+    Case,
+    Outcome,
+    cases,
+    commute,
+    expand_assignment,
+    nest_condition,
+    split_declaration,
+    table,
+    while_loop,
+)
 from concord.harvest import Evaluation
 from concord.transforms import find_function
 
@@ -46,6 +57,19 @@ class Mutations(unittest.TestCase):
         self.assertEqual(list(while_loop(SOURCE, find_function(SOURCE, SKIP))), [])
 
 
+    def test_a_braceless_loop_body_gets_braces(self):
+        source = b"void f(int n)\n{\n    for (int i = 0; i < n; ++i)\n        use(i);\n}\n"
+        [rewrite] = while_loop(source, find_function(source, "_Z1fi"))
+        self.assertIn(b"{ int i = 0; while (i < n) {\nuse(i);\n++i;\n} }", rewrite.source)
+
+    def test_other_changes_concord_cannot_undo(self):
+        source = b"int f(int a, int b)\n{\n    int n = a * 2;\n    n += b - 1;\n    if (a && b)\n        n = 0;\n    return n;\n}\n"
+        scope = find_function(source, "_Z1fii")
+        self.assertIn(b"    n = n + (b - 1);\n", next(expand_assignment(source, scope)).source)
+        self.assertIn(b"    int n;\n    n = a * 2;\n", next(split_declaration(source, scope)).source)
+        self.assertIn(b"    if (a) { if (b) n = 0; }\n", next(nest_condition(source, scope)).source)
+
+
 class FakeHarvest:
     """The while-loop form stops `total` matching; the commuted form stops `skip`
     as well, which is an effect beyond the function."""
@@ -75,13 +99,20 @@ class Cases(unittest.TestCase):
             found = cases(FakeHarvest(root), [("a.cpp", TOTAL)])
         self.assertEqual([(c.mutation, c.symbol, c.score) for c in found], [("for loop as while loop", TOTAL, 91.5)])
 
+    def test_each_kind_is_capped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src").mkdir()
+            (root / "src" / "a.cpp").write_bytes(SOURCE)
+            self.assertEqual(cases(FakeHarvest(root), [("a.cpp", TOTAL)], per_kind=0), [])
+
     def test_the_table_counts_recoveries_by_mutation(self):
         def outcome(mutation, match, permute):
             return Outcome(Case("a.cpp", TOTAL, mutation, "", b"", 90.0), match, 1, permute, 8)
 
         rows = table([outcome("swap if branches", True, True), outcome("swap if branches", False, True), outcome("for loop as while loop", False, False)])
         self.assertEqual(rows, [("swap if branches", True, 2, 1, 2, 90.0), ("for loop as while loop", False, 1, 0, 0, 90.0)])
-        self.assertEqual(sum(1 for _, known in MUTATIONS.values() if not known), 3)
+        self.assertEqual(sum(1 for _, known in MUTATIONS.values() if not known), 5)
 
 
 if __name__ == "__main__":
