@@ -98,18 +98,23 @@ The knowledge base in `src/concord/knowledge/` records a compiler's codegen idio
 
 concord is the deterministic half of matching: it verifies candidates with the target's own matcher and says what to change. Something else writes the source, whether a person, an agent or a model harness, and such a harness is a separate project. The steps below are in order, and each is judged against the first.
 
-1. A benchmark from functions that already match. Harvest has about 3,800 exact functions with known source. Mutation recovery perturbs one (a flipped branch, an inlined temporary, reordered declarations) and counts how often concord returns it to exact; held-out recovery measures how close concord's feedback brings an author who starts from the binary alone. Results are broken down by cause, so a search that never pays is visible. On real near misses, `match` made 0 of 146 exact and `permute` 3 of 79. `concord bench` now measures mutation recovery; the first run, on Harvest eee9093 with 300 sampled functions and a budget of 128 candidates per case, gives the baseline below. `match` recovers little because it tries only the rewrites tied to two causes, a named temporary is never removed because no rewrite removes one, and the sample has too few cases of the kinds concord cannot undo to say much about them.
+1. A benchmark from functions that already match. Harvest has about 3,800 exact functions with known source. Mutation recovery perturbs one (a flipped branch, an inlined temporary, reordered declarations) and counts how often concord returns it to exact; held-out recovery measures how close concord's feedback brings an author who starts from the binary alone. Results are broken down by cause, so a search that never pays is visible. On real near misses, `match` made 0 of 146 exact and `permute` 3 of 79. `concord bench` measures mutation recovery, and `concord bench --locate` whether a case's diff points at the changed line. The baseline, on Harvest eee9093 with 900 sampled functions, at most 20 cases per kind and 128 candidates per case:
 
-   | Change applied to an exact function | concord has a rewrite that undoes it | Cases | Recovered by `match` | Recovered by `permute` |
-   | --- | --- | ---: | ---: | ---: |
-   | Swap adjacent statements | yes | 75 | 0 | 71 |
-   | Swap an if's branches | yes | 12 | 5 | 12 |
-   | Move a declaration | yes | 10 | 0 | 10 |
-   | Swap a comparison's operands | yes | 5 | 2 | 5 |
-   | Name a temporary | no | 14 | 0 | 0 |
-   | Swap commutative operands | no | 2 | 0 | 1 |
-   | All | | 118 | 7 | 99 |
+   | Change applied to an exact function | concord has a rewrite that undoes it | Cases | Recovered by `match` | Recovered by `permute` | Diff points at the changed line |
+   | --- | --- | ---: | ---: | ---: | ---: |
+   | Swap a comparison's operands | yes | 20 | 10 | 20 | 18 |
+   | Swap an if's branches | yes | 20 | 13 | 19 | 15 |
+   | Swap adjacent statements | yes | 20 | 0 | 20 | 19 |
+   | Move a declaration | yes | 20 | 0 | 19 | 16 |
+   | Name a temporary | yes | 20 | 0 | 19 | 16 |
+   | Inline a temporary | yes | 17 | 0 | 4 | 13 |
+   | Swap commutative operands | no | 5 | 0 | 3 | 3 |
+   | For loop as while loop | no | 3 | 0 | 0 | 3 |
+   | Spell out a compound assignment | no | 8 | 0 | 0 | 7 |
+   | Nest the halves of an `&&` | no | 18 | 0 | 0 | 14 |
+   | All | | 151 | 23 | 104 | 124 |
 
+   The diff points at the changed line in 82% of cases and at 17% of a function's lines on average, so where to edit is a strong signal; the cause it reports identifies the kind of edit for swapped comparisons and branches only. `match` picks rewrites by cause and recovers little; the planned search tries single edits near the attributed lines first.
 2. Causal diffs. For a differing instruction, find the GCC pass that made the decision, from the dumps the pinned compiler writes after each pass, and name the source construct that feeds it, so the finding reads "these two values are created in the wrong order at this line" instead of "operand order differs". The two findings that paid most on Harvest, the declaration count modulo 31 and the key function, were of this kind.
 3. Context checks before body searches. Compare the inline functions each unit emits with what the target holds beside that unit; a difference means a header shows the unit a definition the original did not have, or hides one it had. This joins `vtables`, `layout` and `phase`.
 4. Findings any author can consume. Each diff, cause and suggested edit is available as structured output with stable names, so a model harness or another project's agents can use them without parsing prose.
