@@ -1,52 +1,9 @@
-"""Core data model shared across concord's components.
-
-These are the values that flow through the pipeline: a target function to match,
-a candidate source for it, the result of compiling that candidate, and the
-attributed diff against the target. Keeping them in one place lets the seed,
-compile, diff, oracle, transform and search modules agree on interfaces before
-any of them is implemented.
-"""
+"""Values shared across concord's modules: the causes a diff attributes, its findings and result, and the oracle's verdict."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
-
-
-@dataclass(frozen=True)
-class TargetFunction:
-    """One function in the target image that concord tries to match."""
-
-    name: str
-    address: int
-    size: int
-    section: str
-    unit: str  # translation unit the function is assigned to
-    code: bytes = b""  # the target bytes for this function
-
-
-@dataclass
-class Candidate:
-    """A source form for one target function, with its provenance."""
-
-    function: str
-    source: str
-    language: str = "c++"
-    # Names of the transforms applied to reach this candidate from the seed,
-    # in order. Empty for a seed candidate.
-    transforms: tuple[str, ...] = ()
-
-
-@dataclass
-class CompileResult:
-    """Result of compiling a candidate with the pinned toolchain."""
-
-    ok: bool
-    # Object bytes for the candidate function's section, extracted and placed to
-    # match the target's layout. Empty when ok is False.
-    code: bytes = b""
-    diagnostics: str = ""
 
 
 class Cause(str, Enum):
@@ -96,24 +53,3 @@ class EquivalenceResult:
     equivalent: bool
     method: str  # e.g. "differential-test", or "byte-match" for an exact match
     detail: str = ""
-
-
-@dataclass
-class MatchResult:
-    """The best candidate concord found for one function."""
-
-    function: str
-    best: Candidate
-    diff: DiffResult
-    equivalence: EquivalenceResult
-
-
-@dataclass
-class Project:
-    """A concord project: where the target, toolchain and sources live."""
-
-    root: Path
-    target: Path  # the target binary
-    toolchain: str  # identifier for the pinned toolchain container
-    src_dir: Path
-    config_dir: Path

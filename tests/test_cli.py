@@ -16,15 +16,10 @@ class CliTest(unittest.TestCase):
             self.assertEqual(main([]), 0)
         self.assertIn("Matching recompilation", out.getvalue())
 
-    def test_unbuilt_subcommands_are_stubs(self):
-        # Each wired subcommand returns the stub code until implemented.
-        self.assertEqual(main(["status"]), 2)
-        self.assertEqual(main(["types"]), 2)
-
-    def test_parser_knows_the_pipeline_stages(self):
+    def test_parser_lists_the_commands(self):
         help_text = build_parser().format_help()
-        for stage in ("init", "seed", "types", "flags", "match", "diff", "status"):
-            self.assertIn(stage, help_text)
+        for command in ("seed", "match", "permute", "diff", "phase", "scores", "bench", "unguard"):
+            self.assertIn(command, help_text)
 
     def test_module_entrypoint_runs(self):
         result = subprocess.run(

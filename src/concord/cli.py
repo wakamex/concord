@@ -1,12 +1,4 @@
-"""concord command line.
-
-The subcommands map to the pipeline stages: scaffold a project, seed candidates
-from a decompiler, load recovered types, infer toolchain flags, run the matching
-search for a function, show the attributed diff, and report progress. The stages
-are wired here; the per-stage work lives in the component modules and is not yet
-implemented, so each subcommand reports that it is a stub rather than doing
-partial work.
-"""
+"""concord command line: one subcommand per tool, each implemented in the module of its name."""
 
 from __future__ import annotations
 
@@ -34,11 +26,6 @@ from concord.seed import _bring_includes, header, replace_in_port, seed
 from concord.unguard import definitions, irrlicht_definitions, unguard, without_guard
 
 
-def _not_implemented(stage: str) -> int:
-    print(f"concord {stage}: not implemented yet (skeleton)")
-    return 2
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="concord",
@@ -46,10 +33,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"concord {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="command")
-
-    p_init = sub.add_parser("init", help="scaffold a project for a target binary")
-    p_init.add_argument("target", help="path to the target binary")
-    p_init.add_argument("--toolchain", required=True, help="pinned toolchain image id")
 
     p_seed = sub.add_parser("seed", help="seed daisy units from Irrlicht 0.7 and place them in the target")
     p_seed.add_argument("units", nargs="+", help="units to seed, as paths under src/ (daisy/.../File.cpp)")
@@ -68,13 +51,6 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SYMBOL",
         help="with --complete, accept a completion that makes this function of another unit worse (repeatable)",
     )
-
-    p_types = sub.add_parser("types", help="load recovered class and struct layout")
-    p_types.add_argument("--debug-map", help="cross-platform debug map")
-    p_types.add_argument("--rtti", action="store_true", help="scan RTTI and vtables from the target")
-
-    p_flags = sub.add_parser("flags", help="infer toolchain flags from anchor functions")
-    p_flags.add_argument("anchors", nargs="+", help="anchor function names")
 
     p_match = sub.add_parser("match", help="search source rewrites toward a byte match for one function")
     p_match.add_argument("function", help="target function symbol")
@@ -220,8 +196,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="also locate each finding's source line through a -g compile, and list the N lines with the most",
     )  # fmt: skip
 
-    sub.add_parser("status", help="report matching progress")
-
     return parser
 
 
@@ -266,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         return _unguard(args)
     if args.command == "phase":
         return _phase(args)
-    return _not_implemented(args.command)
+    parser.error(f"unknown command {args.command}")
 
 
 def _print_result(result: DiffResult, compiler: str | None) -> None:
