@@ -7,12 +7,12 @@ the unit still does. `solve` then runs concord's searches from the mutated sourc
 and records whether each gets back to exact, so recovery can be counted by kind
 of change and by search.
 
-Mutations come in two groups. The first are concord's own rewrites (swap a
-comparison's operands, swap an if's branches, swap adjacent statements, move a
-declaration, name a temporary): a search can undo them with a rewrite it has, so
-they measure whether it finds that rewrite among the others. The second are
-changes concord has no rewrite for (swap the operands of a commutative operator,
-write a for loop as a while loop): they measure what the searches cannot reach.
+Mutations come in two groups. The first are rewrites concord can undo with a
+rewrite it has (swap a comparison's operands, swap an if's branches, swap
+adjacent statements, move a declaration), so they measure whether a search
+finds that rewrite among the others. The second are changes it has no rewrite
+to undo (name a temporary, swap the operands of a commutative operator, write a
+for loop as a while loop): they measure what the searches cannot reach.
 Real near misses are harder than either, since nothing says one rewrite
 separates them from a match; the benchmark is a floor to compare versions of
 concord against, not a forecast of yield.
@@ -77,7 +77,7 @@ MUTATIONS = {
     "swap if branches": (swap_branches, True),
     "swap adjacent statements": (swap_statements, True),
     "move a declaration": (move_declarations, True),
-    "name a temporary": (name_temporaries, True),
+    "name a temporary": (name_temporaries, False),  # no rewrite removes a named temporary
     "swap commutative operands": (commute, False),
     "for loop as while loop": (while_loop, False),
 }
