@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -78,6 +80,22 @@ class Harvest:
         if result.returncode:
             raise RuntimeError(f"harvest_driver.py failed:\n{result.stderr[-3000:]}")
         return result
+
+    def clean(self, older_than: float) -> tuple[int, int]:
+        """Remove concord's work directories under build/concord that were last
+        changed more than `older_than` seconds ago; (directories removed, bytes
+        freed). Each evaluate, overlay or debug batch leaves one, with every
+        candidate's source and object."""
+        base = self.root / "build" / "concord"
+        cutoff = time.time() - older_than
+        removed = freed = 0
+        for group in sorted(base.iterdir()) if base.is_dir() else []:
+            for batch in sorted(group.iterdir()) if group.is_dir() else []:
+                if batch.is_dir() and batch.stat().st_mtime < cutoff:
+                    freed += sum(f.stat().st_size for f in batch.rglob("*") if f.is_file())
+                    shutil.rmtree(batch)
+                    removed += 1
+        return removed, freed
 
     def slug(self, unit: str) -> str:
         """Accept a report slug or a source path such as ox/net/CVariablePacket.cpp."""

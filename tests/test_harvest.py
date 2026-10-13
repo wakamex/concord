@@ -40,6 +40,20 @@ class UnknownReferences(unittest.TestCase):
         detail = self.detail([[APPEND, "0x5ede40"], [APPEND, "0x5ede50"]])
         self.assertNotIn("--learn", detail)
 
+    def test_clean_removes_only_old_work_directories(self):
+        import os
+        import time
+
+        old = self.root / "build" / "concord" / "a__b" / "old"
+        new = self.root / "build" / "concord" / "a__b" / "new"
+        for path in (old, new):
+            path.mkdir(parents=True)
+            (path / "c.o").write_bytes(b"x" * 10)
+        os.utime(old, (time.time() - 7200, time.time() - 7200))
+        self.assertEqual(self.harvest.clean(3600), (1, 10))
+        self.assertFalse(old.exists())
+        self.assertTrue(new.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

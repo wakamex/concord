@@ -194,6 +194,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_bench.add_argument("--save", type=Path, help="write every case and its outcome to this JSON Lines file")
 
+    p_clean = sub.add_parser("clean", help="remove concord's old work directories from the Harvest checkout")
+    p_clean.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_clean.add_argument("--older-than", type=float, default=24.0, metavar="HOURS", help="keep directories changed more recently")
+
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
     p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
 
@@ -235,6 +239,10 @@ def main(argv: list[str] | None = None) -> int:
         return _scores(parser, args)
     if args.command == "vtables":
         return _vtables(args)
+    if args.command == "clean":
+        removed, freed = Harvest(args.harvest).clean(args.older_than * 3600)
+        print(f"removed {removed} work directories, {freed / 1e9:.1f} GB")
+        return 0
     if args.command == "bench":
         return _bench(args)
     if args.command == "header":
