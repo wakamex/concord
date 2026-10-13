@@ -7,10 +7,13 @@ from pathlib import Path
 from concord.bench import (
     MUTATIONS,
     Case,
+    Located,
     Outcome,
     cases,
+    changed_lines,
     commute,
     expand_assignment,
+    location_table,
     nest_condition,
     split_declaration,
     table,
@@ -113,6 +116,22 @@ class Cases(unittest.TestCase):
         rows = table([outcome("swap if branches", True, True), outcome("swap if branches", False, True), outcome("for loop as while loop", False, False)])
         self.assertEqual(rows, [("swap if branches", True, 2, 1, 2, 90.0), ("for loop as while loop", False, 1, 0, 0, 90.0)])
         self.assertEqual(sum(1 for _, known in MUTATIONS.values() if not known), 5)
+
+
+class Location(unittest.TestCase):
+    def test_changed_lines_are_numbered_in_the_mutated_source(self):
+        self.assertEqual(changed_lines(b"a\nb\nc\n", b"a\nB\nc\n"), {2})
+        self.assertEqual(changed_lines(b"a\nb\nc\n", b"a\nx\ny\nb\nc\n"), {2, 3})
+        self.assertEqual(changed_lines(b"a\nb\nc\n", b"a\nc\n"), {2})
+
+    def test_distance_share_and_table(self):
+        def located(attributed, changed):
+            return Located(Case("a.cpp", TOTAL, "swap if branches", "", b"", 90.0), [], attributed, changed, 10)
+
+        hit, near, far, blind = located({4, 9}, {4}), located({6}, {4}), located({1}, {9}), located(set(), {4})
+        self.assertEqual([i.distance for i in (hit, near, far, blind)], [0, 2, 8, None])
+        self.assertEqual(hit.share, 0.2)
+        self.assertEqual(location_table([hit, near, far, blind]), [("swap if branches", 4, 3, 1, 2, 0.1)])
 
 
 if __name__ == "__main__":

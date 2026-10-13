@@ -23,16 +23,19 @@ concord against, not a forecast of yield.
 
 from __future__ import annotations
 
+import difflib
 import random
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from tree_sitter import Node
 
+from concord.diff import read_function
 from concord.harvest import Harvest
+from concord.lines import inline_chains
 from concord.model import Cause
 from concord.permute import drop_twins, permute
-from concord.search import search
+from concord.search import _diff, search
 from concord.transforms import (
     Rewrite,
     _descendants,
@@ -225,4 +228,83 @@ def table(outcomes: list[Outcome]) -> list[tuple[str, bool, int, int, int, float
         if group:
             mean = sum(o.case.score for o in group) / len(group)
             rows.append((name, known, len(group), sum(o.match for o in group), sum(o.permute for o in group), mean))
+    return rows
+
+
+@dataclass
+class Located:
+    """Where concord's diff points for a case, against where the change is."""
+
+    case: Case
+    causes: list[str] = field(default_factory=list)  # of every finding, in order
+    attributed: set[int] = field(default_factory=set)  # lines of the function the differing code comes from
+    changed: set[int] = field(default_factory=set)  # lines the mutation changed, in the mutated source
+    length: int = 0  # lines of the function
+
+    @property
+    def distance(self) -> int | None:
+        """Lines between the change and the nearest attributed line; None when the
+        diff points at no line of the function."""
+        if not self.attributed or not self.changed:
+            return None
+        return min(abs(a - c) for a in self.attributed for c in self.changed)
+
+    @property
+    def share(self) -> float:
+        """The part of the function's lines the diff points at: the chance a line
+        picked at random among them is one, to compare a hit rate against."""
+        return len(self.attributed) / self.length if self.length else 0.0
+
+
+def changed_lines(original: bytes, mutated: bytes) -> set[int]:
+    """Line numbers of the mutated source that differ from the original; a pure
+    deletion counts as the line that now stands where the text was."""
+    before, after = original.split(b"\n"), mutated.split(b"\n")
+    lines = set()
+    for tag, _, _, start, end in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes():
+        if tag != "equal":
+            lines |= set(range(start + 1, max(end, start + 1) + 1))
+    return lines
+
+
+def locate(harvest: Harvest, case: Case) -> Located:
+    """Compile the case with debug information and map each finding of its diff to
+    the source line its code comes from."""
+    result = Located(case)
+    scope = find_function(case.source, case.symbol)
+    first, last = scope.start_point[0] + 1, scope.end_point[0] + 1
+    result.length = last - first + 1
+    original = (harvest.root / "src" / case.unit).read_bytes()
+    result.changed = {line for line in changed_lines(original, case.source) if first <= line <= last}
+    evaluation = harvest.evaluate(case.unit, {"case": case.source})["case"]
+    diff = _diff(harvest, evaluation, case.symbol)
+    result.causes = [finding.cause.value for finding in diff.findings]
+    located = [finding for finding in diff.findings if finding.candidate is not None]
+    obj = harvest.debug_objects([case.unit], {case.unit: case.source}).get(case.unit)
+    if obj is None or not located:
+        return result
+    function = read_function(obj, case.symbol)
+    for chain in inline_chains(obj, function.section, [function.start + finding.candidate for finding in located]):
+        # every frame in the unit's own source: the innermost may be an inlined helper defined above
+        result.attributed |= {frame.line for frame in chain if frame.path == f"src/{case.unit}" and first <= frame.line <= last}
+    return result
+
+
+def location_table(found: list[Located]) -> list[tuple[str, int, int, int, int, float]]:
+    """(mutation, cases, cases whose diff points at a line of the function, cases
+    where it points at the changed line, within two lines of it, mean share of the
+    function's lines pointed at), in MUTATIONS' order."""
+    rows = []
+    for name in MUTATIONS:
+        group = [item for item in found if item.case.mutation == name]
+        if group:
+            pointed = [item for item in group if item.distance is not None]
+            rows.append((
+                name,
+                len(group),
+                len(pointed),
+                sum(item.distance == 0 for item in pointed),
+                sum(item.distance <= 2 for item in pointed),
+                sum(item.share for item in group) / len(group),
+            ))  # fmt: skip
     return rows

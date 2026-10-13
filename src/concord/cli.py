@@ -185,6 +185,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench.add_argument("--per-kind", type=int, help="most cases to keep of each kind of change")
     p_bench.add_argument("--budget", type=int, default=128, help="candidate sources permute may compile per case")
     p_bench.add_argument("--seed", type=int, default=0)
+    p_bench.add_argument(
+        "--locate",
+        action="store_true",
+        help="instead of searching, report whether each case's diff points at the line that was changed",
+    )
     p_bench.add_argument("--save", type=Path, help="write every case and its outcome to this JSON Lines file")
 
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
@@ -501,6 +506,8 @@ def _bench(args: argparse.Namespace) -> int:
     sample = random.Random(args.seed).sample(pool, min(args.functions, len(pool)))
     found = bench.cases(harvest, sample, args.seed, args.per_kind)
     print(f"{len(found)} cases from {len(sample)} of {len(pool)} exact functions", flush=True)
+    if args.locate:
+        return _bench_locate(harvest, found, args)
     outcomes = []
     for case in found:
         outcome = bench.solve(harvest, case, args.budget, args.seed)
@@ -525,6 +532,30 @@ def _bench(args: argparse.Namespace) -> int:
     total = len(outcomes)
     either = sum(o.match or o.permute for o in outcomes)
     print(f"{'all':27} {'':8} {total:5} {sum(o.match for o in outcomes):6} {sum(o.permute for o in outcomes):8}   either: {either}")
+    return 0
+
+
+def _bench_locate(harvest: Harvest, found: list, args: argparse.Namespace) -> int:
+    located = []
+    for case in found:
+        try:
+            item = bench.locate(harvest, case)
+        except (KeyError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
+            print(f"  error {case.mutation}: {str(error).strip().splitlines()[-1][:120]}", flush=True)
+            continue
+        located.append(item)
+        if args.save:
+            row = {
+                "harvest": results.commit(harvest.root), "unit": case.unit, "symbol": case.symbol,
+                "mutation": case.mutation, "description": case.description, "causes": item.causes,
+                "attributed": sorted(item.attributed), "changed": sorted(item.changed), "length": item.length,
+            }  # fmt: skip
+            results.record(args.save, row)
+        distance = "none" if item.distance is None else str(item.distance)
+        print(f"  {case.mutation:26} distance {distance:>4}  lines {len(item.attributed):3}/{item.length:<4} {_member(case.symbol)}", flush=True)
+    print(f"\n{'mutation':27} {'cases':>5} {'pointed':>8} {'on line':>8} {'within 2':>9} {'share of lines':>15}")
+    for name, count, pointed, on_line, near, share in bench.location_table(located):
+        print(f"{name:27} {count:5} {pointed:8} {on_line:8} {near:9} {share:15.2f}")
     return 0
 
 
