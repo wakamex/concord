@@ -17,7 +17,7 @@ from collections import Counter
 from pathlib import Path
 
 from concord import __version__, knowledge, layout, oracle, results, scores
-from concord.complete import TYPES, complete, settle
+from concord.complete import TYPES, absent, complete, settle, state
 from concord.diff import diff_code, read_function
 from concord.finish import finish
 from concord.harvest import Harvest
@@ -171,7 +171,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_complete = sub.add_parser(
         "complete", help="add Irrlicht members to a partial ox core header, if the units including it are no worse"
     )
-    p_complete.add_argument("members", nargs="+", help="TYPE.member, such as CMatrix4.transformVect")
+    p_complete.add_argument("members", nargs="*", help="TYPE.member, such as CMatrix4.transformVect")
+    p_complete.add_argument(
+        "--fill",
+        nargs=2,
+        metavar=("TYPE", "UNIT"),
+        help="add TYPE's remaining Irrlicht members one at a time until UNIT's functions that depend on the "
+        "declaration count (concord phase) are exact again",
+    )
     p_complete.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_complete.add_argument("--allow-worse", action="append", default=[], metavar="SYMBOL")
 
@@ -493,7 +500,38 @@ def _member(symbol: str) -> str:
     return "::".join(name.strip().split("::")[-2:])
 
 
+def _fill(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    ox_type, unit = args.fill
+    unit = harvest.source(unit)
+    header = TYPES[ox_type][0]
+    path = harvest.root / "src" / header
+    original = path.read_text()
+    locked = set(scan(harvest, unit).locked)
+    if not locked:
+        print(f"{unit} has no function locked by the declaration count")
+        return 0
+    for member in absent(harvest.root, ox_type):
+        before = path.read_text()
+        if not complete(harvest.root, {(ox_type, member)}):
+            continue
+        now = state(harvest, [unit])
+        if not now:  # the member does not compile
+            path.write_text(before)
+            continue
+        if all(now.get((unit, symbol), (False,))[0] for symbol in locked) and settle(
+            harvest, {header: original}, frozenset(args.allow_worse)
+        ):
+            print(f"{unit}: {len(locked)} locked functions exact after adding members up to {ox_type}.{member}")
+            return 0
+    path.write_text(original)
+    print(f"no run of {ox_type}'s Irrlicht members makes {unit}'s locked functions exact; {header} is unchanged")
+    return 1
+
+
 def _complete(args: argparse.Namespace) -> int:
+    if args.fill:
+        return _fill(args)
     harvest = Harvest(args.harvest)
     failed = 0
     for item in args.members:

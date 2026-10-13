@@ -232,7 +232,8 @@ def qualify(root: Path, text: str, own: str = "") -> str:
             text = re.sub(r"^(namespace daisy\b)", "namespace ox { namespace " + ns + " {} }\n\\1", text, count=1, flags=re.MULTILINE)
             used.add(ns)
     needed = []
-    words = set(re.findall(r"\b[A-Z]\w+\b", text))
+    code = re.sub(r"//[^\n]*|/\*.*?\*/", "", text, flags=re.DOTALL)  # a name in a comment needs no header
+    words = set(re.findall(r"\b[A-Z]\w+\b", code))
     for ns in NAMESPACES:
         index = _index(root, root / "src" / "ox" / ns)
         for name in sorted(words & set(index.headers)):
