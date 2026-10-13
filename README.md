@@ -99,6 +99,17 @@ Every `concord match`, `concord permute` and `concord sweep` run appends a line 
 
 The knowledge base in `src/concord/knowledge/` records a compiler's codegen idiosyncrasies, one TOML file per compiler version. Each idiom names the cause the diff reports, the symptom, the source change that fixes it, whether that is confirmed or a hypothesis, the limits found when applying it, and the evidence (a Harvest commit or note). `concord diff` lists the idioms for the causes it finds. Add an idiom, or evidence to one, whenever a fix makes a function match.
 
+## Roadmap
+
+concord is the deterministic half of matching: it verifies candidates with the target's own matcher and says what to change. Something else writes the source, whether a person, an agent or a model harness, and such a harness is a separate project. The steps below are in order, and each is judged against the first.
+
+1. A benchmark from functions that already match. Harvest has about 3,800 exact functions with known source. Mutation recovery perturbs one (a flipped branch, an inlined temporary, reordered declarations) and counts how often concord returns it to exact; held-out recovery measures how close concord's feedback brings an author who starts from the binary alone. Results are broken down by cause, so a search that never pays is visible. Measured so far, without a benchmark: `match` made 0 of 146 near misses exact and `permute` 3 of 79.
+2. Causal diffs. For a differing instruction, find the GCC pass that made the decision, from the dumps the pinned compiler writes after each pass, and name the source construct that feeds it, so the finding reads "these two values are created in the wrong order at this line" instead of "operand order differs". The two findings that paid most on Harvest, the declaration count modulo 31 and the key function, were of this kind.
+3. Context checks before body searches. Compare the inline functions each unit emits with what the target holds beside that unit; a difference means a header shows the unit a definition the original did not have, or hides one it had. This joins `vtables`, `layout` and `phase`.
+4. Findings any author can consume. Each diff, cause and suggested edit is available as structured output with stable names, so a model harness or another project's agents can use them without parsing prose.
+
+Seeding from Irrlicht continues beside these while it pays: 41 Irrlicht-named daisy files remain, most of them where daisy's classes differ from Irrlicht's, and the rename tables in `concord.irrlicht` would be better derived by aligning Irrlicht's names with the Mac symbols than written by hand.
+
 ## Development
 
 concord uses [uv](https://docs.astral.sh/uv/).
