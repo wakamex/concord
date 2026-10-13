@@ -2,7 +2,13 @@
 
 import unittest
 
-from concord.unguard import definitions, expose, irrlicht_definitions, unguard
+from concord.unguard import (
+    definitions,
+    expose,
+    irrlicht_definitions,
+    unguard,
+    without_guard,
+)
 
 HEADER = """#ifndef OX_SCENE_INODE_H
 #define OX_SCENE_INODE_H
@@ -125,6 +131,12 @@ class Unguard(unittest.TestCase):
         self.assertEqual(found["ISceneNode"], " : Parent(parent) {}")
         self.assertEqual(found["setVisible"], "\n\t{\n\t\tIsVisible = isVisible;\n\t}")
         self.assertIn("ox::core::CVector3d<float> p = RelativeTranslation;", found["getPosition"])
+
+    def test_a_body_that_is_one_null_check_gives_the_unchecked_body(self):
+        tail = "\n\t\t{\n\t\t\tif (child)\n\t\t\t{\n\t\t\t\tchild->grab();\n\t\t\t\tChildren.push_back(child);\n\t\t\t}\n\t\t}"
+        self.assertEqual(without_guard(tail), "\n{\n    child->grab();\n    Children.push_back(child);\n}")
+        self.assertIsNone(without_guard("\n{\n    if (child)\n        return;\n    remove();\n}"))
+        self.assertIsNone(without_guard(" { return ID; }"))
 
 
 if __name__ == "__main__":

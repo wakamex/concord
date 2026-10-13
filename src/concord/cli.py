@@ -30,7 +30,7 @@ from concord.repair import repair
 from concord.search import _diff as _search_diff
 from concord.search import _key, search
 from concord.seed import _bring_includes, header, replace_in_port, seed
-from concord.unguard import definitions, irrlicht_definitions, unguard
+from concord.unguard import definitions, irrlicht_definitions, unguard, without_guard
 
 
 def _not_implemented(stage: str) -> int:
@@ -473,24 +473,32 @@ def _unguard(args: argparse.Namespace) -> int:
     taken = []
     if args.irrlicht and args.unit:
         original = (root / "third_party" / "irrlicht-0.7" / args.irrlicht).read_text(encoding="latin-1")
-        candidates = {name: body for name, body in irrlicht_definitions(original, cls).items() if name in bodies}
+        irrlicht = {name: body for name, body in irrlicht_definitions(original, cls).items() if name in bodies}
+        # per member, in order of preference: Irrlicht's body, then that body without its null check
+        candidates = [(name, body, "Irrlicht's") for name, body in irrlicht.items()]
+        candidates += [(name, bare, "Irrlicht's, unchecked") for name, body in irrlicht.items() if (bare := without_guard(body))]
         items = {"port": (args.unit, {f"src/{args.header}": unguard(header, bodies, includes).encode()})}
-        for index, (name, body) in enumerate(candidates.items()):
+        for index, (name, body, _) in enumerate(candidates):
             items[f"m{index}"] = (args.unit, {f"src/{args.header}": unguard(header, {**bodies, name: body}, includes).encode()})
         evaluations = Harvest(root).evaluate_overlays(items)
         if evaluations["port"].error:
             print(evaluations["port"].error[-1500:])
             return 1
-        for index, name in enumerate(candidates):
+        best = dict(evaluations["port"].fuzzy)
+        for index, (name, body, label) in enumerate(candidates):
             symbols = [s for s in evaluations["port"].fuzzy if _member(s) == f"{cls}::{name}"]
             swapped = evaluations[f"m{index}"]
-            if symbols and not swapped.error and all(swapped.fuzzy.get(s, 0) >= evaluations["port"].fuzzy[s] for s in symbols):
-                bodies[name] = candidates[name]
-                taken.append(name)
+            first = label == "Irrlicht's"  # Irrlicht's own body wins a tie with the port's; a variant must score higher
+            if symbols and not swapped.error and all(
+                swapped.fuzzy.get(s, 0) >= best[s] if first else swapped.fuzzy.get(s, 0) > best[s] for s in symbols
+            ):
+                bodies[name] = body
+                best.update({s: swapped.fuzzy[s] for s in symbols})
+                taken = [item for item in taken if not item.startswith(f"{name} (")] + [f"{name} ({label})"]
     path.write_text(unguard(header, bodies, includes))
     print(f"exposed {args.header}" + (f" with the members {args.port} defines" if args.port else ""))
     if taken:
-        print(f"  Irrlicht's body for {', '.join(taken)}")
+        print(f"  bodies not the port's: {', '.join(taken)}")
     return 0
 
 

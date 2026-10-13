@@ -101,6 +101,18 @@ def irrlicht_definitions(original: str, cls: str) -> dict[str, str]:
     return found
 
 
+def without_guard(tail: str) -> str | None:
+    """The body with its statements taken out of an `if (pointer) { ... }` that is
+    all the body holds, or None when it has no such form. daisy dropped the null
+    check from at least ISceneNode::addChild, so this is a candidate body to score."""
+    found = re.fullmatch(r"(\s*)\{\s*if\s*\(\s*\w+\s*\)\s*\{(.*)\}\s*\}\s*", tail, re.DOTALL)
+    if found is None or found[2].count("{") != found[2].count("}"):
+        return None
+    lines = [line for line in found[2].replace("\t", "    ").split("\n") if line.strip()]
+    common = min(len(line) - len(line.lstrip()) for line in lines)
+    return "\n{\n" + "\n".join("    " + line[common:].rstrip() for line in lines) + "\n}"
+
+
 def _function_declarator(node: Node) -> Node | None:
     declarator = node.child_by_field_name("declarator")
     while declarator is not None and declarator.type != "function_declarator":
