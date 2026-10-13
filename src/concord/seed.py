@@ -48,6 +48,7 @@ def seed(root: Path, unit: str, complete_types: bool = False, allowed: frozenset
         return result
     target = root / "src" / unit
     target.parent.mkdir(parents=True, exist_ok=True)
+    present = {path for pattern in ("*.h", "*.cpp") for path in (root / "src").rglob(pattern)}
     text = provenance(translate(irrlicht.read_text(encoding="latin-1")), f"source/Irrlicht/{irrlicht.name}")
     if _has_static_initializer(root, unit):
         text = re.sub(r"^#include", "#include <iostream>\n#include", text, count=1, flags=re.MULTILINE)
@@ -104,10 +105,12 @@ def seed(root: Path, unit: str, complete_types: bool = False, allowed: frozenset
     if unsettled:
         result.error = "completing " + ", ".join(unsettled) + " makes functions in other units worse"
         _unregister(root, unit)
+        _discard(root, result, present)
         return result
     if "error:" in output or "returned non-zero" in output:
         result.error = "\n".join(line for line in output.splitlines() if "error" in line)[:3000]
         _unregister(root, unit)
+        _discard(root, result, present)
         return result
     if ".text: not placed" in output:
         result.placements = _place(root, unit)
@@ -124,6 +127,17 @@ def seed(root: Path, unit: str, complete_types: bool = False, allowed: frozenset
     else:
         result.error = output.strip().splitlines()[-1] if output.strip() else "hv match printed no result"
     return result
+
+
+def _discard(root: Path, result: SeedResult, present: set[Path]) -> None:
+    """Remove the files a failed seed created, so they do not pile up in the
+    checkout; files that were there before, such as a header an earlier unit
+    brought, stay."""
+    for written in dict.fromkeys(result.written):
+        path = root / "src" / written
+        if path not in present and path.exists():
+            path.unlink()
+    result.written = [w for w in result.written if (root / "src" / w).exists()]
 
 
 def header(root: Path, name: str) -> list[str]:
@@ -238,15 +252,21 @@ def qualify(root: Path, text: str, own: str = "") -> str:
         index = _index(root, root / "src" / "ox" / ns)
         for name in sorted(words & set(index.headers)):
             qualified = re.search(r"\box::" + ns + "::" + name + r"\b", text)
-            if (ns in used or qualified or (inside and ns in opened)) and index.headers[name] != own and f'#include "{index.headers[name]}"' not in text:
+            if (ns in used or qualified or (inside and ns in opened)) and index.headers[name] != own and not _includes(text, index.headers[name]):
                 needed.append(f'#include "{index.headers[name]}"\n')
     top = _index(root, root / "src" / "ox", recursive=False)
     for name in sorted(words & set(top.headers)):
-        if re.search(r"\box::" + name + r"\b", text) and f'#include "{top.headers[name]}"' not in text:
+        if re.search(r"\box::" + name + r"\b", text) and not _includes(text, top.headers[name]):
             needed.append(f'#include "{top.headers[name]}"\n')
     if needed:
         text = re.sub(r"^(#include [^\n]*\n)", lambda m: m[1] + "".join(dict.fromkeys(needed)), text, count=1, flags=re.MULTILINE)
     return text
+
+
+def _includes(text: str, header: str) -> bool:
+    """Whether the text includes the header, by its path under src/ or by file name
+    alone, as a file beside it does."""
+    return f'#include "{header}"' in text or f'#include "{Path(header).name}"' in text
 
 
 COLOR_PACKING = Path("src/ox/video/ColorPacking.h")
