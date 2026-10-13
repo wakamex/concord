@@ -1,0 +1,88 @@
+"""The benchmark's own mutations, its case filter and its table."""
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from concord.bench import MUTATIONS, Case, Outcome, cases, commute, table, while_loop
+from concord.harvest import Evaluation
+from concord.transforms import find_function
+
+SOURCE = b"""int total(int* values, int count, int scale)
+{
+    int sum = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        sum += values[i];
+    }
+    return sum * scale + count;
+}
+
+int skip(int count)
+{
+    int n = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        if (i == 3)
+            continue;
+        ++n;
+    }
+    return n;
+}
+"""
+TOTAL, SKIP = "_Z5totalPiii", "_Z4skipi"
+
+
+class Mutations(unittest.TestCase):
+    def test_commutative_operands_swap_and_comparisons_do_not(self):
+        found = [r.description for r in commute(SOURCE, find_function(SOURCE, TOTAL))]
+        self.assertEqual(found, ["line 8: sum * scale -> scale * sum"])
+
+    def test_a_for_loop_becomes_a_while_loop_with_its_step_last(self):
+        [rewrite] = while_loop(SOURCE, find_function(SOURCE, TOTAL))
+        self.assertIn(b"{ int i = 0; while (i < count) {\n        sum += values[i];\n++i;\n} }", rewrite.source)
+
+    def test_a_loop_with_continue_is_left_alone(self):
+        self.assertEqual(list(while_loop(SOURCE, find_function(SOURCE, SKIP))), [])
+
+
+class FakeHarvest:
+    """The while-loop form stops `total` matching; the commuted form stops `skip`
+    as well, which is an effect beyond the function."""
+
+    def __init__(self, root):
+        self.root = root
+
+    def evaluate(self, unit, sources):
+        out = {}
+        for name, text in sources.items():
+            exact = {TOTAL, SKIP}
+            if b"while (" in text:
+                exact = {SKIP}
+            if b"scale * sum" in text:
+                exact = set()
+            rows = [{"symbol": s, "exact": s in exact} for s in (TOTAL, SKIP)]
+            out[name] = Evaluation(name, unit, sections=[{"functions": rows}], fuzzy={TOTAL: 91.5})
+        return out
+
+
+class Cases(unittest.TestCase):
+    def test_a_case_is_a_change_that_stops_only_its_function_matching(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src").mkdir()
+            (root / "src" / "a.cpp").write_bytes(SOURCE)
+            found = cases(FakeHarvest(root), [("a.cpp", TOTAL)])
+        self.assertEqual([(c.mutation, c.symbol, c.score) for c in found], [("for loop as while loop", TOTAL, 91.5)])
+
+    def test_the_table_counts_recoveries_by_mutation(self):
+        def outcome(mutation, match, permute):
+            return Outcome(Case("a.cpp", TOTAL, mutation, "", b"", 90.0), match, 1, permute, 8)
+
+        rows = table([outcome("swap if branches", True, True), outcome("swap if branches", False, True), outcome("for loop as while loop", False, False)])
+        self.assertEqual(rows, [("swap if branches", True, 2, 1, 2, 90.0), ("for loop as while loop", False, 1, 0, 0, 90.0)])
+        self.assertEqual(sum(1 for _, known in MUTATIONS.values() if not known), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -43,8 +43,9 @@ def _key(diff: DiffResult) -> tuple:
     return (diff.exact, diff.fuzzy or 0.0, diff.score, -len(diff.findings))
 
 
-def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4) -> SearchResult:
-    source = (harvest.root / "src" / harvest.source(unit)).read_bytes()
+def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4, source: bytes | None = None) -> SearchResult:
+    """Search from the unit's source in the checkout, or from `source`."""
+    source = source if source is not None else (harvest.root / "src" / harvest.source(unit)).read_bytes()
     baseline = harvest.evaluate(unit, {"baseline": source})["baseline"]
     if baseline.error:
         raise RuntimeError(f"the unit's own source does not compile:\n{baseline.error}")

@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import subprocess
 from collections import Counter
 from pathlib import Path
 
-from concord import __version__, knowledge, layout, oracle, results, scores
+from concord import __version__, bench, knowledge, layout, oracle, results, scores
 from concord.complete import TYPES, absent, complete, settle, state
 from concord.diff import diff_code, read_function
 from concord.finish import finish
@@ -200,6 +201,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--unit", help="unit that emits the class's members; with --irrlicht, each member takes Irrlicht's body when it scores no lower there"
     )
 
+    p_bench = sub.add_parser(
+        "bench", help="perturb functions that match and count how often the searches return them to exact"
+    )
+    p_bench.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_bench.add_argument("--functions", type=int, default=40, help="exact functions to sample")
+    p_bench.add_argument("--budget", type=int, default=128, help="candidate sources permute may compile per case")
+    p_bench.add_argument("--seed", type=int, default=0)
+    p_bench.add_argument("--save", type=Path, help="write every case and its outcome to this JSON Lines file")
+
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
     p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
 
@@ -243,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
         return _scores(parser, args)
     if args.command == "vtables":
         return _vtables(args)
+    if args.command == "bench":
+        return _bench(args)
     if args.command == "header":
         for name in args.names:
             written = header(args.harvest.resolve(), name)
@@ -506,6 +518,39 @@ def _member(symbol: str) -> str:
     """Class::member of a mangled member function."""
     name = subprocess.run(["c++filt", symbol], capture_output=True, text=True, check=False).stdout.split("(")[0]
     return "::".join(name.strip().split("::")[-2:])
+
+
+def _bench(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    pool = bench.functions(harvest)
+    sample = random.Random(args.seed).sample(pool, min(args.functions, len(pool)))
+    found = bench.cases(harvest, sample, args.seed)
+    print(f"{len(found)} cases from {len(sample)} of {len(pool)} exact functions", flush=True)
+    outcomes = []
+    for case in found:
+        outcome = bench.solve(harvest, case, args.budget, args.seed)
+        outcomes.append(outcome)
+        if args.save:
+            row = {
+                "harvest": results.commit(harvest.root), "unit": case.unit, "symbol": case.symbol,
+                "mutation": case.mutation, "description": case.description, "score": case.score,
+                "match": outcome.match, "match_tried": outcome.match_tried,
+                "permute": outcome.permute, "permute_tried": outcome.permute_tried,
+                "budget": args.budget, "seed": args.seed,
+            }  # fmt: skip
+            results.record(args.save, row)
+        print(
+            f"  {'match' if outcome.match else '-----'} {'permute' if outcome.permute else '-------'}  "
+            f"{case.mutation:26} {case.score:6.2f}  {_member(case.symbol)}",
+            flush=True,
+        )
+    print(f"\n{'mutation':27} {'inverse':8} {'cases':>5} {'match':>6} {'permute':>8} {'score after':>12}")
+    for name, known, count, by_match, by_permute, mean in bench.table(outcomes):
+        print(f"{name:27} {'yes' if known else 'no':8} {count:5} {by_match:6} {by_permute:8} {mean:12.2f}")
+    total = len(outcomes)
+    either = sum(o.match or o.permute for o in outcomes)
+    print(f"{'all':27} {'':8} {total:5} {sum(o.match for o in outcomes):6} {sum(o.permute for o in outcomes):8}   either: {either}")
+    return 0
 
 
 def _fill(args: argparse.Namespace) -> int:

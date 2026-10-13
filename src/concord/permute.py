@@ -53,10 +53,18 @@ def _mutate(source: bytes, symbol: str, rng: random.Random, depth: int) -> tuple
 
 
 def permute(
-    harvest: Harvest, unit: str, symbol: str, budget: int = 256, batch: int = 32, seed: int = 0, depth: int = 3
+    harvest: Harvest,
+    unit: str,
+    symbol: str,
+    budget: int = 256,
+    batch: int = 32,
+    seed: int = 0,
+    depth: int = 3,
+    source: bytes | None = None,
 ) -> PermuteResult:
+    """Search from the unit's source in the checkout, or from `source`."""
     rng = random.Random(seed)
-    source = (harvest.root / "src" / harvest.source(unit)).read_bytes()
+    source = source if source is not None else (harvest.root / "src" / harvest.source(unit)).read_bytes()
     baseline = harvest.evaluate(unit, {"baseline": source})["baseline"]
     if baseline.error:
         raise RuntimeError(f"the unit's own source does not compile:\n{baseline.error}")
