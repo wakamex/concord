@@ -444,6 +444,123 @@ def inline_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
             )
 
 
+PLAIN = {"identifier", "field_expression", "number_literal"}
+
+
+def while_loop(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`for (init; cond; step) { body }` as `{ init; while (cond) { body step; } }`,
+    for loops whose body has no continue."""
+    for node in _descendants(scope, "for_statement"):
+        fields = {name: node.child_by_field_name(name) for name in ("initializer", "condition", "update", "body")}
+        body = fields["body"]
+        if None in fields.values() or _descendants(body, "continue_statement"):
+            continue
+        initializer = fields["initializer"].text
+        initializer += b"" if initializer.rstrip().endswith(b";") else b";"
+        braced = body.text if body.type == "compound_statement" else b"{\n" + body.text + b"\n}"
+        inner = braced[: braced.rindex(b"}")].rstrip() + b"\n" + fields["update"].text + b";\n}"
+        replacement = b"{ " + initializer + b" while (" + fields["condition"].text + b") " + inner + b" }"
+        yield _rewrite("loop-form", Cause.BLOCK_ORDER, source, node, replacement, "for loop as a while loop")
+
+
+def for_loop(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`init; while (cond) { body step; }` as `for (init; cond; step) { body }`, when
+    the statement before the loop is a declaration or an expression, the body ends
+    in an expression statement and has no continue. A variable the declaration
+    introduces is then scoped to the loop, so a later use fails to compile."""
+    for block in _descendants(scope, "compound_statement"):
+        statements = [c for c in block.named_children if c.type != "comment"]
+        for initializer, loop in pairwise(statements):
+            body = loop.child_by_field_name("body") if loop.type == "while_statement" else None
+            inner = [c for c in body.named_children if c.type != "comment"] if body is not None and body.type == "compound_statement" else []
+            if initializer.type not in SIMPLE or not inner or inner[-1].type != "expression_statement":
+                continue
+            if _descendants(body, "continue_statement"):
+                continue
+            condition = loop.child_by_field_name("condition").text
+            condition = condition[1:-1] if condition.startswith(b"(") and condition.endswith(b")") else condition
+            step = inner[-1].text.rstrip().removesuffix(b";")
+            kept = source[body.start_byte : inner[-1].start_byte].rstrip() + b"\n" + source[_line_start(source, body.end_byte - 1) : body.end_byte]
+            replacement = b"for (" + initializer.text + b" " + condition + b"; " + step + b") " + kept
+            line = source.count(b"\n", 0, initializer.start_byte) + 1
+            yield Rewrite(
+                "loop-form",
+                Cause.BLOCK_ORDER,
+                f"line {line}: while loop as a for loop",
+                source[: initializer.start_byte] + replacement + source[loop.end_byte :],
+            )
+
+
+EXPANDS = {"+=": b"+", "-=": b"-", "*=": b"*", "|=": b"|", "&=": b"&"}
+
+
+def expand_assignment(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`a += b` as `a = a + (b)`, for a target with no side effects."""
+    for node in _descendants(scope, "assignment_expression"):
+        left, right = node.child_by_field_name("left"), node.child_by_field_name("right")
+        operator = node.child_by_field_name("operator").type
+        if operator in EXPANDS and left.type in PLAIN:
+            value = right.text if right.type in PLAIN else b"(" + right.text + b")"
+            expanded = left.text + b" = " + left.text + b" " + EXPANDS[operator] + b" " + value
+            yield _rewrite("compound-assignment", Cause.INSTRUCTION_SELECTION, source, node, expanded, f"{node.text.decode()} spelled out")
+
+
+COMPRESSES = {"+": b"+=", "-": b"-=", "*": b"*=", "|": b"|=", "&": b"&="}
+
+
+def compress_assignment(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`a = a + b` as `a += b`, for a target with no side effects."""
+    for node in _descendants(scope, "assignment_expression"):
+        left, right = node.child_by_field_name("left"), node.child_by_field_name("right")
+        if node.child_by_field_name("operator").type != "=" or left.type not in PLAIN or right.type != "binary_expression":
+            continue
+        operator = right.child_by_field_name("operator").type
+        if operator in COMPRESSES and right.child_by_field_name("left").text == left.text:
+            rest = right.child_by_field_name("right").text
+            compressed = left.text + b" " + COMPRESSES[operator] + b" " + rest
+            yield _rewrite("compound-assignment", Cause.INSTRUCTION_SELECTION, source, node, compressed, f"{node.text.decode()} compressed")
+
+
+def nest_condition(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`if (a && b) X` without an else as `if (a) { if (b) X }`."""
+    for node in _descendants(scope, "if_statement"):
+        clause, body = node.child_by_field_name("condition"), node.child_by_field_name("consequence")
+        inner = clause.named_children[0] if clause is not None and len(clause.named_children) == 1 else None
+        if node.child_by_field_name("alternative") is not None or inner is None or inner.type != "binary_expression":
+            continue
+        if inner.child_by_field_name("operator").type != "&&":
+            continue
+        left, right = inner.child_by_field_name("left"), inner.child_by_field_name("right")
+        nested = b"if (" + left.text + b") { if (" + right.text + b") " + body.text + b" }"
+        yield _rewrite("condition-nesting", Cause.BLOCK_ORDER, source, node, nested, "the halves of && as nested ifs")
+
+
+LOOSE = {"conditional_expression", "assignment_expression", "comma_expression"}
+
+
+def merge_conditions(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`if (a) { if (b) X }` as `if (a && b) X`, when neither if has an else and the
+    inner one is all the outer one holds."""
+    for node in _descendants(scope, "if_statement"):
+        body = node.child_by_field_name("consequence")
+        if node.child_by_field_name("alternative") is not None or body is None:
+            continue
+        held = [c for c in body.named_children if c.type != "comment"] if body.type == "compound_statement" else [body]
+        if len(held) != 1 or held[0].type != "if_statement" or held[0].child_by_field_name("alternative") is not None:
+            continue
+        halves = []
+        for statement in (node, held[0]):
+            clause = statement.child_by_field_name("condition")
+            inner = clause.named_children[0] if clause is not None and len(clause.named_children) == 1 else None
+            if inner is None or inner.type == "declaration":
+                break
+            loose = inner.type in LOOSE or (inner.type == "binary_expression" and inner.child_by_field_name("operator").type == "||")
+            halves.append(b"(" + inner.text + b")" if loose else inner.text)
+        if len(halves) == 2:
+            merged = b"if (" + halves[0] + b" && " + halves[1] + b") " + held[0].child_by_field_name("consequence").text
+            yield _rewrite("condition-nesting", Cause.BLOCK_ORDER, source, node, merged, "nested ifs as one && condition")
+
+
 def _written(node: Node) -> bool:
     """Whether the expression is assigned, incremented or has its address taken,
     where a named copy would change what is written."""
@@ -505,4 +622,18 @@ def flip_nan_sense(source: bytes, scope: Node) -> Iterator[Rewrite]:
             yield _rewrite("nan-sense", Cause.BLOCK_ORDER, source, node, b"!(" + inverted + b")", f"{node.text.decode()} as !({inverted.decode()})")
 
 
-ALL = [swap_operands, swap_branches, swap_statements, move_declarations, name_temporaries, inline_temporaries, flip_nan_sense]
+ALL = [
+    swap_operands,
+    swap_branches,
+    swap_statements,
+    move_declarations,
+    name_temporaries,
+    inline_temporaries,
+    while_loop,
+    for_loop,
+    expand_assignment,
+    compress_assignment,
+    nest_condition,
+    merge_conditions,
+    flip_nan_sense,
+]

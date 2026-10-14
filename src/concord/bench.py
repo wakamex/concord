@@ -7,15 +7,15 @@ the unit still does. `solve` then runs concord's searches from the mutated sourc
 and records whether each gets back to exact, so recovery can be counted by kind
 of change and by search.
 
-Mutations come in two groups. The first are rewrites concord can undo with a
-rewrite it has (swap a comparison's operands, swap an if's branches, swap
-adjacent statements, move a declaration, name a temporary, inline one), so they
-measure whether a search finds that rewrite among the others. The second are
-changes it has no rewrite to undo (swap the operands of a commutative operator,
-write a for loop as a while loop, spell out a compound assignment, split a
-declaration from its initializer, nest the two halves of an `&&` condition):
-they measure what the searches cannot reach. Each kind is capped at the same
-number of cases, so a common kind does not decide the totals.
+Mutations come in two groups. Most are rewrites concord can undo with a rewrite
+it has (swap a comparison's operands or an if's branches, swap adjacent
+statements, move a declaration, name or inline a temporary, change a loop
+between for and while, spell out or compress a compound assignment, nest or
+merge the halves of an `&&`), so they measure whether a search finds that
+rewrite among the others. The rest are changes it has no rewrite to undo (swap
+the operands of a commutative operator, split a declaration from its
+initializer): they measure what the searches cannot reach. Each kind is capped
+at the same number of cases, so a common kind does not decide the totals.
 Real near misses are harder than either, since nothing says one rewrite
 separates them from a match; the benchmark is a floor to compare versions of
 concord against, not a forecast of yield.
@@ -38,13 +38,19 @@ from concord.transforms import (
     Rewrite,
     _descendants,
     _rewrite,
+    compress_assignment,
+    expand_assignment,
     find_function,
+    for_loop,
     inline_temporaries,
+    merge_conditions,
     move_declarations,
     name_temporaries,
+    nest_condition,
     swap_branches,
     swap_operands,
     swap_statements,
+    while_loop,
 )
 
 COMMUTATIVE = {"+", "*", "&", "|", "^"}
@@ -59,36 +65,6 @@ def commute(source: bytes, scope: Node) -> Iterator[Rewrite]:
         if operator in COMMUTATIVE and left.type in PLAIN and right.type in PLAIN and left.text != right.text:
             swapped = right.text + b" " + operator.encode() + b" " + left.text
             yield _rewrite("bench-commute", Cause.OPERAND_ORDER, source, node, swapped, f"{node.text.decode()} -> {swapped.decode()}")
-
-
-def while_loop(source: bytes, scope: Node) -> Iterator[Rewrite]:
-    """`for (init; cond; step) { body }` as `{ init; while (cond) { body step; } }`,
-    for loops whose body has no continue."""
-    for node in _descendants(scope, "for_statement"):
-        fields = {name: node.child_by_field_name(name) for name in ("initializer", "condition", "update", "body")}
-        body = fields["body"]
-        if None in fields.values() or _descendants(body, "continue_statement"):
-            continue
-        initializer = fields["initializer"].text
-        initializer += b"" if initializer.rstrip().endswith(b";") else b";"
-        braced = body.text if body.type == "compound_statement" else b"{\n" + body.text + b"\n}"
-        inner = braced[: braced.rindex(b"}")].rstrip() + b"\n" + fields["update"].text + b";\n}"
-        replacement = b"{ " + initializer + b" while (" + fields["condition"].text + b") " + inner + b" }"
-        yield _rewrite("bench-while-loop", Cause.BLOCK_ORDER, source, node, replacement, "for loop as a while loop")
-
-
-EXPANDS = {"+=": b"+", "-=": b"-", "*=": b"*", "|=": b"|", "&=": b"&"}
-
-
-def expand_assignment(source: bytes, scope: Node) -> Iterator[Rewrite]:
-    """`a += b` as `a = a + (b)`, for a target with no side effects."""
-    for node in _descendants(scope, "assignment_expression"):
-        left, right = node.child_by_field_name("left"), node.child_by_field_name("right")
-        operator = node.child_by_field_name("operator").type
-        if operator in EXPANDS and left.type in PLAIN:
-            value = right.text if right.type in PLAIN else b"(" + right.text + b")"
-            expanded = left.text + b" = " + left.text + b" " + EXPANDS[operator] + b" " + value
-            yield _rewrite("bench-expand-assignment", Cause.INSTRUCTION_SELECTION, source, node, expanded, f"{node.text.decode()} spelled out")
 
 
 def split_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
@@ -108,20 +84,6 @@ def split_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
         yield _rewrite("bench-split-declaration", Cause.REGISTER_ALLOCATION, source, node, split, f"{name.text.decode()} declared, then assigned")
 
 
-def nest_condition(source: bytes, scope: Node) -> Iterator[Rewrite]:
-    """`if (a && b) X` without an else as `if (a) { if (b) X }`."""
-    for node in _descendants(scope, "if_statement"):
-        clause, body = node.child_by_field_name("condition"), node.child_by_field_name("consequence")
-        inner = clause.named_children[0] if clause is not None and len(clause.named_children) == 1 else None
-        if node.child_by_field_name("alternative") is not None or inner is None or inner.type != "binary_expression":
-            continue
-        if inner.child_by_field_name("operator").type != "&&":
-            continue
-        left, right = inner.child_by_field_name("left"), inner.child_by_field_name("right")
-        nested = b"if (" + left.text + b") { if (" + right.text + b") " + body.text + b" }"
-        yield _rewrite("bench-nest-condition", Cause.BLOCK_ORDER, source, node, nested, "the halves of && as nested ifs")
-
-
 # name -> (mutation, whether concord has a rewrite that undoes it)
 MUTATIONS = {
     "swap comparison operands": (swap_operands, True),
@@ -130,11 +92,14 @@ MUTATIONS = {
     "move a declaration": (move_declarations, True),
     "name a temporary": (name_temporaries, True),
     "inline a temporary": (inline_temporaries, True),
+    "for loop as while loop": (while_loop, True),
+    "while loop as for loop": (for_loop, True),
+    "spell out an assignment": (expand_assignment, True),
+    "compress an assignment": (compress_assignment, True),
+    "nest an && condition": (nest_condition, True),
+    "merge nested ifs": (merge_conditions, True),
     "swap commutative operands": (commute, False),
-    "for loop as while loop": (while_loop, False),
-    "spell out an assignment": (expand_assignment, False),
     "split a declaration": (split_declaration, False),
-    "nest an && condition": (nest_condition, False),
 }
 
 

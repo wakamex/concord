@@ -9,14 +9,20 @@ from concord.transforms import (
     CPP,
     _negate,
     comparisons,
+    compress_assignment,
+    expand_assignment,
     find_function,
     flip_nan_sense,
+    for_loop,
     inline_temporaries,
+    merge_conditions,
     move_declarations,
     name_temporaries,
+    nest_condition,
     swap_branches,
     swap_operands,
     swap_statements,
+    while_loop,
 )
 
 SOURCE = b"""namespace game {
@@ -226,6 +232,36 @@ class FlipNanSense(unittest.TestCase):
         named = next(r.source for r in name_temporaries(source, scope) if b"= a + b;" in r.source)
         [inlined] = inline_temporaries(named, Parser(CPP).parse(named).root_node)
         self.assertEqual(inlined.source, source)
+
+    def test_a_while_loop_becomes_a_for_loop_and_back(self):
+        source = b"int f(int n)\n{\n    int sum = 0;\n    int i = 0;\n    while (i < n)\n    {\n        sum += i;\n        ++i;\n    }\n    return sum;\n}\n"
+        scope = Parser(CPP).parse(source).root_node
+        [rewrite] = for_loop(source, scope)
+        self.assertEqual(rewrite.description, "line 4: while loop as a for loop")
+        self.assertIn(b"    for (int i = 0; i < n; ++i) {\n        sum += i;\n    }\n    return sum;", rewrite.source)
+        [back] = while_loop(rewrite.source, Parser(CPP).parse(rewrite.source).root_node)
+        self.assertIn(b"{ int i = 0; while (i < n) {\n        sum += i;\n++i;\n} }", back.source)
+
+    def test_a_loop_whose_body_continues_or_does_not_end_in_a_step_stays_a_while(self):
+        for body in (b"if (i) continue; ++i;", b"if (i) return 1;"):
+            source = b"int f(int n)\n{\n    int i = 0;\n    while (i < n)\n    {\n        " + body + b"\n    }\n    return 0;\n}\n"
+            self.assertEqual(list(for_loop(source, Parser(CPP).parse(source).root_node)), [])
+
+    def test_compound_assignments_expand_and_compress(self):
+        source = b"void f(int a, int b)\n{\n    a += b - 1;\n    b = b * a;\n    a = b + a;\n}\n"
+        scope = Parser(CPP).parse(source).root_node
+        self.assertEqual([r.description for r in expand_assignment(source, scope)], ["line 3: a += b - 1 spelled out"])
+        self.assertIn(b"    a = a + (b - 1);\n", next(expand_assignment(source, scope)).source)
+        [compressed] = compress_assignment(source, scope)  # a = b + a does not start with its target
+        self.assertIn(b"    b *= a;\n", compressed.source)
+
+    def test_nested_ifs_merge_and_an_and_condition_nests(self):
+        source = b"void f(int a, int b, int c)\n{\n    if (a)\n    {\n        if (b || c)\n            g();\n    }\n    if (a && b)\n        h();\n    if (a)\n    {\n        if (b)\n            g();\n        else\n            h();\n    }\n}\n"
+        scope = Parser(CPP).parse(source).root_node
+        [merged] = merge_conditions(source, scope)  # the last pair has an else
+        self.assertIn(b"    if (a && (b || c)) g();\n", merged.source)
+        [nested] = nest_condition(source, scope)
+        self.assertIn(b"    if (a) { if (b) h(); }\n", nested.source)
 
     def test_relational_comparisons_change_their_nan_sense_and_equality_is_left_alone(self):
         source = b"int Board::f(float t)\n{\n    if (!(t > 4.0f)) return 1;\n    if (t <= 2.0f) return 2;\n    if (t == 3.0f) return 3;\n    return 0;\n}\n"
