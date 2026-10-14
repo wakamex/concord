@@ -52,6 +52,14 @@ from hv.elf import Elf
 _shared = None  # (target, known, placements by unit), inherited by forked workers
 
 
+def _jobs() -> int:
+    """Most compiles or comparisons to run at once: CONCORD_JOBS, or 8, and never
+    more than the machine's processors. Each comparison worker is a fork holding
+    the loaded target (about 0.75 GB on Harvest), and each compile lane copies the
+    sources into memory, so one worker per processor exhausted a 32 GB host."""
+    return max(1, min(int(os.environ.get("CONCORD_JOBS", "8")), os.cpu_count() or 1))
+
+
 def _compare(job: tuple[str, str]) -> dict:
     obj, unit = job
     target, known, placements = _shared
@@ -103,7 +111,7 @@ def compile_overlays(compiler: toolchain.Compiler, items: dict[str, dict], unit_
         Path(flag[2:]).parts[0] for flag in compiler.flags["flags"] if flag.startswith("-I") and not Path(flag[2:]).is_absolute()
     }
     touched = sorted({path for item in items.values() for path in item["overlays"]})
-    lanes = max(1, min(len(items), os.cpu_count() or 1))
+    lanes = max(1, min(len(items), _jobs()))
     work: list[list[str]] = [[] for _ in range(lanes)]
     for index, (name, item) in enumerate(items.items()):
         prepare = [f"cp /repo/{shlex.quote(p)} {shlex.quote(p)}" for p in touched]
@@ -206,15 +214,20 @@ def main() -> None:
         unit = by_source[request["unit"]]
         names = list(request["candidates"])
         pairs = [(name, Path(request["candidates"][name])) for name in names]
-        for name, outcome in zip(names, compiler.compile_many(unit.path, pairs), strict=True):
+        for name, outcome in zip(names, compiler.compile_many(unit.path, pairs, _jobs()), strict=True):
             if isinstance(outcome, subprocess.CalledProcessError):
                 result[name] = {"error": (outcome.stderr or str(outcome))[-2000:]}
             else:
                 jobs[name] = (str(outcome[0]), unit.source)
     _shared = (target, known, {source: u.placements for source, u in by_source.items()})
-    with ProcessPoolExecutor(os.cpu_count() or 1, mp_context=multiprocessing.get_context("fork")) as pool:
-        for name, report in zip(jobs, pool.map(_compare, jobs.values())):
-            result[name] = report
+    workers = min(len(jobs), _jobs())
+    if workers > 1:
+        with ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("fork")) as pool:
+            for name, report in zip(jobs, pool.map(_compare, jobs.values())):
+                result[name] = report
+    else:
+        for name, job in jobs.items():
+            result[name] = _compare(job)
     if jobs and not request.get("debug"):
         known_list = [(s.address, s.size, s.name) for s in symbols.load(build)]
         scores = fuzzy_scores(target, known_list, {name: result[name] for name in jobs}, out)
