@@ -63,7 +63,7 @@ def seed(
         return result
     target = root / "src" / unit
     target.parent.mkdir(parents=True, exist_ok=True)
-    present = {path for pattern in ("*.h", "*.cpp") for path in (root / "src").rglob(pattern)}
+    present = _snapshot(root)
     text = provenance(translate(irrlicht.read_text(encoding="latin-1")), f"source/Irrlicht/{irrlicht.name}")
     if _has_static_initializer(root, unit):
         text = re.sub(r"^#include", "#include <iostream>\n#include", text, count=1, flags=re.MULTILINE)
@@ -208,14 +208,24 @@ def _stub_failing(root: Path, output: str, written: set[str]) -> list[str]:
     return sorted(stubbed, key=lambda item: (item.split(":")[0], int(item.split(":")[1].split()[0])))
 
 
-def _discard(root: Path, result: SeedResult, present: set[Path]) -> None:
-    """Remove the files a failed seed created, so they do not pile up in the
-    checkout; files that were there before, such as a header an earlier unit
-    brought, stay."""
-    for written in dict.fromkeys(result.written):
-        path = root / "src" / written
-        if path not in present and path.exists():
+def _snapshot(root: Path) -> dict[Path, bytes]:
+    """Every source and header under src/ with its contents, and the port's build
+    file, so a failed seed can put the checkout back as it found it."""
+    files = [path for pattern in ("*.h", "*.cpp") for path in (root / "src").rglob(pattern)]
+    build = root / "port" / "build.zig"
+    return {path: path.read_bytes() for path in [*files, *([build] if build.exists() else [])]}
+
+
+def _discard(root: Path, result: SeedResult, present: dict[Path, bytes]) -> None:
+    """Undo a failed seed: remove the files it created and restore the ones it
+    changed, such as a seeded header it translated again, which an earlier unit
+    may depend on as it was."""
+    for path in [*(root / "src").rglob("*.h"), *(root / "src").rglob("*.cpp")]:
+        if path not in present:
             path.unlink()
+    for path, contents in present.items():
+        if path.exists() and path.read_bytes() != contents:
+            path.write_bytes(contents)
     result.written = [w for w in result.written if (root / "src" / w).exists()]
 
 

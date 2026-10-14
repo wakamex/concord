@@ -7,7 +7,15 @@ import unittest
 from pathlib import Path
 
 from concord.harvest import BUILD
-from concord.seed import UNDEFINED, _stub_failing, port_conflicts, replace_in_port
+from concord.seed import (
+    UNDEFINED,
+    SeedResult,
+    _discard,
+    _snapshot,
+    _stub_failing,
+    port_conflicts,
+    replace_in_port,
+)
 
 UNIT = b"""namespace daisy { namespace video {
 struct ILoader { virtual ~ILoader() {} };
@@ -69,6 +77,23 @@ class PortLink(unittest.TestCase):
             "    note:               .zig-cache/o/1/CWaterSurfaceSceneNode.o:(vtable for daisy::scene::CWaterSurfaceSceneNode)\n"
         )
         self.assertEqual(UNDEFINED.findall(output), [("daisy::scene::CMeshSceneNode::render()", "CWaterSurfaceSceneNode.cpp")])
+
+
+class Discard(unittest.TestCase):
+    def test_a_failed_seed_removes_new_files_and_restores_changed_ones(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src" / "d").mkdir(parents=True)
+            kept, changed = root / "src" / "d" / "Kept.h", root / "src" / "d" / "Shared.h"
+            kept.write_text("kept")
+            changed.write_text("as an earlier unit left it")
+            before = _snapshot(root)
+            changed.write_text("translated again")
+            (root / "src" / "d" / "New.cpp").write_text("new")
+            _discard(root, SeedResult("d/New.cpp", written=["d/New.cpp", "d/Shared.h"]), before)
+            self.assertEqual(changed.read_text(), "as an earlier unit left it")
+            self.assertEqual(kept.read_text(), "kept")
+            self.assertFalse((root / "src" / "d" / "New.cpp").exists())
 
 
 class Stubs(unittest.TestCase):
