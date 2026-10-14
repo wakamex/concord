@@ -24,19 +24,21 @@ name maps to {"object": path} or {"error": ...}. GCC 4.4 emits the same code wit
 and without -g, so a debug object's line tables locate the code of a normal compile.
 
 Either way every compile runs in the pinned toolchain at the unit's own path, in
-parallel lanes, and stdout gets one JSON object mapping each name to
+one container the driver keeps and in parallel lanes, and stdout gets one JSON object mapping each name to
 {"object": path, "exact": bool, "sections": [...], "fuzzy": {symbol: percent}} or
 {"error": compiler output}, where "fuzzy" is objdiff's score for each function.
 Candidate files must be inside `out`; nothing under the checkout's build/match is
 touched.
 """
 
+import copy
 import json
 import multiprocessing
 import os
 import shlex
 import subprocess
 import sys
+import time
 import traceback
 import uuid
 from concurrent.futures import ProcessPoolExecutor
@@ -116,10 +118,40 @@ def fuzzy_scores(project: Path, reports: dict[str, dict]) -> dict[str, dict[str,
     }
 
 
-def compile_overlays(compiler: toolchain.Compiler, items: dict[str, dict], unit_paths: dict[str, Path]) -> dict:
-    """Compile every item in one container. Each lane copies the source roots once;
-    each item first restores the files any earlier item of the lane overlaid, then
-    copies its own overlays in, then compiles its unit."""
+class Container:
+    """One toolchain container kept for the life of the driver. It mounts the
+    checkout read-only at /repo and concord's work root at /out, and reads its
+    standard input, so it exits when the driver does. Each batch runs in it with
+    `docker exec`, which spares starting a container per request."""
+
+    def __init__(self, compiler: toolchain.Compiler) -> None:
+        self.name = f"concord-{uuid.uuid4().hex[:12]}"
+        self.process = subprocess.Popen(
+            [
+                "docker", "run", "--rm", "-i", "--name", self.name, "--network=none", "--platform", "linux/amd64",
+                "--security-opt=label=disable",
+                "-v", f"{builds.ROOT}:/repo:ro", "-v", f"{compiler.out}:/out", "--tmpfs", "/lanes:exec",
+                "-w", "/lanes", compiler.image_id, "cat",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+        )  # fmt: skip
+        deadline = time.monotonic() + 30
+        while subprocess.run(["docker", "exec", self.name, "true"], capture_output=True, check=False).returncode:
+            if self.process.poll() is not None or time.monotonic() > deadline:
+                raise RuntimeError("the toolchain container did not start")
+            time.sleep(0.05)
+
+    def sh(self, script: str) -> None:
+        toolchain.run("docker", "exec", self.name, "sh", script)
+
+
+def compile_overlays(checkout: "Checkout", debug: bool, out: Path, items: dict[str, dict]) -> dict:
+    """Compile every item in the kept container. Each lane copies the source roots
+    once; each item first restores the files any earlier item of the lane
+    overlaid, then copies its own overlays in, then compiles its unit."""
+    compiler = checkout.compiler(debug)
+    prefix = out.resolve().relative_to(compiler.out).as_posix()  # work files sit under the mounted root
     roots = {"src"} | {
         Path(flag[2:]).parts[0] for flag in compiler.flags["flags"] if flag.startswith("-I") and not Path(flag[2:]).is_absolute()
     }
@@ -131,10 +163,10 @@ def compile_overlays(compiler: toolchain.Compiler, items: dict[str, dict], unit_
         prepare += [
             f"cp {shlex.quote(compiler.container_path(Path(c)))} {shlex.quote(p)}" for p, c in item["overlays"].items()
         ]
-        command = shlex.join(compiler.compile_command(unit_paths[item["unit"]], name))
+        command = shlex.join(compiler.compile_command(checkout.by_source[item["unit"]].path, f"{prefix}/{name}"))
         work[index % lanes].append(
-            f"if {' && '.join(prepare) or 'true'}; then {command} 2> /out/{name}.err; "
-            f"echo $? > /out/{name}.status; else echo 125 > /out/{name}.status; fi"
+            f"if {' && '.join(prepare) or 'true'}; then {command} 2> /out/{prefix}/{name}.err; "
+            f"echo $? > /out/{prefix}/{name}.status; else echo 125 > /out/{prefix}/{name}.status; fi"
         )
     batch = uuid.uuid4().hex
     lines = ["set -u"]
@@ -144,24 +176,19 @@ def compile_overlays(compiler: toolchain.Compiler, items: dict[str, dict], unit_
         lines.extend(steps)
         lines.append(") &")
     lines += ["wait", f"rm -rf /lanes/{batch}"]
-    script = compiler.out / f"overlay-{batch}.sh"
+    script = out / f"overlay-{batch}.sh"
     script.write_text("\n".join(lines) + "\n")
     try:
-        toolchain.run(
-            "docker", "run", "--rm", "--network=none", "--platform", "linux/amd64",
-            "--security-opt=label=disable",
-            "-v", f"{builds.ROOT}:/repo:ro", "-v", f"{compiler.out}:/out", "--tmpfs", "/lanes:exec",
-            "-w", "/lanes", compiler.image_id, "sh", compiler.container_path(script),
-        )  # fmt: skip
+        checkout.container().sh(compiler.container_path(script))
     finally:
         script.unlink()
     outcomes = {}
     for name in items:
-        status = (compiler.out / f"{name}.status").read_text().strip()
+        status = (out / f"{name}.status").read_text().strip()
         if status != "0":
-            outcomes[name] = {"error": (compiler.out / f"{name}.err").read_text()[-2000:]}
+            outcomes[name] = {"error": (out / f"{name}.err").read_text()[-2000:]}
         else:
-            outcomes[name] = {"object": str(compiler.out / f"{name}.o")}
+            outcomes[name] = {"object": str(out / f"{name}.o")}
     return outcomes
 
 
@@ -201,6 +228,25 @@ class Checkout:
 
     def __init__(self) -> None:
         self.stamp = None
+        self._compilers: dict[bool, toolchain.Compiler] = {}
+        self._container: Container | None = None
+
+    def compiler(self, debug: bool = False) -> toolchain.Compiler:
+        """The checkout's compiler over concord's work root, checked against the
+        pinned image once; with `debug`, a copy that adds -g."""
+        if False not in self._compilers:
+            root = builds.ROOT / "build" / "concord"
+            self._compilers[False] = toolchain.Compiler(toolchain.load_flags(builds.canonical_build()), root)
+        if debug and True not in self._compilers:
+            plain = self._compilers[False]
+            self._compilers[True] = copy.copy(plain)
+            self._compilers[True].flags = {**plain.flags, "flags": [*plain.flags["flags"], "-g"]}
+        return self._compilers[debug]
+
+    def container(self) -> Container:
+        if self._container is None or self._container.process.poll() is not None:
+            self._container = Container(self.compiler())
+        return self._container
 
     def refresh(self) -> None:
         build = builds.canonical_build()
@@ -227,28 +273,19 @@ def handle(request: dict, checkout: Checkout) -> object:
         return vtable_mismatches(target, objects, known)
     out = Path(request["out"])
     out.mkdir(parents=True, exist_ok=True)
-    compiler = toolchain.Compiler(toolchain.load_flags(build), out)
-    if request.get("debug"):
-        compiler.flags = {**compiler.flags, "flags": [*compiler.flags["flags"], "-g"]}
     result: dict[str, dict] = {}
     jobs: dict[str, tuple[str, str]] = {}
     if "items" in request:
         items = request["items"]
-        paths = {item["unit"]: by_source[item["unit"]].path for item in items.values()}
-        for name, outcome in compile_overlays(compiler, items, paths).items():
-            if "error" in outcome or request.get("debug"):
-                result[name] = outcome
-            else:
-                jobs[name] = (outcome["object"], items[name]["unit"])
-    else:
+    else:  # candidates of one unit: the unit with its own source replaced
         unit = by_source[request["unit"]]
-        names = list(request["candidates"])
-        pairs = [(name, Path(request["candidates"][name])) for name in names]
-        for name, outcome in zip(names, compiler.compile_many(unit.path, pairs, _jobs()), strict=True):
-            if isinstance(outcome, subprocess.CalledProcessError):
-                result[name] = {"error": (outcome.stderr or str(outcome))[-2000:]}
-            else:
-                jobs[name] = (str(outcome[0]), unit.source)
+        source = unit.path.resolve().relative_to(builds.ROOT).as_posix()
+        items = {name: {"unit": unit.source, "overlays": {source: path}} for name, path in request["candidates"].items()}
+    for name, outcome in compile_overlays(checkout, bool(request.get("debug")), out, items).items():
+        if "error" in outcome or request.get("debug"):
+            result[name] = outcome
+        else:
+            jobs[name] = (outcome["object"], items[name]["unit"])
     scoring = bool(jobs) and not request.get("debug")
     project = out / f"fuzzy-{uuid.uuid4().hex}" if scoring else None
     if project is not None:

@@ -49,7 +49,7 @@ Upstream results so far, each verified by Harvest's `hv match` on every unit:
 
 ### Requirements
 
-- A Harvest checkout on which `hv match` has run, with its pinned GCC 4.4.3 container image (Harvest's `just toolchain`) and your own copy of the original game binaries in its `orig/`, which Harvest does not include. concord compiles through Harvest's own toolchain and matcher, under `build/concord/` in that checkout, and calls only what Harvest's public `hv` package provides.
+- A Harvest checkout on which `hv match` has run, with its pinned GCC 4.4.3 container image (Harvest's `just toolchain`) and your own copy of the original game binaries in its `orig/`, which Harvest does not include. concord compiles through Harvest's own toolchain and matcher, under `build/concord/` in that checkout, and calls only what Harvest's public `hv` package provides. It keeps one driver process and one toolchain container per checkout for the length of a command, compiles and compares up to `CONCORD_JOBS` candidates at a time (8 by default; each comparison worker holds the loaded target, about 0.75 GB), and `concord clean` removes old work files.
 - `c++filt` and `addr2line` from [GNU Binutils](https://www.gnu.org/software/binutils/), and `as` and `g++` for some tests.
 - Python 3.11 or newer and [uv](https://docs.astral.sh/uv/).
 
