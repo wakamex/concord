@@ -160,7 +160,10 @@ def seed(
     if found:
         result.exact, result.functions = int(found[1]), int(found[2])
     else:
+        # the matcher stopped, as on a placement outside the target: undo the seed as for a compile error
         result.error = output.strip().splitlines()[-1] if output.strip() else "hv match printed no result"
+        _unregister(root, unit)
+        _discard(root, result, present)
     return result
 
 
