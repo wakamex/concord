@@ -121,11 +121,28 @@ concord is the deterministic half of matching: it verifies candidates with the t
 3. Context checks before body searches. Compare the inline functions each unit emits with what the target holds beside that unit; a difference means a header shows the unit a definition the original did not have, or hides one it had. This joins `vtables`, `layout` and `phase`.
 4. Findings any author can consume. Each diff, cause and suggested edit is available as structured output with stable names, so a model harness or another project's agents can use them without parsing prose.
 
-Seeding from Irrlicht continues beside these while it pays: 41 Irrlicht-named daisy files remain, most of them where daisy's classes differ from Irrlicht's, and the rename tables in `concord.irrlicht` would be better derived by aligning Irrlicht's names with the Mac symbols than written by hand.
+### Finishing Harvest's platform layer
+
+`python -m hv.progress report`, at Harvest eee9093, splits Harvest's Linux binary into four layers. The table below divides each layer's functions into those already exact, those in a recovered unit that do not match yet, and those in no recovered unit at all. The last column is where new source has to come from; the middle one is where context checks and rewrite searches help. Bytes are target code bytes; more exact is better.
+
+| Layer | Functions (bytes) | Exact functions (bytes, share of layer) | Inexact, in recovered units (bytes) | In no recovered unit (bytes) |
+| --- | ---: | ---: | ---: | ---: |
+| game | 1,460 (707,952) | 1,344 (425,177, 60.1%) | 109 (282,582) | 7 (193) |
+| engine | 1,108 (213,652) | 1,013 (160,064, 74.9%) | 42 (48,260) | 53 (5,328) |
+| toolkit | 558 (231,777) | 486 (146,892, 63.4%) | 70 (84,490) | 2 (395) |
+| platform | 2,114 (795,228) | 944 (177,871, 22.4%) | 90 (107,057) | 1,080 (510,300) |
+
+Of the 516 KB that no recovered unit covers, 510 KB is in platform, and game, engine and toolkit together have under 6 KB. Every other layer's gap is source that exists and does not match yet. The Mac debug map assigns the unrecovered platform code to 44 daisy units, and 42 of them have a file of the same name in `third_party/irrlicht-0.7/source/Irrlicht/` (the scene manager, collision manager, X-file reader and animation player, octree and terrain nodes, binary space partitioning (BSP) tree, mesh loaders, software driver, image loaders and the remaining scene nodes and emitters). The other two are the Winsock network device and its socket object, about 7.5 KB on Mac. Many of these functions show as unnamed on Linux; `hv match --learn` names them once their file is seeded, as it did for the files recovered in `banteg/harvest#27` and `banteg/harvest#28`. The 90 inexact functions already in recovered platform units are led by `CVideoNull.cpp` (30 functions, 21 KB), `CVideoOpenGL.cpp` (11, 15 KB), `CFileSystem.cpp` (11, 13 KB), `CZipReader.cpp` (6, 13 KB) and `CMeshManipulator.cpp` (7, 7 KB).
+
+Because almost no code outside platform is still unrecovered and the platform gap has Irrlicht's source, decompiler drafts and the held-out recovery benchmark wait until a source-writing harness or new diagnostic output is ready to be evaluated on the 311 inexact functions in recovered units, or until seeding stops producing files. Seeding from Irrlicht continues beside the four roadmap items above while it pays, in three steps:
+
+1. Seed files that only partly compile. Once an Irrlicht file compiles, most of its functions have matched as they are (16 files and 112 functions in `banteg/harvest#27`, 8 files with 269 of 283 functions exact in `banteg/harvest#28`), while the remaining files fail where daisy's classes differ from Irrlicht's (changed constructors and method signatures, added or removed virtuals, moved fields, and containers replaced with `ox::TArray` and `ox::TList`). Today `seed` discards a whole file when any one function in it fails to compile. Replacing only the broken method bodies with minimal stub definitions, which keep their Mac signatures, lets the rest of the unit compile, get placed and match now, while the stubbed methods show as inexact and point at what still differs. A stub keeps what omitting the method would lose (the class's vtable when the method is its key function, the unit's function count for placement, and the method's declarations in the count `phase` measures), but a stubbed method inlined into its callers can leave them inexact. Stub-seeding two or three small remaining files first is also the cheapest test of the assumption that a file which compiles mostly matches, before building full class reconciliation; the largest remaining files, the scene manager and the X-file reader and animation player, may differ more.
+2. Reconcile each class from Harvest's reference data. Instead of growing hand-written rename tables in `concord/irrlicht.py` one compile error at a time, each class's header can be built from Irrlicht's declaration aligned against three committed sources: `reference/1.18-mac-i386/functions.csv` (6,406 compiled methods with demangled signatures, namespaces and constness), `reference/1.18-mac-i386/vtables.csv` (all 354 virtual tables slot by slot, fixing virtual functions and their order), and `layout` with `harvest-oracle`'s `accesses` (checking field offsets against how the original code accesses memory). That adds the methods daisy has and Irrlicht lacks, drops the ones daisy removed, corrects signatures and virtual order, and checks fields, under the same whole-build check that rejects a change if any function elsewhere scores lower.
+3. Rank the remaining files by shared blocker. Seed every remaining file, group the compile errors by cause (a missing member, a wrong signature, a wrong base class, a missing header) and fix causes in the order of how many files each unblocks, as `ISceneNode` unblocked about ten files at once. Once a file compiles, the staged search and its location ranking work on its near misses, as they did for [banteg/harvest#34](https://github.com/banteg/harvest/pull/34), and partial gains go upstream with the exact matches.
 
 ## Development
 
-concord uses [uv](https://docs.astral.sh/uv/).
+concord uses uv.
 
 ```sh
 uv run concord --help
@@ -133,7 +150,7 @@ uv run --locked ruff check src tests
 uv run --locked python -m unittest discover -s tests
 ```
 
-The Harvest tests in `tests/test_diff.py` run when a Harvest checkout after `hv match` is at `../harvest` or `CONCORD_HARVEST` names one, and skip otherwise. `AGENTS.md` holds the working rules for agents: manual steps in matching work become concord capabilities, and every complete match goes upstream with the partial gains found alongside it.
+The Harvest tests in `tests/test_diff.py` run when a Harvest checkout after `hv match` is at `../harvest` or `CONCORD_HARVEST` names one, and skip otherwise.
 
 ## Goals
 
@@ -152,7 +169,8 @@ The current best way toward the goals. It changes as tools and knowledge improve
 
 Method
 - Find out what blocks a function or file by measuring before building: the benchmark for searches, `phase` for declaration-count sensitivity, `--locate` for where the diff points. The two findings that paid most, the declaration count modulo 31 and the key function, came from understanding the compiler, not from more search.
-- Seed from ancestor source while it pays: on Harvest, Irrlicht 0.7 gave most of the functions concord has upstreamed. Place headers where the target's reference tables put them, and keep a shared-header change only if every file that includes it is no worse.
+- Check a unit's context before searching its function bodies: virtual table slots (`vtables`), field offsets (`layout`), emitted inline copies, and the declaration count (`phase`). On Harvest, wrong headers and out-of-class key functions kept functions inexact across whole units where body rewrites could not move them.
+- Seed from ancestor source while it pays, by the cheapest step that unblocks the most files: stub the non-compiling methods of a file so the rest can be seeded, rank the remaining files by the compile error they share, and derive class changes from the target's recorded symbols, virtual tables and memory accesses rather than one compile error at a time. Place headers where the target's reference tables put them, and keep a shared-header change only if every file that includes it is no worse. On Harvest, Irrlicht 0.7 gave most of the functions concord has upstreamed, and one shared blocker, `ISceneNode`, held up about ten files.
 - Grow the search's vocabulary on evidence: add a rewrite, with its inverse, when the benchmark or a real near miss shows a change the search cannot undo. The loop, assignment and condition rewrites came that way, and the condition rewrite then matched three real functions.
 - Try single rewrites nearest the attributed lines before random ones; on the benchmark that recovered more cases with about a third fewer compiles.
 
