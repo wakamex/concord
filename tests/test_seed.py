@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from concord.harvest import BUILD
-from concord.seed import port_conflicts, replace_in_port
+from concord.seed import _stub_failing, port_conflicts, replace_in_port
 
 UNIT = b"""namespace daisy { namespace video {
 struct ILoader { virtual ~ILoader() {} };
@@ -59,6 +59,40 @@ class PortConflicts(unittest.TestCase):
             self.assertIn('    "HarvestFull/main.cpp",\n' + entry, text)
             self.assertFalse(replace_in_port(root, "daisy/video/CLoaderPSD.cpp"))
             self.assertEqual(build.read_text(), text)
+
+
+class Stubs(unittest.TestCase):
+    def test_only_failing_function_bodies_in_written_files_are_stubbed(self):
+        source = b"""A::A(int x)
+    : X(x), Y(missing(x))
+{
+    go();
+}
+
+int A::ok() const
+{
+    return X;
+}
+
+int A::bad(int n)
+{
+    return Randomizer::rand() % n;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src" / "d").mkdir(parents=True)
+            (root / "src" / "d" / "A.cpp").write_bytes(source)
+            (root / "src" / "d" / "Other.cpp").write_bytes(source)
+            output = "src/d/A.cpp:2: error: 'missing' was not declared\nsrc/d/A.cpp:14: error: 'Randomizer' has not been declared\nsrc/d/Other.cpp:14: error: x\n"
+            stubbed = _stub_failing(root, output, {"d/A.cpp"})
+            text = (root / "src" / "d" / "A.cpp").read_bytes()
+            self.assertEqual(stubbed, ["d/A.cpp:1 A::A", "d/A.cpp:12 A::bad"])
+            self.assertIn(b"A::A(int x)\n{\n    __builtin_trap();\n}", text)
+            self.assertIn(b"int A::ok() const\n{\n    return X;\n}", text)
+            self.assertIn(b"int A::bad(int n)\n{\n    __builtin_trap();\n}", text)
+            self.assertEqual((root / "src" / "d" / "Other.cpp").read_bytes(), source)
+            self.assertEqual(_stub_failing(root, output, {"d/A.cpp"}), [])  # a stub is not stubbed again
 
 
 if __name__ == "__main__":

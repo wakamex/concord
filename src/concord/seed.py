@@ -20,10 +20,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from elftools.elf.elffile import ELFFile
+from tree_sitter import Parser
 
 from concord.complete import TYPES, complete, missing_members, settle
 from concord.harvest import BUILD, Harvest
 from concord.irrlicht import HEADERS, bare, translate
+from concord.transforms import CPP
 
 IRRLICHT = Path("third_party/irrlicht-0.7")
 
@@ -34,13 +36,19 @@ class SeedResult:
     exact: int = 0
     functions: int = 0
     port_conflicts: list[str] = field(default_factory=list)  # functions port/src also defines
+    stubbed: list[str] = field(default_factory=list)  # "path:line name" of each function given a stub body
     placements: dict[str, int] = field(default_factory=dict)
     written: list[str] = field(default_factory=list)
     error: str = ""
 
 
-def seed(root: Path, unit: str, complete_types: bool = False, allowed: frozenset[str] = frozenset()) -> SeedResult:
-    """Seed `unit` (a path under src/, such as daisy/video/Software/CTRFlat.cpp)."""
+def seed(
+    root: Path, unit: str, complete_types: bool = False, allowed: frozenset[str] = frozenset(), stub: bool = False
+) -> SeedResult:
+    """Seed `unit` (a path under src/, such as daisy/video/Software/CTRFlat.cpp).
+    With `stub`, a function of the translated files whose body does not compile
+    keeps its declarator and gets a body that traps, so the rest of the unit can
+    compile and match."""
     result = SeedResult(unit)
     irrlicht = root / IRRLICHT / "source" / "Irrlicht" / Path(unit).name
     if not irrlicht.exists():
@@ -107,6 +115,14 @@ def seed(root: Path, unit: str, complete_types: bool = False, allowed: frozenset
         _unregister(root, unit)
         _discard(root, result, present)
         return result
+    for _ in range(6 if stub else 0):  # a stubbed body can expose errors the compiler stopped before
+        if "error:" not in output:
+            break
+        stubbed = _stub_failing(root, output, set(result.written))
+        if not stubbed:
+            break
+        result.stubbed += stubbed
+        output = _match(root, unit, learn=False)
     if "error:" in output or "returned non-zero" in output:
         result.error = "\n".join(line for line in output.splitlines() if "error" in line)[:3000]
         _unregister(root, unit)
@@ -127,6 +143,50 @@ def seed(root: Path, unit: str, complete_types: bool = False, allowed: frozenset
     else:
         result.error = output.strip().splitlines()[-1] if output.strip() else "hv match printed no result"
     return result
+
+
+ERROR_LINE = re.compile(r"^(src/[^:\s]+):(\d+): error:", re.MULTILINE)
+STUB = b"\n{\n    __builtin_trap();\n}"
+
+
+def _stub_failing(root: Path, output: str, written: set[str]) -> list[str]:
+    """Give every function definition of a file this seed wrote that holds a
+    compile error a body that only traps, and drop its constructor initializer
+    list, keeping the declarator: the unit keeps the function, its vtable when
+    the function is the key function, and its place among the unit's functions,
+    while the function itself stays inexact. An error outside any function body,
+    or in a file the seed did not write, is left for the caller to report. A
+    non-void function without a return is a warning in C++, so one body fits all.
+    Returns the functions stubbed, as path:line name."""
+    by_file: dict[str, set[int]] = {}
+    for path, line in ERROR_LINE.findall(output):
+        relative = path.removeprefix("src/")
+        if relative in written:
+            by_file.setdefault(relative, set()).add(int(line))
+    stubbed = []
+    for relative, lines in sorted(by_file.items()):
+        path = root / "src" / relative
+        source = path.read_bytes()
+        tree = Parser(CPP).parse(source)
+        edits = []
+        stack = [tree.root_node]
+        while stack:
+            node = stack.pop()
+            if node.type == "function_definition":
+                body = node.child_by_field_name("body")
+                first, last = node.start_point[0] + 1, node.end_point[0] + 1
+                if body is not None and any(first <= line <= last for line in lines) and body.text != STUB.strip():
+                    start = node.child_by_field_name("declarator").end_byte
+                    edits.append((start, body.end_byte, node))
+                continue
+            stack.extend(node.children)
+        for start, end, node in sorted(edits, key=lambda edit: -edit[0]):
+            source = source[:start] + STUB + source[end:]
+            name = node.child_by_field_name("declarator").text.decode().split("(")[0].strip()
+            stubbed.append(f"{relative}:{node.start_point[0] + 1} {name}")
+        if edits:
+            path.write_bytes(source)
+    return sorted(stubbed, key=lambda item: (item.split(":")[0], int(item.split(":")[1].split()[0])))
 
 
 def _discard(root: Path, result: SeedResult, present: set[Path]) -> None:
@@ -643,10 +703,20 @@ def _anchors(root: Path, slug: str) -> list[int]:
 
 
 def _ios_init_object(root: Path, address: int) -> int | None:
+    """The object the static initializer at `address` passes to std::ios_base::Init,
+    or None when there is no such move there or its operand is not in the target's
+    .bss: an address computed from a misplaced function (a stub stands in for a
+    longer function) points at unrelated code whose immediate means nothing."""
+    image = root / "orig" / BUILD / "Harvest"
     done = subprocess.run(
-        ["objdump", "-d", f"--start-address={address:#x}", f"--stop-address={address + 16:#x}",
-         str(root / "orig" / BUILD / "Harvest")],
+        ["objdump", "-d", f"--start-address={address:#x}", f"--stop-address={address + 16:#x}", str(image)],
         capture_output=True, text=True, check=True,
     )  # fmt: skip
     found = re.search(r"mov\s+\$0x([0-9a-f]+),%edi", done.stdout)
-    return int(found[1], 16) if found else None
+    if found is None:
+        return None
+    value = int(found[1], 16)
+    with open(image, "rb") as stream:
+        bss = ELFFile(stream).get_section_by_name(".bss")
+        inside = bss is not None and bss["sh_addr"] <= value < bss["sh_addr"] + bss["sh_size"]
+    return value if inside else None

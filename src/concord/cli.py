@@ -45,6 +45,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     p_seed.add_argument(
+        "--stub",
+        action="store_true",
+        help="give a function whose body does not compile a body that traps, so the rest of the unit can match",
+    )
+    p_seed.add_argument(
         "--allow-worse",
         action="append",
         default=[],
@@ -443,7 +448,7 @@ def _seed(args: argparse.Namespace) -> int:
     exact = 0
     for unit in args.units:
         try:
-            result = seed(args.harvest.resolve(), unit, args.complete, frozenset(args.allow_worse))
+            result = seed(args.harvest.resolve(), unit, args.complete, frozenset(args.allow_worse), args.stub)
         except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"error      {unit}: {str(error).strip().splitlines()[-1]}", flush=True)
             continue
@@ -454,6 +459,8 @@ def _seed(args: argparse.Namespace) -> int:
                 print(f"           {line}")
         else:
             print(f"{'exact' if result.exact == result.functions else 'partial':10} {unit}  functions {result.exact}/{result.functions}  {placed}", flush=True)
+            for item in result.stubbed:
+                print(f"           stubbed {item}")
             if result.port_conflicts and replace_in_port(args.harvest.resolve(), unit):
                 print(f"           the port defines {len(result.port_conflicts)} of its functions; listed as replaced in port/build.zig")
             exact += result.exact == result.functions
