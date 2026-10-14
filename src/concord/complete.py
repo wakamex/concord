@@ -74,8 +74,8 @@ def complete_enum(root: Path, name: str) -> str | None:
             enumerators = re.findall(r"^\s*(\w+)", found[0].split("{", 1)[1], re.MULTILINE)
             if name != found[1] and name not in enumerators:
                 continue
-            if re.search(r"\benum " + found[1] + r"\b", text):
-                return None
+            if any(re.search(r"\benum " + found[1] + r"\b", other.read_text()) for other in (root / "src" / "ox").rglob("*.h")):
+                return None  # another ox header has it, as IVideoDriver.h has ECOLOR_FORMAT
             definition = _outdent(translate(found[0].strip("\n"))) + "\n\n"
             first = re.search(r"^(class|struct) \w+[^;]*$", text, re.MULTILINE) or re.search(r"^namespace \w+ \{\n(?!namespace)", text, re.MULTILINE)
             if first is None:

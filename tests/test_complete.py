@@ -192,6 +192,9 @@ class Enums(unittest.TestCase):
             self.assertIn("class IMesh;\n\nenum E_ANIMATED_MESH_TYPE\n{\n    //! Unknown animated mesh type.\n    EAMT_UNKNOWN = 0,\n    EAMT_MD2,\n};\n\nclass IAnimatedMesh", text)
             self.assertIsNone(complete_enum(root, "E_ANIMATED_MESH_TYPE"))  # already there
             self.assertIsNone(complete_enum(root, "ELL_ERROR"))
+            header.write_text(OX_MESH)
+            (root / "src/ox/scene/Elsewhere.h").write_text("enum E_ANIMATED_MESH_TYPE { EAMT_UNKNOWN };\n")
+            self.assertIsNone(complete_enum(root, "EAMT_MD2"))  # defined in another ox header
 
 
 class FakeHarvest:
