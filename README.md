@@ -135,6 +135,44 @@ uv run --locked python -m unittest discover -s tests
 
 The Harvest tests in `tests/test_diff.py` run when a Harvest checkout after `hv match` is at `../harvest` or `CONCORD_HARVEST` names one, and skip otherwise. `AGENTS.md` holds the working rules for agents: manual steps in matching work become concord capabilities, and every complete match goes upstream with the partial gains found alongside it.
 
+## Goals
+
+What concord is for. These are meant to stay fixed; they change only if the aim does.
+
+1. Progress is functions made exact in a target project and accepted there. Benchmark recoveries, fuzzy scores and search counts are means to that, since a score can rise while nothing new matches.
+2. A result counts only when the target's own matcher proves it and no other function in the build scores lower, because a gain in one function has repeatedly cost an exact match elsewhere through a shared header or the declaration count.
+3. A function's behavior is kept, except where the oracle shows a change brings it closer to the original's; a matching search must not drift away from what the code does.
+4. What goes upstream is concord's output. A step done by hand in matching work becomes a general concord capability with tests first, so the next function gets it for free and the result can be reproduced.
+5. Concord tells whoever writes source, a person, an agent or a separate model harness, what to change, and proves the result. It does not write a function from its disassembly itself.
+6. Submitted source reads as if a person wrote it for the project: its layout, names and idioms, since a maintainer reviews and keeps it.
+
+## How we work now
+
+The current best way toward the goals. It changes as tools and knowledge improve; an item that is superseded is rewritten or removed.
+
+Method
+- Find out what blocks a function or file by measuring before building: the benchmark for searches, `phase` for declaration-count sensitivity, `--locate` for where the diff points. The two findings that paid most, the declaration count modulo 31 and the key function, came from understanding the compiler, not from more search.
+- Seed from ancestor source while it pays: on Harvest, Irrlicht 0.7 gave most of the functions concord has upstreamed. Place headers where the target's reference tables put them, and keep a shared-header change only if every file that includes it is no worse.
+- Grow the search's vocabulary on evidence: add a rewrite, with its inverse, when the benchmark or a real near miss shows a change the search cannot undo. The loop, assignment and condition rewrites came that way, and the condition rewrite then matched three real functions.
+- Try single rewrites nearest the attributed lines before random ones; on the benchmark that recovered more cases with about a third fewer compiles.
+
+Evidence
+- Judge a search change against the previous version on the same benchmark cases, then confirm it on the target's real near misses, since benchmark cases are easier than real ones.
+- When a change is meant to preserve output, compare hashes of every output before and after, as for each driver and delinker speedup.
+- Run lint and the tests after the last edit and before every push; a push that ran only the tests has failed CI.
+
+Upstream
+- Open a pull request in the target whenever concord makes functions exact, with the partial gains it found along the way, linking the concord commits behind them; push concord first so the links resolve. Tooling fixes and behavior fixes the oracle supports can go in their own pull request, with any score they cost stated.
+- Before calling a Harvest pull request ready, run the whole-build score comparison, `zig build harvest` and the tests, and wait for every CI check; one pull request failed the port build that had not been run.
+- Rebase and recapture evidence when the target's master moves; a conflicting pull request gets no CI at all.
+
+The machine
+- Cap parallel work: `CONCORD_JOBS` workers (8 by default, 2 when memory is short) and only start long jobs with at least 4 GB free. Sizing pools by processor count once took 22 GB and the kernel killed other services.
+- Run long jobs as their own systemd units, one at a time, and remove old work files with `concord clean`.
+
+Speed
+- Profile before rewriting for speed. The slow Python was repeated work (re-parsing a symbol table, a container start per request) and was fixed in Python with identical output; a native rewrite waits until the profile says it is worth it.
+
 ## License
 
 concord is under the [MIT License](LICENSE). `results/harvest.jsonl` and the knowledge base quote short fragments of Harvest source as evidence. The source patches that `concord match` and `concord permute` save under `results/patches/` stay local and untracked, since Harvest carries no license that would allow redistributing them.
