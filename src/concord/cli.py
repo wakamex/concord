@@ -13,7 +13,7 @@ from concord import __version__, bench, knowledge, layout, oracle, results, scor
 from concord.complete import TYPES, absent, complete, settle, state
 from concord.diff import diff_code, read_function
 from concord.finish import finish
-from concord.harvest import Harvest
+from concord.harvest import BUILD, Harvest
 from concord.lines import editable, inline_chains
 from concord.model import Cause, DiffResult
 from concord.order import apply_order, search_order
@@ -22,7 +22,13 @@ from concord.phase import PHASES, scan, spans
 from concord.repair import repair
 from concord.search import _diff as _search_diff
 from concord.search import _key, search
-from concord.seed import _bring_includes, header, replace_in_port, seed
+from concord.seed import (
+    _bring_includes,
+    header,
+    keep_port_linking,
+    replace_in_port,
+    seed,
+)
 from concord.unguard import definitions, irrlicht_definitions, unguard, without_guard
 
 
@@ -464,6 +470,10 @@ def _seed(args: argparse.Namespace) -> int:
             if result.port_conflicts and replace_in_port(args.harvest.resolve(), unit):
                 print(f"           the port defines {len(result.port_conflicts)} of its functions; listed as replaced in port/build.zig")
             exact += result.exact == result.functions
+    seeded = [unit for unit in args.units if f'["{unit}"]' in (args.harvest / "config" / BUILD / "units.toml").read_text()]
+    if (args.harvest / "port" / "build.zig").exists() and seeded:
+        for unit, symbols in keep_port_linking(args.harvest.resolve(), seeded).items():
+            print(f"port       {unit}: needs {len(symbols)} symbols nothing defines ({symbols[0]}); listed as replaced in port/build.zig")
     if len(args.units) > 1:
         print(f"{exact} of {len(args.units)} units exact")
     return 0

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from concord.harvest import BUILD
-from concord.seed import _stub_failing, port_conflicts, replace_in_port
+from concord.seed import UNDEFINED, _stub_failing, port_conflicts, replace_in_port
 
 UNIT = b"""namespace daisy { namespace video {
 struct ILoader { virtual ~ILoader() {} };
@@ -59,6 +59,16 @@ class PortConflicts(unittest.TestCase):
             self.assertIn('    "HarvestFull/main.cpp",\n' + entry, text)
             self.assertFalse(replace_in_port(root, "daisy/video/CLoaderPSD.cpp"))
             self.assertEqual(build.read_text(), text)
+
+
+class PortLink(unittest.TestCase):
+    def test_undefined_symbols_are_read_by_the_file_that_references_them(self):
+        output = (
+            "error: ld.lld: undefined symbol: daisy::scene::CMeshSceneNode::render()\n"
+            "    note: referenced by CWaterSurfaceSceneNode.cpp:42 (../src/daisy/scene/CWaterSurfaceSceneNode.cpp:42)\n"
+            "    note:               .zig-cache/o/1/CWaterSurfaceSceneNode.o:(vtable for daisy::scene::CWaterSurfaceSceneNode)\n"
+        )
+        self.assertEqual(UNDEFINED.findall(output), [("daisy::scene::CMeshSceneNode::render()", "CWaterSurfaceSceneNode.cpp")])
 
 
 class Stubs(unittest.TestCase):

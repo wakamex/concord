@@ -461,19 +461,50 @@ def port_conflicts(root: Path, unit: str) -> list[str]:
     return conflicts
 
 
-def replace_in_port(root: Path, unit: str) -> bool:
-    """List the unit among those the port replaces with its own implementation
-    (`replaced` in port/build.zig), which is how Harvest keeps a recovered unit out
-    of the port when port/src already implements it. False when it is listed."""
+def replace_in_port(root: Path, unit: str, reason: str | None = None) -> bool:
+    """List the unit among those the port leaves out (`replaced` in
+    port/build.zig), with `reason` as its comment, by default that port/src
+    already implements it. False when it is listed."""
     path = root / "port" / "build.zig"
     text = path.read_text()
     found = re.search(r"^const replaced = \[_\]\[\]const u8\{\n(.*?)^\};", text, re.MULTILINE | re.DOTALL)
     if found is None or f'"{unit}"' in found[1]:
         return False
-    sources = sorted({conflict.split(" in ")[1] for conflict in port_conflicts(root, unit)})
-    entry = f"    // Recovered from Irrlicht 0.7; the port keeps its own {', '.join(sources)}.\n    \"{unit}\",\n"
+    if reason is None:
+        sources = sorted({conflict.split(" in ")[1] for conflict in port_conflicts(root, unit)})
+        reason = f"the port keeps its own {', '.join(sources)}"
+    entry = f"    // Recovered from Irrlicht 0.7; {reason}.\n    \"{unit}\",\n"
     path.write_text(text[: found.end(1)] + entry + text[found.end(1) :])
     return True
+
+
+UNDEFINED = re.compile(r"undefined symbol: (.+)\n\s+note: referenced by ([^\s:]+)")
+
+
+def port_unresolved(root: Path) -> dict[str, list[str]]:
+    """Build the port and return, by source file name, the symbols the link left
+    undefined there: a recovered unit can call or derive from code no unit or
+    port source defines yet, such as a base class whose file is not recovered."""
+    done = subprocess.run(["zig", "build", "harvest"], cwd=root / "port", capture_output=True, text=True, check=False)
+    found: dict[str, list[str]] = {}
+    for symbol, source in UNDEFINED.findall(done.stdout + done.stderr):
+        found.setdefault(source, [])
+        if symbol not in found[source]:
+            found[source].append(symbol)
+    return found
+
+
+def keep_port_linking(root: Path, units: list[str]) -> dict[str, list[str]]:
+    """List among the port's replaced units each of `units` whose object leaves a
+    symbol undefined in the port's link, and return what each needed. Units
+    already in the port are left alone; their problems are not a seed's to hide."""
+    missing = port_unresolved(root)
+    listed = {}
+    for unit in units:
+        symbols = missing.get(Path(unit).name)
+        if symbols and replace_in_port(root, unit, f"it needs {symbols[0]}, which nothing defines yet"):
+            listed[unit] = symbols
+    return listed
 
 
 def _has_static_initializer(root: Path, unit: str) -> bool:
