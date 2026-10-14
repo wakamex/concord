@@ -35,7 +35,10 @@ def rename(source: bytes, types: dict[str, str], direct: bool = True, scope: byt
             return None
         at = source.find(match.group(0)) + len(match.group(0))  # earlier replacements moved it
         target = _assigned_name(source[at:], match["name"])
-        chosen = _fresh(target if target and target.encode() not in taken else _name_for(match["expr"]), taken)
+        word = target if target and target.encode() not in taken else _name_for(match["expr"])
+        if word.encode() in taken:  # cos, taken by the function: named after its argument too, cosAngle
+            word = _with_argument(match["expr"]) or word
+        chosen = _fresh(word, taken)
         taken.add(chosen.encode())
         declared = f"{types[name]} {chosen} = ".encode() + match["expr"] + b";"
         node = _expression(match["expr"])
@@ -126,6 +129,20 @@ def _name_for(text: bytes) -> str:
         break
     word = re.sub(r"^(get|is)(?=[A-Z])", "", word)
     return word[:1].lower() + word[1:] or "value"
+
+
+def _with_argument(text: bytes) -> str | None:
+    """A call of one argument named after the function and the argument:
+    `cos((double)angle)` gives cosAngle."""
+    node = _expression(text)
+    if node.type != "call_expression":
+        return None
+    function = node.child_by_field_name("function")
+    arguments = node.child_by_field_name("arguments").named_children
+    if function.type != "identifier" or len(arguments) != 1:
+        return None
+    argument = _name_for(arguments[0].text)
+    return function.text.decode() + argument[:1].upper() + argument[1:]
 
 
 def _assigned_name(rest: bytes, temporary: bytes) -> str | None:

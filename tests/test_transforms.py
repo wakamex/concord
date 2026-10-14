@@ -259,9 +259,18 @@ class FlipNanSense(unittest.TestCase):
         source = b"void f(int a, int b, int c)\n{\n    if (a)\n    {\n        if (b || c)\n            g();\n    }\n    if (a && b)\n        h();\n    if (a)\n    {\n        if (b)\n            g();\n        else\n            h();\n    }\n}\n"
         scope = Parser(CPP).parse(source).root_node
         [merged] = merge_conditions(source, scope)  # the last pair has an else
-        self.assertIn(b"    if (a && (b || c)) g();\n", merged.source)
+        self.assertIn(b"    if (a && (b || c))\n        g();\n", merged.source)
         [nested] = nest_condition(source, scope)
-        self.assertIn(b"    if (a) { if (b) h(); }\n", nested.source)
+        self.assertIn(b"    if (a)\n    {\n        if (b)\n            h();\n    }\n", nested.source)
+
+    def test_nesting_then_merging_gives_back_the_source(self):
+        for source in (
+            b"void f()\n{\n    if (a && b > 1.0f)\n    {\n        float x = g();\n        y = x;\n    }\n}\n",
+            b"void f()\n{\n    if (p && q(1,\n            2))\n        return;\n}\n",
+        ):
+            [nested] = nest_condition(source, Parser(CPP).parse(source).root_node)
+            [merged] = merge_conditions(nested.source, Parser(CPP).parse(nested.source).root_node)
+            self.assertEqual(merged.source, source)
 
     def test_relational_comparisons_change_their_nan_sense_and_equality_is_left_alone(self):
         source = b"int Board::f(float t)\n{\n    if (!(t > 4.0f)) return 1;\n    if (t <= 2.0f) return 2;\n    if (t == 3.0f) return 3;\n    return 0;\n}\n"

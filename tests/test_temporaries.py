@@ -72,5 +72,13 @@ class DwarfTypes(unittest.TestCase):
             )
 
 
+class CallNames(unittest.TestCase):
+    def test_a_call_whose_function_name_is_taken_is_named_after_its_argument_too(self):
+        source = b"void f(float angle)\n{\n    __typeof__(cos((double)angle)) concordTmp0 = cos((double)angle);\n    x = y + concordTmp0 * 2.0;\n}\n"
+        out = rename(source, {"concordTmp0": "double"})
+        self.assertIn(b"double cosAngle = cos((double)angle);", out)
+        self.assertIn(b"x = y + cosAngle * 2.0;", out)
+
+
 if __name__ == "__main__":
     unittest.main()

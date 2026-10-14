@@ -70,7 +70,7 @@ class Mutations(unittest.TestCase):
         scope = find_function(source, "_Z1fii")
         self.assertIn(b"    n = n + (b - 1);\n", next(expand_assignment(source, scope)).source)
         self.assertIn(b"    int n;\n    n = a * 2;\n", next(split_declaration(source, scope)).source)
-        self.assertIn(b"    if (a) { if (b) n = 0; }\n", next(nest_condition(source, scope)).source)
+        self.assertIn(b"    if (a)\n    {\n        if (b)\n            n = 0;\n    }\n", next(nest_condition(source, scope)).source)
 
 
 class FakeHarvest:
