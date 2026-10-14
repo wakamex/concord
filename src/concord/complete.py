@@ -48,6 +48,44 @@ MISSING = re.compile(r"'(?:class|struct|const class|const struct) ox::(?:core|vi
 NO_CONSTRUCTOR = re.compile(r"no matching function for call to 'ox::(?:core|video)::(\w+)(?:<[^']*?>)?::\1\(")
 
 
+UNDECLARED = re.compile(r"'(\w+)' (?:does not name a type|was not declared in this scope|has not been declared)")
+ORIGIN = re.compile(r"^// Adapted from Irrlicht 0\.7 include/(\S+\.h)", re.MULTILINE)
+
+
+def undeclared(compiler_output: str) -> set[str]:
+    """Names the compiler reports undeclared."""
+    return set(UNDECLARED.findall(compiler_output))
+
+
+def complete_enum(root: Path, name: str) -> str | None:
+    """Add to the ox header adapted from an Irrlicht header the enum that Irrlicht
+    header defines under `name`, or whose enumerator `name` is, translated, before
+    the header's first class; return the header changed, or None when no ox header
+    comes from an Irrlicht header with such an enum or it already has it."""
+    for path in sorted((root / "src" / "ox").rglob("*.h")):
+        text = path.read_text()
+        origin = ORIGIN.search(text)
+        if origin is None:
+            continue
+        original = root / "third_party" / "irrlicht-0.7" / "include" / origin[1]
+        if not original.exists():
+            continue
+        for found in re.finditer(r"^[ \t]*enum (\w+)\s*\{[^}]*\};", original.read_text(encoding="latin-1"), re.MULTILINE):
+            enumerators = re.findall(r"^\s*(\w+)", found[0].split("{", 1)[1], re.MULTILINE)
+            if name != found[1] and name not in enumerators:
+                continue
+            if re.search(r"\benum " + found[1] + r"\b", text):
+                return None
+            definition = _outdent(translate(found[0].strip("\n"))) + "\n\n"
+            first = re.search(r"^(class|struct) \w+[^;]*$", text, re.MULTILINE) or re.search(r"^namespace \w+ \{\n(?!namespace)", text, re.MULTILINE)
+            if first is None:
+                return None
+            at = first.start() if first[0].startswith(("class", "struct")) else first.end()
+            path.write_text(text[:at] + definition + text[at:])
+            return path.relative_to(root / "src").as_posix()
+    return None
+
+
 def missing_members(compiler_output: str) -> set[tuple[str, str]]:
     """(ox type, member) pairs the compiler reports missing, for types this module
     completes. A constructor call that matches no overload names the type's

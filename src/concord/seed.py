@@ -22,7 +22,14 @@ from pathlib import Path
 from elftools.elf.elffile import ELFFile
 from tree_sitter import Parser
 
-from concord.complete import TYPES, complete, missing_members, settle
+from concord.complete import (
+    TYPES,
+    complete,
+    complete_enum,
+    missing_members,
+    settle,
+    undeclared,
+)
 from concord.harvest import BUILD, Harvest
 from concord.irrlicht import HEADERS, bare, translate
 from concord.transforms import CPP
@@ -79,6 +86,7 @@ def seed(
     # CSpritePackage::removeAnimationState did. A completion stays only if settle
     # finds those units no worse.
     originals: dict[str, str] = {}
+    names_tried: set[str] = set()
     for _ in range(8):  # each round can expose errors the previous ones hid
         progressed = _include_incomplete(root, target, output)
         missing = (missing_members(output) - tried) if complete_types else set()
@@ -97,6 +105,17 @@ def seed(
                 continue
             originals.setdefault(header, before)
             tried.add((ox_type, member))
+            progressed = True
+        for name in sorted(undeclared(output) - names_tried) if complete_types else []:
+            names_tried.add(name)
+            snapshot = {p: p.read_text() for p in (root / "src" / "ox").rglob("*.h")}
+            changed = complete_enum(root, name)
+            if changed is None:
+                continue
+            if not _compiles_header(root, changed):
+                (root / "src" / changed).write_text(snapshot[root / "src" / changed])
+                continue
+            originals.setdefault(changed, snapshot[root / "src" / changed])
             progressed = True
         if not progressed:
             tried |= failed  # else tried again next round: it may call a member this round added
@@ -400,6 +419,19 @@ def _bring_includes(root: Path, ox_type: str) -> bool:
     first = re.search(r"^#include [^\n]*\n", text, re.MULTILINE) or re.search(r"^#define [^\n]*\n", text, re.MULTILINE)
     path.write_text(text[: first.end()] + "".join(added) + text[first.end() :])
     return True
+
+
+def _compiles_header(root: Path, header: str) -> bool:
+    """Whether a file that only includes the header compiles with a built unit's flags."""
+    host = next((p.name.removesuffix(".json") for p in sorted((root / "build" / "match" / BUILD).glob("*.json"))), None)
+    if host is None:
+        return False
+    try:
+        harvest = Harvest(root)
+        evaluation = harvest.evaluate(harvest.source(host), {"probe": f'#include "{header}"\n'.encode()})["probe"]
+    except (OSError, RuntimeError, KeyError):
+        return False
+    return not evaluation.error
 
 
 def _compiles(root: Path, unit: str, header: str) -> bool:

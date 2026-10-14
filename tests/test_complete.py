@@ -10,8 +10,10 @@ from concord.complete import (
     _rename,
     absent,
     complete,
+    complete_enum,
     missing_members,
     settle,
+    undeclared,
     worse,
 )
 
@@ -136,6 +138,60 @@ struct CAabbox3d
 };
 } }
 """
+
+
+IRR_MESH = """namespace irr
+{
+namespace scene
+{
+\tenum E_ANIMATED_MESH_TYPE
+\t{
+\t\t//! Unknown animated mesh type.
+\t\tEAMT_UNKNOWN = 0,
+\t\tEAMT_MD2,
+\t};
+
+\tclass IAnimatedMesh : public IUnknown
+\t{
+\t};
+}
+}
+"""
+
+OX_MESH = """// Adapted from Irrlicht 0.7 include/IAnimatedMesh.h (license: third_party/irrlicht-0.7/include/irrlicht.h).
+
+namespace ox {
+namespace scene {
+
+class IMesh;
+
+class IAnimatedMesh : public IUnknown
+{
+};
+
+} // end namespace scene
+} // end namespace ox
+"""
+
+
+class Enums(unittest.TestCase):
+    def test_an_undeclared_enum_or_enumerator_comes_from_the_header_s_irrlicht_original(self):
+        self.assertEqual(
+            undeclared("a.h:9: error: 'E_ANIMATED_MESH_TYPE' does not name a type\na.h:3: error: 'EAMT_MD2' was not declared in this scope\n"),
+            {"E_ANIMATED_MESH_TYPE", "EAMT_MD2"},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/ox/scene").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include/IAnimatedMesh.h").write_text(IRR_MESH)
+            header = root / "src/ox/scene/IAnimatedMesh.h"
+            header.write_text(OX_MESH)
+            self.assertEqual(complete_enum(root, "EAMT_MD2"), "ox/scene/IAnimatedMesh.h")
+            text = header.read_text()
+            self.assertIn("class IMesh;\n\nenum E_ANIMATED_MESH_TYPE\n{\n    //! Unknown animated mesh type.\n    EAMT_UNKNOWN = 0,\n    EAMT_MD2,\n};\n\nclass IAnimatedMesh", text)
+            self.assertIsNone(complete_enum(root, "E_ANIMATED_MESH_TYPE"))  # already there
+            self.assertIsNone(complete_enum(root, "ELL_ERROR"))
 
 
 class FakeHarvest:
