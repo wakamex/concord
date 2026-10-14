@@ -1,7 +1,12 @@
 """Compile candidate sources in a Harvest checkout and compare each with the target.
 
 This file runs with a Harvest checkout's own Python (`uv run` in that checkout),
-because it calls Harvest's compiler and matcher. It reads one request from stdin.
+because it calls Harvest's compiler and matcher. With `--serve` it stays up and
+answers one request per line of stdin with one line of stdout, {"ok": result} or
+{"error": traceback}, so the target is loaded once for a whole search; it loads
+the checkout's symbols, units and extents again whenever a file under
+config/<build>/ changes. Without `--serve` it reads one request from stdin and
+writes the result.
 
 Unit candidates, replacing one unit's source:
 
@@ -32,6 +37,7 @@ import os
 import shlex
 import subprocess
 import sys
+import traceback
 import uuid
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -188,20 +194,37 @@ def vtable_mismatches(target, objects: list[Path], known: dict[str, int]) -> lis
     return [{"compared": len(seen)}, *found]
 
 
-def main() -> None:
-    global _shared
-    request = json.load(sys.stdin)
-    if request.get("vtables"):
+class Checkout:
+    """What every request needs from the checkout, loaded on first use and again
+    when a file under config/<build>/ changes (hv match --learn adds symbols, and
+    seeding adds units and placements)."""
+
+    def __init__(self) -> None:
+        self.stamp = None
+
+    def refresh(self) -> None:
         build = builds.canonical_build()
-        target = extents.load_target(build)
-        known = symbols.by_name(symbols.load(build))
+        config = builds.ROOT / "config" / build
+        stamp = tuple(sorted((str(path), path.stat().st_mtime_ns) for path in config.iterdir() if path.is_file()))
+        if stamp == self.stamp:
+            return
+        self.build = build
+        self.by_source = {u.source: u for u in units.load(build)}
+        self.target = extents.load_target(build)
+        loaded = symbols.load(build)
+        self.known = symbols.by_name(loaded)
+        self.known_list = [(s.address, s.size, s.name) for s in loaded]
+        self.extents_by_address = {address: size for address, (size, _) in self.target.function_extents().items()}
+        self.stamp = stamp
+
+
+def handle(request: dict, checkout: Checkout) -> object:
+    global _shared
+    checkout.refresh()
+    build, target, known, by_source = checkout.build, checkout.target, checkout.known, checkout.by_source
+    if request.get("vtables"):
         objects = sorted((builds.ROOT / "build" / "match" / build).glob("*.o"))
-        json.dump(vtable_mismatches(target, objects, known), sys.stdout)
-        return
-    build = builds.canonical_build()
-    by_source = {u.source: u for u in units.load(build)}
-    target = extents.load_target(build)
-    known = symbols.by_name(symbols.load(build))
+        return vtable_mismatches(target, objects, known)
     out = Path(request["out"])
     out.mkdir(parents=True, exist_ok=True)
     compiler = toolchain.Compiler(toolchain.load_flags(build), out)
@@ -230,9 +253,8 @@ def main() -> None:
     project = out / f"fuzzy-{uuid.uuid4().hex}" if scoring else None
     if project is not None:
         project.mkdir(parents=True)
-    known_list = [(s.address, s.size, s.name) for s in symbols.load(build)] if scoring else []
-    extents_by_address = {address: size for address, (size, _) in target.function_extents().items()} if scoring else {}
-    _shared = (target, known, {source: u.placements for source, u in by_source.items()}, known_list, extents_by_address, project)
+    placements = {source: u.placements for source, u in by_source.items()}
+    _shared = (target, known, placements, checkout.known_list, checkout.extents_by_address, project)
     # candidates that compiled to the same bytes share one comparison: many rewrites change nothing
     first: dict[tuple[str, str], str] = {}
     same: dict[str, str] = {}
@@ -250,7 +272,22 @@ def main() -> None:
         result[name] = {key: value for key, value in compared[same[name]].items() if key != "target"} | {"object": obj}
         if scoring:
             result[name]["fuzzy"] = scores.get(same[name], {})
-    json.dump(result, sys.stdout)
+    return result
+
+
+def main() -> None:
+    replies, sys.stdout = sys.stdout, sys.stderr  # nothing but replies goes to the caller
+    checkout = Checkout()
+    if "--serve" not in sys.argv:
+        json.dump(handle(json.load(sys.stdin), checkout), replies)
+        return
+    for line in sys.stdin:
+        try:
+            reply = {"ok": handle(json.loads(line), checkout)}
+        except Exception:  # noqa: BLE001 (the caller reports it; the next request still gets served)
+            reply = {"error": traceback.format_exc()[-3000:]}
+        replies.write(json.dumps(reply) + "\n")
+        replies.flush()
 
 
 if __name__ == "__main__":

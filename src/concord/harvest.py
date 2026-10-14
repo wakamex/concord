@@ -9,10 +9,12 @@ concord reads those files; it does not import Harvest's code.
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 from collections.abc import Iterator
@@ -58,6 +60,17 @@ class Evaluation:
         return {row["symbol"] for s in self.sections for row in s.get("functions", []) if row["exact"]}
 
 
+_drivers: dict[Path, subprocess.Popen] = {}  # one driver per checkout, for the life of the process
+
+
+@atexit.register
+def _stop_drivers() -> None:
+    for process in _drivers.values():
+        if process.poll() is None:
+            process.stdin.close()
+            process.terminate()
+
+
 class Harvest:
     def __init__(self, root: Path, build: str = BUILD) -> None:
         self.root = root.resolve()
@@ -67,19 +80,37 @@ class Harvest:
         if not self.reports.is_dir():
             raise FileNotFoundError(f"{self.reports} is missing; run `hv match` in {root}")
 
-    def _driver(self, request: str) -> subprocess.CompletedProcess:
-        """Run harvest_driver.py with the checkout's Python; its stderr explains a failure."""
-        result = subprocess.run(
-            ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER)],
-            cwd=self.root,
-            input=request,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode:
-            raise RuntimeError(f"harvest_driver.py failed:\n{result.stderr[-3000:]}")
-        return result
+    def _driver(self, request: dict) -> object:
+        """Send one request to the checkout's driver and return its result. The
+        driver (harvest_driver.py under the checkout's Python) is started on the
+        first request and kept for the life of this process, so the target is
+        loaded once; a driver that has died is started again."""
+        process = _drivers.get(self.root)
+        if process is None or process.poll() is not None:
+            log = tempfile.TemporaryFile(mode="w+")  # noqa: SIM115 (read when the driver stops, which is later)
+            process = subprocess.Popen(
+                ["uv", "--no-config", "run", "--locked", "--project", str(self.root), "python", str(DRIVER), "--serve"],
+                cwd=self.root,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=log,
+                text=True,
+            )
+            process.log = log
+            _drivers[self.root] = process
+        try:
+            process.stdin.write(json.dumps(request) + "\n")
+            process.stdin.flush()
+            line = process.stdout.readline()
+        except BrokenPipeError:
+            line = ""
+        if not line:
+            process.log.seek(0)
+            raise RuntimeError(f"harvest_driver.py stopped:\n{process.log.read()[-3000:]}")
+        reply = json.loads(line)
+        if "error" in reply:
+            raise RuntimeError(f"harvest_driver.py failed:\n{reply['error']}")
+        return reply["ok"]
 
     def clean(self, older_than: float) -> tuple[int, int]:
         """Remove concord's work directories under build/concord that were last
@@ -125,9 +156,8 @@ class Harvest:
             paths[name] = out / f"{name}.cpp"
             paths[name].write_bytes(text)
         request = {"unit": self.source(unit), "out": str(out), "candidates": {n: str(p) for n, p in paths.items()}}
-        result = self._driver(json.dumps(request))
         evaluations = {}
-        for name, row in json.loads(result.stdout).items():
+        for name, row in self._driver(request).items():
             evaluations[name] = Evaluation(
                 name,
                 slug,
@@ -154,7 +184,7 @@ class Harvest:
                     files[text].write_bytes(text)
                 mapped[path] = str(files[text])
             request_items[name] = {"unit": unit, "overlays": mapped}
-        result = self._driver(json.dumps({"out": str(out), "items": request_items}))
+        result = self._driver({"out": str(out), "items": request_items})
         return {
             name: Evaluation(
                 name,
@@ -164,7 +194,7 @@ class Harvest:
                 row.get("sections", []),
                 row.get("fuzzy", {}),
             )
-            for name, row in json.loads(result.stdout).items()
+            for name, row in result.items()
         }
 
     def debug_objects(self, units: list[str], sources: dict[str, bytes] | None = None) -> dict[str, Path]:
@@ -181,14 +211,12 @@ class Harvest:
             overlays[unit] = {f"src/{unit}": str(path)}
         items = {n: {"unit": u, "overlays": overlays.get(u, {})} for n, u in names.items()}
         request = {"out": str(out), "debug": True, "items": items}
-        result = self._driver(json.dumps(request))
-        return {names[n]: Path(row["object"]) for n, row in json.loads(result.stdout).items() if "object" in row}
+        return {names[n]: Path(row["object"]) for n, row in self._driver(request).items() if "object" in row}
 
     def vtables(self) -> tuple[int, list[dict]]:
         """Compare every vtable the last `hv match` compiled with the target's. A slot that
         disagrees means a class declaration with a missing, extra or misplaced virtual."""
-        result = self._driver(json.dumps({"vtables": True}))
-        header, *mismatches = json.loads(result.stdout)
+        header, *mismatches = self._driver({"vtables": True})
         return header["compared"], mismatches
 
     def dependents(self, path: str) -> list[str]:
