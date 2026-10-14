@@ -98,23 +98,25 @@ The knowledge base in `src/concord/knowledge/` records a compiler's codegen idio
 
 concord is the deterministic half of matching: it verifies candidates with the target's own matcher and says what to change. Something else writes the source, whether a person, an agent or a model harness, and such a harness is a separate project. The steps below are in order, and each is judged against the first.
 
-1. A benchmark from functions that already match. Harvest has about 3,800 exact functions with known source. Mutation recovery perturbs one (a flipped branch, an inlined temporary, reordered declarations) and counts how often concord returns it to exact; held-out recovery measures how close concord's feedback brings an author who starts from the binary alone. Results are broken down by cause, so a search that never pays is visible. On real near misses, `match` made 0 of 146 exact and `permute` 3 of 79. `concord bench` measures mutation recovery, and `concord bench --locate` whether a case's diff points at the changed line. The baseline, on Harvest eee9093 with 900 sampled functions, at most 20 cases per kind and 128 candidates per case:
+1. A benchmark from functions that already match. Harvest has about 3,800 exact functions with known source. Mutation recovery perturbs one (a flipped branch, an inlined temporary, reordered declarations) and counts how often concord returns it to exact; held-out recovery measures how close concord's feedback brings an author who starts from the binary alone. Results are broken down by cause, so a search that never pays is visible. On real near misses, `match` made 0 of 146 exact and `permute` 3 of 79. `concord bench` measures mutation recovery, and `concord bench --locate` whether a case's diff points at the changed line. The current figures, on Harvest with 900 sampled functions, at most 20 cases per kind and 128 candidates per case:
 
-   | Change applied to an exact function | concord has a rewrite that undoes it | Cases | Recovered by `match` | Recovered by `permute` | Diff points at the changed line |
-   | --- | --- | ---: | ---: | ---: | ---: |
-   | Swap a comparison's operands | yes | 20 | 10 | 20 | 18 |
-   | Swap an if's branches | yes | 20 | 13 | 19 | 15 |
-   | Swap adjacent statements | yes | 20 | 0 | 20 | 19 |
-   | Move a declaration | yes | 20 | 0 | 19 | 16 |
-   | Name a temporary | yes | 20 | 0 | 19 | 16 |
-   | Inline a temporary | yes | 17 | 0 | 4 | 13 |
-   | Swap commutative operands | no | 5 | 0 | 3 | 3 |
-   | For loop as while loop | no | 3 | 0 | 0 | 3 |
-   | Spell out a compound assignment | no | 8 | 0 | 0 | 7 |
-   | Nest the halves of an `&&` | no | 18 | 0 | 0 | 14 |
-   | All | | 151 | 23 | 104 | 124 |
+   | Change applied to an exact function | concord has a rewrite that undoes it | Cases | Recovered by `match` | Recovered by `permute` |
+   | --- | --- | ---: | ---: | ---: |
+   | Swap a comparison's operands | yes | 20 | 10 | 20 |
+   | Swap an if's branches | yes | 20 | 12 | 20 |
+   | Swap adjacent statements | yes | 20 | 0 | 20 |
+   | Move a declaration | yes | 20 | 0 | 20 |
+   | Name a temporary | yes | 20 | 0 | 17 |
+   | Inline a temporary | yes | 18 | 0 | 8 |
+   | For loop as while loop | yes | 4 | 0 | 4 |
+   | Spell out a compound assignment | yes | 9 | 0 | 9 |
+   | Nest the halves of an `&&` | yes | 17 | 0 | 16 |
+   | Merge nested ifs | yes | 3 | 0 | 3 |
+   | Swap commutative operands | no | 4 | 0 | 2 |
+   | Two changes of the kinds above | yes | 17 | 0 | 15 |
+   | All | | 172 | 22 | 154 |
 
-   The diff points at the changed line in 82% of cases and at 17% of a function's lines on average, so where to edit is a strong signal; the cause it reports identifies the kind of edit for swapped comparisons and branches only. `match` picks rewrites by cause and recovers little. `permute` therefore tries every single rewrite first, nearest the attributed lines, before its random stage. On the same cases that recovers 111 of the 151 one-edit cases where the random search alone recovered 104 (the table's `permute` column), at 20 candidates compiled per recovery where it took 32, and 29 of 33 cases two edits from a match where the random search recovered 25, at 32 candidates where it took 47. One case went the other way in each set.
+   Three findings shaped the search. The diff points at the changed line in 82% of cases and at 17% of a function's lines on average, so where to edit is a strong signal, while the cause it reports identifies the kind of edit for swapped comparisons and branches only; `match`, which picks rewrites by cause, recovers little. `permute` therefore tries every single rewrite first, nearest the attributed lines, before its random stage: on the same cases that recovered 111 of 151 where the random search alone recovered 104, at 20 compiled candidates per recovery where it took 32. And a change is recovered only when a rewrite undoes it: the loop, assignment and condition rows were 0 of 29 before those rewrites existed, and on the 73 cases the two runs share, adding them took recoveries from 38 to 62 with none lost, at 19.5 candidates per recovery where it took 17.3.
 2. Causal diffs. For a differing instruction, find the GCC pass that made the decision, from the dumps the pinned compiler writes after each pass, and name the source construct that feeds it, so the finding reads "these two values are created in the wrong order at this line" instead of "operand order differs". The two findings that paid most on Harvest, the declaration count modulo 31 and the key function, were of this kind.
 3. Context checks before body searches. Compare the inline functions each unit emits with what the target holds beside that unit; a difference means a header shows the unit a definition the original did not have, or hides one it had. This joins `vtables`, `layout` and `phase`.
 4. Findings any author can consume. Each diff, cause and suggested edit is available as structured output with stable names, so a model harness or another project's agents can use them without parsing prose.
