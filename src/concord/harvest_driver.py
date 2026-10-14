@@ -49,7 +49,7 @@ from hv import (
 )
 from hv.elf import Elf
 
-_shared = None  # (target, known, placements by unit), inherited by forked workers
+_shared = None  # (target, known by name, placements by unit, known symbols, extents by address, project), for forked workers
 
 
 def _jobs() -> int:
@@ -60,35 +60,42 @@ def _jobs() -> int:
     return max(1, min(int(os.environ.get("CONCORD_JOBS", "8")), os.cpu_count() or 1))
 
 
-def _compare(job: tuple[str, str]) -> dict:
-    obj, unit = job
-    target, known, placements = _shared
-    report = match.compare_object(Elf.load(Path(obj), "ET_REL"), target, known, placements[unit])
-    return {"object": obj, "exact": report["exact"], "sections": report["sections"]}
-
-
-def fuzzy_scores(target, known: list, reports: dict[str, dict], out: Path) -> dict[str, dict[str, float]]:
-    """objdiff's fuzzy score of every function in each compared object, measured the
-    way `hv.progress capture` measures it (the pinned objdiff, functionRelocDiffs=
-    data_value), which is the score decomp.dev reports."""
-    tool = objdiff.tool()
-    if builds.sha256_file(tool) not in metrics.OBJDIFF_HASHES:
-        raise ValueError("objdiff executable differs from the pinned release")
-    extents_by_address = {address: size for address, (size, _) in target.function_extents().items()}
-    project = out / f"fuzzy-{uuid.uuid4().hex}"
-    project.mkdir(parents=True)
-    entries = []
-    for name, report in reports.items():
-        obj = Path(report["object"])
+def _compare(job: tuple[str, str, str]) -> dict:
+    """Compare one object with the target and, for scoring, write the target's
+    side of it: the unit delinked from the target as this object lays it out.
+    Delinking is the slow step (about a quarter second per object on Harvest), so
+    it runs here, in the workers."""
+    name, obj, unit = job
+    target, known, placements, known_list, extents_by_address, project = _shared
+    elf = Elf.load(Path(obj), "ET_REL")
+    report = match.compare_object(elf, target, known, placements[unit])
+    out = {"object": obj, "exact": report["exact"], "sections": report["sections"]}
+    if project is not None:
         try:
-            sections, symbols_ = delink.delink_unit(target, Elf.load(obj, "ET_REL"), report, known, extents_by_address)
+            sections, symbols_ = delink.delink_unit(target, elf, out, known_list, extents_by_address)
         except ValueError:
             # a candidate whose sections the matcher placed outside the target cannot be delinked;
             # it gets no objdiff scores, which ranks it last and rejects it, rather than ending the batch
-            continue
+            return out
         destination = project / f"{name}.target.o"
         delink.write_object(destination, sections, symbols_)
-        entries.append({"name": name, "target_path": str(destination), "base_path": str(obj)})
+        out["target"] = str(destination)
+    return out
+
+
+def fuzzy_scores(project: Path, reports: dict[str, dict]) -> dict[str, dict[str, float]]:
+    """objdiff's fuzzy score of every function in each compared object, measured the
+    way `hv.progress capture` measures it (the pinned objdiff, functionRelocDiffs=
+    data_value), which is the score decomp.dev reports. Each report names the
+    delinked target object _compare wrote for it."""
+    tool = objdiff.tool()
+    if builds.sha256_file(tool) not in metrics.OBJDIFF_HASHES:
+        raise ValueError("objdiff executable differs from the pinned release")
+    entries = [
+        {"name": name, "target_path": report["target"], "base_path": report["object"]}
+        for name, report in reports.items()
+        if "target" in report
+    ]
     (project / "objdiff.json").write_text(json.dumps({"build_target": False, "build_base": False, "units": entries}))
     output = project / "report.json"
     subprocess.run(
@@ -219,20 +226,30 @@ def main() -> None:
                 result[name] = {"error": (outcome.stderr or str(outcome))[-2000:]}
             else:
                 jobs[name] = (str(outcome[0]), unit.source)
-    _shared = (target, known, {source: u.placements for source, u in by_source.items()})
-    workers = min(len(jobs), _jobs())
+    scoring = bool(jobs) and not request.get("debug")
+    project = out / f"fuzzy-{uuid.uuid4().hex}" if scoring else None
+    if project is not None:
+        project.mkdir(parents=True)
+    known_list = [(s.address, s.size, s.name) for s in symbols.load(build)] if scoring else []
+    extents_by_address = {address: size for address, (size, _) in target.function_extents().items()} if scoring else {}
+    _shared = (target, known, {source: u.placements for source, u in by_source.items()}, known_list, extents_by_address, project)
+    # candidates that compiled to the same bytes share one comparison: many rewrites change nothing
+    first: dict[tuple[str, str], str] = {}
+    same: dict[str, str] = {}
+    for name, (obj, unit) in jobs.items():
+        same[name] = first.setdefault((builds.sha256_file(Path(obj)), unit), name)
+    distinct = [(name, *jobs[name]) for name in jobs if same[name] == name]
+    workers = min(len(distinct), _jobs())
     if workers > 1:
         with ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("fork")) as pool:
-            for name, report in zip(jobs, pool.map(_compare, jobs.values())):
-                result[name] = report
+            compared = dict(zip([job[0] for job in distinct], pool.map(_compare, distinct), strict=True))
     else:
-        for name, job in jobs.items():
-            result[name] = _compare(job)
-    if jobs and not request.get("debug"):
-        known_list = [(s.address, s.size, s.name) for s in symbols.load(build)]
-        scores = fuzzy_scores(target, known_list, {name: result[name] for name in jobs}, out)
-        for name in jobs:
-            result[name]["fuzzy"] = scores.get(name, {})
+        compared = {job[0]: _compare(job) for job in distinct}
+    scores = fuzzy_scores(project, compared) if scoring else {}
+    for name, (obj, _) in jobs.items():
+        result[name] = {key: value for key, value in compared[same[name]].items() if key != "target"} | {"object": obj}
+        if scoring:
+            result[name]["fuzzy"] = scores.get(same[name], {})
     json.dump(result, sys.stdout)
 
 
