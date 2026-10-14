@@ -196,7 +196,9 @@ def settle(harvest: Harvest, originals: dict[str, str], allowed: frozenset[str] 
         return True
     narrow = {key: value for key, value in before.items() if key[0] in broken}
     for header in originals:
-        ox_type = next(t for t, (h, _, _) in TYPES.items() if h == header)
+        ox_type = next((t for t, (h, _, _) in TYPES.items() if h == header), None)
+        if ox_type is None:
+            continue  # a header completed with an enum has no class members to fill with
         for member in absent(root, ox_type)[:FILL]:
             previous = (root / "src" / header).read_text()
             if not complete(root, {(ox_type, member)}):
