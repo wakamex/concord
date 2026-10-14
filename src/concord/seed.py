@@ -168,7 +168,7 @@ def seed(
 
 
 ERROR_LINE = re.compile(r"^(src/[^:\s]+):(\d+): error:", re.MULTILINE)
-STUB = b"\n{\n    __builtin_trap();\n}"
+STUB = b"\n{\n    // Not recovered: Irrlicht 0.7's body does not compile against daisy's interfaces.\n    __builtin_trap();\n}"
 
 
 def _stub_failing(root: Path, output: str, written: set[str]) -> list[str]:
@@ -539,16 +539,40 @@ def port_unresolved(root: Path) -> dict[str, list[str]]:
     return found
 
 
+def stubbed_units(root: Path, units: list[str]) -> list[str]:
+    """The units among `units` whose source, or a header only seeds wrote for
+    them, still has a stub: such a unit would trap in the port when a stubbed
+    function is called, so the port leaves it out until its stubs are gone."""
+    found = []
+    for unit in units:
+        slug = unit.replace("/", "__").removesuffix(".cpp")
+        depfile = root / "build" / "match" / BUILD / f"{slug}.d"
+        sources = [root / "src" / unit]
+        if depfile.exists():
+            sources += [root / word for word in depfile.read_text().replace("\\\n", " ").split() if word.startswith("src/")]
+        if any(path.exists() and b"__builtin_trap();" in path.read_bytes() for path in sources):
+            found.append(unit)
+    return found
+
+
 def keep_port_linking(root: Path, units: list[str]) -> dict[str, list[str]]:
     """List among the port's replaced units each of `units` whose object leaves a
     symbol undefined in the port's link, and return what each needed. Units
     already in the port are left alone; their problems are not a seed's to hide."""
-    missing = port_unresolved(root)
     listed = {}
-    for unit in units:
-        symbols = missing.get(Path(unit).name)
-        if symbols and replace_in_port(root, unit, f"it needs {symbols[0]}, which nothing defines yet"):
-            listed[unit] = symbols
+    for unit in stubbed_units(root, units):
+        if replace_in_port(root, unit, "some of its methods are stubs that trap"):
+            listed[unit] = ["stubbed methods"]
+    for _ in range(4):  # leaving one unit out can leave another's reference undefined
+        missing = port_unresolved(root)
+        added = False
+        for unit in units:
+            symbols = missing.get(Path(unit).name)
+            if symbols and replace_in_port(root, unit, f"it needs {symbols[0]}, which nothing defines yet"):
+                listed[unit] = symbols
+                added = True
+        if not added:
+            break
     return listed
 
 

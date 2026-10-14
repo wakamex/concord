@@ -123,9 +123,9 @@ int A::bad(int n)
             stubbed = _stub_failing(root, output, {"d/A.cpp"})
             text = (root / "src" / "d" / "A.cpp").read_bytes()
             self.assertEqual(stubbed, ["d/A.cpp:1 A::A", "d/A.cpp:12 A::bad"])
-            self.assertIn(b"A::A(int x)\n{\n    __builtin_trap();\n}", text)
+            self.assertIn(b"A::A(int x)\n{\n    // Not recovered: Irrlicht 0.7's body does not compile against daisy's interfaces.\n    __builtin_trap();\n}", text)
             self.assertIn(b"int A::ok() const\n{\n    return X;\n}", text)
-            self.assertIn(b"int A::bad(int n)\n{\n    __builtin_trap();\n}", text)
+            self.assertIn(b"int A::bad(int n)\n{\n    // Not recovered: Irrlicht 0.7's body does not compile against daisy's interfaces.\n    __builtin_trap();\n}", text)
             self.assertEqual((root / "src" / "d" / "Other.cpp").read_bytes(), source)
             self.assertEqual(_stub_failing(root, output, {"d/A.cpp"}), [])  # a stub is not stubbed again
 
