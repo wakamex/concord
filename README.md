@@ -180,7 +180,7 @@ Evidence
 - Run lint and the tests after the last edit and before every push; a push that ran only the tests has failed CI.
 
 Upstream
-- Open a pull request in the target whenever concord makes functions exact, with the partial gains it found along the way, linking the concord commits behind them; push concord first so the links resolve. Tooling fixes and behavior fixes the oracle supports can go in their own pull request, with any score they cost stated.
+- Open a match pull request in the target once the batch of exact matches and partial gains concord has found raises the target's progress by at least one percentage point (matched code or fuzzy match, as `python -m hv.progress report` gives them against master); until then keep collecting, so each pull request is worth a review. It links the concord commits behind the matches; push concord first so the links resolve. Tooling fixes and behavior fixes the oracle supports can go in their own pull request at any time, with any score they cost stated.
 - Before calling a Harvest pull request ready, run the whole-build score comparison, `zig build harvest` and the tests, and wait for every CI check; one pull request failed the port build that had not been run.
 - Rebase and recapture evidence when the target's master moves; a conflicting pull request gets no CI at all.
 
