@@ -524,6 +524,26 @@ class ColorPacking(unittest.TestCase):
             self.assertIn('#include "ox/video/ColorPacking.h"', unit)
 
 
+class GuardedClassReplacement(unittest.TestCase):
+    IRRLICHT = "namespace irr {\nnamespace video {\nclass CImage\n{\npublic:\n    int getWidth();\n};\n}\n}\n"
+    INSIDE_GUARD = "namespace daisy {\nnamespace video {\nclass CImage\n{\npublic:\n    CImage();\n#ifdef HARVEST_PORT\nprivate:\n    int Data;\n#else\nprivate:\n    char Unrecovered[0x48 - sizeof(int)];\n#endif\n};\n}\n}\n"
+
+    def test_a_class_with_an_ifdef_inside_it_is_replaced_whole(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / IRRLICHT_SOURCE).mkdir(parents=True)
+            (root / IRRLICHT_SOURCE / "CImage.h").write_text(self.IRRLICHT)
+            (root / "src/daisy/video/Null").mkdir(parents=True)
+            header = root / "src/daisy/video/Null/CImage.h"
+            header.write_text(self.INSIDE_GUARD)
+            seed_module._indexes.clear()
+            originals = {}
+            self.assertTrue(_declare_members(root, "src/daisy/video/CImage.cpp:3: error: no 'int daisy::video::CImage::getWidth()' member function declared in class 'daisy::video::CImage'\n", originals))
+            self.assertIn("int getWidth();", header.read_text())
+            self.assertIn("#ifdef HARVEST_PORT\nclass CImage", header.read_text())
+            self.assertFalse(_declare_members(root, "src/daisy/video/CImage.cpp:3: error: no 'int daisy::video::CImage::getWidth()' member function declared in class 'daisy::video::CImage'\n", {}))
+
+
 class TopLevelNames(unittest.TestCase):
     def test_a_name_declared_at_the_top_of_ox_is_qualified_and_its_header_included(self):
         with tempfile.TemporaryDirectory() as tmp:

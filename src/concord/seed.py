@@ -809,7 +809,7 @@ def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool
                 continue
             declarations.append((body.find(found[1]), found[1].strip()))
         before = header.read_text()
-        if "Unrecovered[" in before and "#ifdef HARVEST_PORT" not in before:  # the placeholder hides fields and nested types the unit uses, so the class is replaced whole
+        if "Unrecovered[" in before and before.count(f"class {name}") == 1:  # not yet replaced: a replaced class keeps its stand-in under HARVEST_PORT too
             for inc in re.findall(r'^#include "(ox/[^"]+)"', before, re.MULTILINE):  # the interface it derives from is completed too
                 ox_before = (root / "src" / inc).read_text() if (root / "src" / inc).exists() else ""
                 ox_original = _original(root, Path(inc).name)
