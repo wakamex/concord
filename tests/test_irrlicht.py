@@ -38,6 +38,19 @@ class Translate(unittest.TestCase):
         self.assertIn("unsigned int getRedMask() const;", out)
         self.assertIn("unsigned int getAlphaMask() const;", out)
 
+    def test_pointer_indexing_is_an_element_and_sort_is_ox_algo_sort(self):
+        out = translate("int a = vec.pointer()[2];\nint b = vec.pointer()[0];\nvec.sort();\nvec.set_sorted(false);\n", "daisy")
+        self.assertIn("int a = vec[2];", out)
+        self.assertIn("int b = vec[0];", out)
+        self.assertIn("ox::algo::sort(vec.begin(), vec.end());", out)
+        self.assertNotIn("set_sorted", out)
+
+    def test_a_two_argument_log_gets_a_level_unless_it_has_one(self):
+        out = translate('os::Printer::log("msg", hint);\nos::Printer::log("msg", ELL_WARNING);\nos::Printer::log("msg", hint, ELL_ERROR);\n', "daisy")
+        self.assertIn('os::Printer::log("msg", hint, ELL_INFORMATION);', out)
+        self.assertIn('os::Printer::log("msg", ELL_WARNING);', out)
+        self.assertIn('os::Printer::log("msg", hint, ELL_ERROR);', out)
+
     def test_nested_templates_are_spaced_and_shifts_are_not(self):
         out = translate("core::array<core::vector3df> a; value = (value >> 16);")
         self.assertIn("ox::TArray<ox::core::CVector3d<float> > a;", out)

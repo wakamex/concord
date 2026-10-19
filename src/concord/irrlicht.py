@@ -99,6 +99,7 @@ def translate(source: str, namespace: str = "daisy") -> str:
     source = re.sub(r"\s*#ifdef _DEBUG\s*\n\s*setDebugName\([^)]*\);\s*\n\s*#endif", "", source)
     # daisy's logger takes the level explicitly where Irrlicht's defaulted it
     source = re.sub(r"\bos::Printer::log\(([^,()]+)\);", r"os::Printer::log(\1, ELL_INFORMATION);", source)
+    source = re.sub(r"\bos::Printer::log\(([^,;()]+,(?!\s*ELL_)[^,;]+)\);", r"os::Printer::log(\1, ELL_INFORMATION);", source, flags=re.DOTALL)  # a hint is not a level
     for pattern, replacement in CONTAINER_CALLS:
         source = re.sub(pattern, replacement, source)
     return _unqualify_in_class(source)
@@ -109,9 +110,13 @@ def translate(source: str, namespace: str = "daisy") -> str:
 OBJECT = r"((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+(?:\[[^\]\n]*\])?)"
 CONTAINER_CALLS = [
     (OBJECT + r"\.const_pointer\(\)", r"&\1[0]"),
+    (OBJECT + r"\.pointer\(\)\[", r"\1["),  # an element, not a pointer to the array's first element
     (OBJECT + r"\.pointer\(\)", r"&\1[0]"),
     (OBJECT + r"->const_pointer\(\)", r"&(*\1)[0]"),
+    (OBJECT + r"->pointer\(\)\[", r"(*\1)["),
     (OBJECT + r"->pointer\(\)", r"&(*\1)[0]"),
+    (OBJECT + r"\.sort\(\)", r"ox::algo::sort(\1.begin(), \1.end())"),
+    (r"\s*[^\n;]+\.set_sorted\([^)]*\);\s*\n", "\n"),  # a sorted flag has no counterpart in a vector
     (r"(\.|->)set_used\(", r"\1resize("),
     (r"(\.|->)reallocate\(", r"\1reserve("),
     (r"(\.|->)getLast\(\)", r"\1back()"),
