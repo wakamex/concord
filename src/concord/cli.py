@@ -452,12 +452,14 @@ def _layout(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
 
 def _seed(args: argparse.Namespace) -> int:
     exact = 0
+    units = []
     for unit in args.units:
         try:
             result = seed(args.harvest.resolve(), unit, args.complete, frozenset(args.allow_worse), args.stub)
         except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"error      {unit}: {str(error).strip().splitlines()[-1]}", flush=True)
             continue
+        units.append(result.unit)  # the Mac debug map's path, which can differ from the one given
         placed = " ".join(f"{k}={v:#x}" for k, v in result.placements.items())
         if result.error:
             print(f"error      {unit}: {result.error.splitlines()[0] if result.error else ''}", flush=True)
@@ -467,10 +469,10 @@ def _seed(args: argparse.Namespace) -> int:
             print(f"{'exact' if result.exact == result.functions else 'partial':10} {unit}  functions {result.exact}/{result.functions}  {placed}", flush=True)
             for item in result.stubbed:
                 print(f"           stubbed {item}")
-            if result.port_conflicts and replace_in_port(args.harvest.resolve(), unit):
+            if result.port_conflicts and replace_in_port(args.harvest.resolve(), result.unit):
                 print(f"           the port defines {len(result.port_conflicts)} of its functions; listed as replaced in port/build.zig")
             exact += result.exact == result.functions
-    seeded = [unit for unit in args.units if f'["{unit}"]' in (args.harvest / "config" / BUILD / "units.toml").read_text()]
+    seeded = [unit for unit in units if f'["{unit}"]' in (args.harvest / "config" / BUILD / "units.toml").read_text()]
     if (args.harvest / "port" / "build.zig").exists() and seeded:
         for unit, symbols in keep_port_linking(args.harvest.resolve(), seeded).items():
             print(f"port       {unit}: needs {len(symbols)} symbols nothing defines ({symbols[0]}); listed as replaced in port/build.zig")
