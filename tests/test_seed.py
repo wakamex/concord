@@ -242,7 +242,7 @@ private:
         "src/daisy/io/CTextReader.cpp:9: error: definition of implicitly-declared 'virtual daisy::io::CTextReader::~CTextReader()'\n"
     )
 
-    def test_only_the_missing_declarations_are_copied_and_the_placeholder_stays(self):
+    def test_a_placeholder_class_is_replaced_by_irrlicht_class_with_its_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / IRRLICHT_SOURCE).mkdir(parents=True)
@@ -253,11 +253,11 @@ private:
             originals = {}
             self.assertTrue(_declare_members(root, self.OUTPUT, originals))
             text = header.read_text()
-            self.assertIn("public:\n    virtual ~CTextReader();\n    wchar_t* getText();\n    CTextReader(ox::io::IReadFile* file);", text)
-            self.assertNotIn("readFile", text)
-            self.assertIn("char Unrecovered[0x30 - sizeof(ox::IUnknown)];", text)
+            self.assertIn("class CTextReader : public ox::IUnknown\n", text)
+            self.assertIn("    char* CData;\n};", text)
+            self.assertNotIn("Unrecovered", text)
             self.assertEqual(originals, {"daisy/io/CTextReader.h": self.HARVEST})
-            self.assertFalse(_declare_members(root, self.OUTPUT, {}))  # declared once
+            self.assertFalse(_declare_members(root, self.OUTPUT, {}))  # replaced once
 
 
 class ProvisionalHeaders(unittest.TestCase):

@@ -727,11 +727,15 @@ def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool
                 continue
             declarations.append((body.find(found[1]), found[1].strip()))
         before = header.read_text()
-        text = _with_base(root, header, name, irrlicht, before)
-        present = text[text.find("class " + name) :]
-        declarations = [
-            d for _, d in sorted(declarations) if not re.search(r"(?<!\w)" + re.escape(d.split("(")[0].split()[-1]) + r"\s*\(", present)
-        ]
+        if "Unrecovered[" in before:  # the placeholder hides fields and nested types the unit uses, so the class is replaced whole
+            text = _whole_class(root, before, name, irrlicht)
+            declarations = []
+        else:
+            text = _with_base(root, header, name, irrlicht, before)
+            present = text[text.find("class " + name) :]
+            declarations = [
+                d for _, d in sorted(declarations) if not re.search(r"(?<!\w)" + re.escape(d.split("(")[0].split()[-1]) + r"\s*\(", present)
+            ]
         if not declarations and text == before:
             continue
         if declarations:
@@ -742,6 +746,21 @@ def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool
         header.write_text(text)
         changed = True
     return changed
+
+
+def _whole_class(root: Path, text: str, name: str, irrlicht: str) -> str:
+    """The header with its class `name` replaced by Irrlicht's class of that name,
+    with the names it uses qualified as Harvest declares them."""
+    start = re.search(r"class " + re.escape(name) + r"\b[^;{]*\{", irrlicht)
+    if start is None:
+        return text
+    end = _brace_end(irrlicht, start.end() - 1)
+    body = qualify(root, irrlicht[start.start() : end + 2])
+    stand_in = re.search(r"class " + re.escape(name) + r"\b[^;{]*\{", text)
+    if stand_in is None:
+        return text
+    close = _brace_end(text, stand_in.end() - 1)
+    return text[: stand_in.start()] + body + text[close + 2 :]
 
 
 def _brace_end(text: str, opening: int) -> int:
