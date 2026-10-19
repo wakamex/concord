@@ -571,7 +571,7 @@ class InventedStructs(unittest.TestCase):
             (root / "src/daisy/video/Null").mkdir(parents=True)
             (root / IRRLICHT_SOURCE / "include").mkdir(parents=True)
             (root / "src/daisy/video/Software/S2DVertex.h").write_text(
-                "// Adapted from Irrlicht 0.7 include/S2DVertex.h\nnamespace daisy {\nnamespace video {\nstruct S2DVertex\n{\n};\n}\n}\n"
+                "// Adapted from Irrlicht 0.7 include/S2DVertex.h (license: third_party/irrlicht-0.7/include/irrlicht.h).\nnamespace daisy {\nnamespace video {\nstruct S2DVertex\n{\n};\n}\n}\n"
             )
             (root / IRRLICHT_SOURCE / "CVideoNull.h").write_text("namespace irr {\nclass CVideoNull {};\n}\n")
             provisional = root / "src/daisy/video/Null/CVideoNull.h"

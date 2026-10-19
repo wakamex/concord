@@ -703,7 +703,7 @@ def _resolvable(root: Path, directory: Path, name: str) -> bool:
     return False
 
 
-ORIGIN_COMMENT = "// Adapted from Irrlicht 0.7 "
+ORIGIN_COMMENT = "(license: third_party/irrlicht-0.7/include/irrlicht.h)."  # the provenance concord writes; a hand-written adaptation lacks it
 
 
 def _rename_invented_structs(root: Path, written: list[str]) -> list[str]:
@@ -712,10 +712,11 @@ def _rename_invented_structs(root: Path, written: list[str]) -> list[str]:
     S2DVertex.h, which the unit's headers include too. The invented struct is renamed
     in its header, so both can be included. Returns the headers changed."""
     origin: set[str] = set()
-    for path in (root / "src").rglob("*.h"):
+    daisy = (root / "src" / "daisy").resolve()
+    for path in (root / "src" / "daisy").rglob("*.h"):
         text = path.read_text(errors="replace")
         if ORIGIN_COMMENT in text:
-            origin |= set(re.findall(r"^\s*struct (\w+)\b", text, re.MULTILINE))
+            origin |= set(re.findall(r"^\s*struct (\w+)\s*\{", text, re.MULTILINE))
     src = (root / "src").resolve()
     renamed = []
     pending = [src / name for name in written]
@@ -728,12 +729,12 @@ def _rename_invented_structs(root: Path, written: list[str]) -> list[str]:
         for include in re.findall(r'^#include "([^"]+)"', path.read_text(errors="replace"), re.MULTILINE):
             candidates = [(path.parent / include).resolve(), src / include]
             pending.extend(candidate for candidate in candidates if candidate.exists())
-        if path.suffix != ".h" or ORIGIN_COMMENT in path.read_text(errors="replace"):
+        if path.suffix != ".h" or daisy not in path.parents or ORIGIN_COMMENT in path.read_text(errors="replace"):
             continue
         text = path.read_text()
         original = _original(root, path.name)
-        kept = set(re.findall(r"^\s*struct (\w+)\b", original.read_text(encoding="latin-1"), re.MULTILINE)) if original else set()
-        invented = {found for found in re.findall(r"^\s*struct (\w+)\b", text, re.MULTILINE) if found in origin and found not in kept}
+        kept = set(re.findall(r"^\s*struct (\w+)\s*\{", original.read_text(encoding="latin-1"), re.MULTILINE)) if original else set()
+        invented = {found for found in re.findall(r"^\s*struct (\w+)\s*\{", text, re.MULTILINE) if found in origin and found not in kept}
         if not invented:
             continue
         for struct in sorted(invented):
