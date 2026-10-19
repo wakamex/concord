@@ -25,6 +25,7 @@ from concord.seed import (
     _tidy,
     _whole_class,
     port_conflicts,
+    port_unresolved,
     qualify,
     replace_in_port,
     seed,
@@ -279,7 +280,8 @@ private:
             self.assertIn("class CTextReader : public ox::IUnknown\n", text)
             self.assertNotIn("\t", text)
             self.assertIn("    char* CData;\n};", text)
-            self.assertNotIn("Unrecovered", text)
+            self.assertIn("#ifdef HARVEST_PORT\nclass CTextReader", text)
+            self.assertIn("char Unrecovered[0x30 - sizeof(ox::IUnknown)];", text)  # the port's stand-in, kept under HARVEST_PORT
             self.assertEqual(originals, {"daisy/io/CTextReader.h": self.HARVEST})
             self.assertFalse(_declare_members(root, self.OUTPUT, {}))  # replaced once
 
@@ -479,6 +481,30 @@ class TidyFiles(unittest.TestCase):
     def test_a_file_ends_after_its_last_code_line_with_one_newline(self):
         self.assertEqual(_tidy("class C\n{\n};\n\n\n"), "class C\n{\n};\n")
         self.assertEqual(_tidy("class C\n{\n};"), "class C\n{\n};\n")
+
+
+class PortGuard(unittest.TestCase):
+    STAND_IN = "namespace daisy {\nclass CTextReader\n{\npublic:\n    char Unrecovered[8];\n};\n}\n"
+    IRRLICHT = "namespace irr {\nclass CTextReader\n{\npublic:\n    int getText();\n};\n}\n"
+
+    def test_a_replaced_class_keeps_its_stand_in_under_harvest_port(self):
+        out = _whole_class(Path("."), self.STAND_IN, "CTextReader", translate(self.IRRLICHT, "daisy"))
+        self.assertIn(
+            "#ifdef HARVEST_PORT\nclass CTextReader\n{\npublic:\n    char Unrecovered[8];\n};\n#else\nclass CTextReader\n",
+            out,
+        )
+        self.assertIn("    int getText();\n};\n#endif\n}\n", out)
+
+    def test_the_port_build_and_the_census_are_both_checked_for_undefined_symbols(self):
+        commands = []
+
+        def run(command, **_):
+            commands.append(command[-1])
+            return mock.Mock(stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(seed_module.subprocess, "run", run):
+            self.assertEqual(port_unresolved(Path(tmp)), {})
+        self.assertEqual(commands, ["harvest", "census"])
 
 
 class TopLevelNames(unittest.TestCase):

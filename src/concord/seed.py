@@ -620,12 +620,13 @@ def port_unresolved(root: Path) -> dict[str, list[str]]:
     """Build the port and return, by source file name, the symbols the link left
     undefined there: a recovered unit can call or derive from code no unit or
     port source defines yet, such as a base class whose file is not recovered."""
-    done = subprocess.run(["zig", "build", "harvest"], cwd=root / "port", capture_output=True, text=True, check=False)
     found: dict[str, list[str]] = {}
-    for symbol, source in UNDEFINED.findall(done.stdout + done.stderr):
-        found.setdefault(source, [])
-        if symbol not in found[source]:
-            found[source].append(symbol)
+    for step in ("harvest", "census"):  # the census links whole archives, as Emscripten does, and reports what the native build drops
+        done = subprocess.run(["zig", "build", step], cwd=root / "port", capture_output=True, text=True, check=False)
+        for symbol, source in UNDEFINED.findall(done.stdout + done.stderr):
+            found.setdefault(source, [])
+            if symbol not in found[source]:
+                found[source].append(symbol)
     return found
 
 
@@ -834,7 +835,9 @@ def _whole_class(root: Path, text: str, name: str, irrlicht: str) -> str:
     if stand_in is None:
         return text
     close = _brace_end(text, stand_in.end() - 1)
-    return text[: stand_in.start()] + body + text[close + 2 :]
+    # the port's stub implements the stand-in's declaration, and the matching build gets Irrlicht's class
+    stand_in_text = text[stand_in.start() : close + 2]
+    return text[: stand_in.start()] + f"#ifdef HARVEST_PORT\n{stand_in_text}\n#else\n{body}\n#endif" + text[close + 2 :]
 
 
 def _brace_end(text: str, opening: int) -> int:
