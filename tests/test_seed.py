@@ -246,7 +246,7 @@ private:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / IRRLICHT_SOURCE).mkdir(parents=True)
-            (root / IRRLICHT_SOURCE / "CTextReader.h").write_text(self.IRRLICHT)
+            (root / IRRLICHT_SOURCE / "CTextReader.h").write_text(self.IRRLICHT.replace("    ", "\t"))
             (root / "src" / "daisy" / "io").mkdir(parents=True)
             header = root / "src" / "daisy" / "io" / "CTextReader.h"
             header.write_text(self.HARVEST)
@@ -254,6 +254,7 @@ private:
             self.assertTrue(_declare_members(root, self.OUTPUT, originals))
             text = header.read_text()
             self.assertIn("class CTextReader : public ox::IUnknown\n", text)
+            self.assertNotIn("\t", text)
             self.assertIn("    char* CData;\n};", text)
             self.assertNotIn("Unrecovered", text)
             self.assertEqual(originals, {"daisy/io/CTextReader.h": self.HARVEST})
