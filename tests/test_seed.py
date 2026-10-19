@@ -413,6 +413,27 @@ class IncompleteAndNamespaces(unittest.TestCase):
             self.assertIn('#include "daisy/video/Null/CImage.h"', text)
 
 
+class PortListsAndAlgo(unittest.TestCase):
+    def test_a_unit_under_a_listed_prefix_is_not_listed_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "port").mkdir(parents=True)
+            build = root / "port" / "build.zig"
+            build.write_text('const replaced = [_][]const u8{\n    "daisy/scene/CBspTree.cpp",\n};\n')
+            self.assertFalse(replace_in_port(root, "daisy/scene/CBspTree.cpp", "reason"))
+            self.assertEqual(build.read_text().count("CBspTree.cpp"), 1)
+
+    def test_an_ox_algo_use_includes_the_array_functions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/ox/algo").mkdir(parents=True)
+            (root / "src/ox/algo/CArrayFunctions.h").write_text("namespace ox {\nnamespace algo {\n}\n}\n")
+            (root / "src/daisy/scene").mkdir(parents=True)
+            seed_module._indexes.clear()
+            text = qualify(root, "namespace daisy {\nnamespace scene {\nvoid f(int* a) { ox::algo::sort(a, a + 1); }\n}\n}\n", "daisy/scene/X.cpp")
+            self.assertIn('#include "ox/algo/CArrayFunctions.h"', text)
+
+
 class TopLevelNames(unittest.TestCase):
     def test_a_name_declared_at_the_top_of_ox_is_qualified_and_its_header_included(self):
         with tempfile.TemporaryDirectory() as tmp:

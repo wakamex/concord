@@ -420,6 +420,8 @@ def qualify(root: Path, text: str, own: str = "") -> str:
     for name in sorted(words & set(top.headers)):
         if re.search(r"\box::" + name + r"\b", text) and not _includes(text, top.headers[name]):
             needed.append(f'#include "{top.headers[name]}"\n')
+    if "ox::algo::" in text and not _includes(text, "ox/algo/CArrayFunctions.h"):  # ox::algo::sort is declared there
+        needed.append('#include "ox/algo/CArrayFunctions.h"\n')
     if not inside and own.endswith(".h"):  # a daisy class a header uses, which the provisional header did not declare or include
         for ns in sorted(opened):
             daisy = _index(root, root / "src" / "daisy" / ns)
@@ -593,7 +595,7 @@ def replace_in_port(root: Path, unit: str, reason: str | None = None) -> bool:
     path = root / "port" / "build.zig"
     text = path.read_text()
     found = re.search(r"^const replaced = \[_\]\[\]const u8\{\n(.*?)^\};", text, re.MULTILINE | re.DOTALL)
-    if found is None or f'"{unit}"' in found[1]:
+    if found is None or any(unit.startswith(entry) for entry in re.findall(r'"([^"]+)"', found[1])):  # port/build.zig matches entries as prefixes
         return False
     if reason is None:
         sources = sorted({conflict.split(" in ")[1] for conflict in port_conflicts(root, unit)})
