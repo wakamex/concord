@@ -86,6 +86,11 @@ def translate(source: str, namespace: str = "daisy") -> str:
             source = source.replace(replacement + ">", replacement + " >")
     for name, replacement in TYPEDEFS.items():
         source = re.sub(r"\b" + name + r"\b", replacement, source)
+    source = re.sub(r"\b(\w+)\(\1\s*&", r"\1(const \1&", source)  # copies of Harvest's containers take const references
+    source = re.sub(r"\boperator\s*<\(\s*(\w+)\s*&", r"operator <(const \1&", source)
+    source = re.sub(r"\bE_DRIVER_TYPE(\s+(?:\w+::)?getDriverType\s*\()", r"int\1", source)  # ox's drivers return int
+    source = re.sub(r"\bECOLOR_FORMAT(\s+(?:\w+::)?getColorFormat\s*\()", r"int\1", source)
+    source = re.sub(r"(?<!unsigned )\bint(\s+(?:\w+::)?get(?:Red|Green|Blue|Alpha)Mask\s*\()", r"unsigned int\1", source)
     for name, replacement in HEADERS.items():
         source = source.replace(f'#include "{name}"', f'#include "{replacement}"')
     source = re.sub(r"^(?!#include)(.*?)(?<![\w:/])IUnknown\b", r"\1ox::IUnknown", source, flags=re.MULTILINE)

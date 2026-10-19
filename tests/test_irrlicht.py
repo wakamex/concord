@@ -26,6 +26,18 @@ class Translate(unittest.TestCase):
         out = translate("namespace irr\n{\nclass C\n{\n    virtual bool OnEvent(SEvent event);\n};\n}\n", "daisy")
         self.assertIn("OnEvent(const SEvent& event)", out)
 
+    def test_copies_and_comparisons_take_const_references(self):
+        out = translate("struct S\n{\n    S(S& o);\n    bool operator <(S& other) const;\n};\n", "daisy")
+        self.assertIn("S(const S& o);", out)
+        self.assertIn("operator <(const S& other) const;", out)
+
+    def test_driver_colour_and_mask_types_match_ox(self):
+        out = translate("virtual E_DRIVER_TYPE getDriverType() const;\nvirtual ECOLOR_FORMAT getColorFormat() const;\nunsigned int getRedMask() const;\nint getAlphaMask() const;\n", "daisy")
+        self.assertIn("virtual int getDriverType() const;", out)
+        self.assertIn("virtual int getColorFormat() const;", out)
+        self.assertIn("unsigned int getRedMask() const;", out)
+        self.assertIn("unsigned int getAlphaMask() const;", out)
+
     def test_nested_templates_are_spaced_and_shifts_are_not(self):
         out = translate("core::array<core::vector3df> a; value = (value >> 16);")
         self.assertIn("ox::TArray<ox::core::CVector3d<float> > a;", out)
