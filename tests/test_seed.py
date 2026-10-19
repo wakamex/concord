@@ -544,6 +544,25 @@ class GuardedClassReplacement(unittest.TestCase):
             self.assertFalse(_declare_members(root, "src/daisy/video/CImage.cpp:3: error: no 'int daisy::video::CImage::getWidth()' member function declared in class 'daisy::video::CImage'\n", {}))
 
 
+class ColourFormats(unittest.TestCase):
+    def test_an_unqualified_colour_helper_and_the_colour_format_constants_are_added(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/ox/video").mkdir(parents=True)
+            (root / "src/ox/video/ColorPacking.h").write_text("namespace ox {\nnamespace video {\n} // end namespace video\n} // end namespace ox\n")
+            (root / "third_party/irrlicht-0.7/include").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include/SColor.h").write_text(
+                "\tinline s32 A1R5G5B5toA8R8G8B8(s16 color)\n\t{\n\t\treturn color;\n\t}\n"
+            )
+            seed_module._indexes.clear()
+            added = _color_helpers(root, "x = A1R5G5B5toA8R8G8B8(c);\ny = format == ECF_R8G8B8;\n")
+            header = (root / "src/ox/video/ColorPacking.h").read_text()
+            self.assertEqual(added, ["ox/video/ColorPacking.h"])
+            self.assertIn("inline int A1R5G5B5toA8R8G8B8(short color)", header)
+            self.assertIn("const ECOLOR_FORMAT ECF_R8G8B8 = (ECOLOR_FORMAT)2;", header)
+            self.assertTrue(header.startswith('#include "ox/video/IVideoDriver.h"\n'))
+
+
 class TopLevelNames(unittest.TestCase):
     def test_a_name_declared_at_the_top_of_ox_is_qualified_and_its_header_included(self):
         with tempfile.TemporaryDirectory() as tmp:

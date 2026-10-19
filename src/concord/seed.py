@@ -106,10 +106,11 @@ def seed(
     # qualify once every header is in place, since a name is pointed at ox only
     # when a header there declares it
     _indexes.clear()
+    helpers = _color_helpers(root, target.read_text())  # before qualify, which includes ColorPacking.h when a helper is called
     for written in result.written:
         path = root / "src" / written
         path.write_text(qualify(root, path.read_text(), written))
-    result.written += _color_helpers(root, target.read_text())
+    result.written += helpers
     _register(root, unit, {})
     output = _match(root, unit, learn=False)
     tried: set[tuple[str, str]] = set()
@@ -429,8 +430,9 @@ def qualify(root: Path, text: str, own: str = "") -> str:
         if re.search(r"\box::" + name + r"\b", text) and not _includes(text, top.headers[name]):
             needed.append(f'#include "{top.headers[name]}"\n')
     packing = root / COLOR_PACKING
+    names = re.findall(r"inline \w+ (\w+)\(", packing.read_text()) + re.findall(r"const ECOLOR_FORMAT (\w+)\b", packing.read_text()) if packing.exists() else []
     if packing.exists() and not _includes(text, COLOR_PACKING.relative_to("src").as_posix()) and any(
-        re.search(r"\box::video::" + name + r"\(", text) for name in re.findall(r"inline \w+ (\w+)\(", packing.read_text())
+        re.search(r"\b(?:ox::video::)?" + name + r"\b", text) for name in names
     ):
         needed.append('#include "ox/video/ColorPacking.h"\n')  # a helper from it is called
     if "ox::algo::" in text and not _includes(text, "ox/algo/CArrayFunctions.h"):  # ox::algo::sort is declared there
@@ -474,7 +476,7 @@ def _color_helpers(root: Path, text: str) -> list[str]:
     current = header.read_text()
     irrlicht = translate((root / IRRLICHT / "include" / "SColor.h").read_text(encoding="latin-1"))
     added = []
-    for name in sorted(set(re.findall(r"ox::video::(\w+)\(", text))):
+    for name in sorted(set(re.findall(r"(?:ox::video::)?(\w+)\(", text))):
         if re.search(r"\b" + name + r"\(", current):
             continue
         if name in PACKING_HELPERS:  # a member of Irrlicht's SColor, which Harvest packs as a free function
@@ -485,6 +487,10 @@ def _color_helpers(root: Path, text: str) -> list[str]:
             continue
         body = " ".join(found[4].split())
         added.append(f"inline {found[1]} {name}({found[2]} {found[3]})\n{{\n    {body}\n}}\n\n")
+    if re.search(r"\bECF_R5G6B5\b|\bECF_R8G8B8\b", text) and "ECF_R5G6B5" not in current:
+        added.append("const ECOLOR_FORMAT ECF_R5G6B5 = (ECOLOR_FORMAT)1;\nconst ECOLOR_FORMAT ECF_R8G8B8 = (ECOLOR_FORMAT)2;\n\n")
+        if '#include "ox/video/IVideoDriver.h"' not in current:
+            current = '#include "ox/video/IVideoDriver.h"\n' + current  # the colour format enum
     if not added:
         return []
     marker = "} // end namespace video\n} // end namespace ox"
