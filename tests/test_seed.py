@@ -262,6 +262,22 @@ private:
             self.assertFalse(_declare_members(root, self.OUTPUT, {}))  # replaced once
 
 
+class WholeHeaderIncludes(unittest.TestCase):
+    def test_a_replaced_class_gets_the_ox_header_of_each_type_it_uses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src" / "ox" / "core").mkdir(parents=True)
+            (root / "src" / "ox" / "core" / "TArray.h").write_text("namespace ox {\nnamespace core {\ntemplate <class T>\nclass TArray\n{\n};\n}\n}\n")
+            (root / "src" / "daisy" / "io").mkdir(parents=True)
+            seed_module._indexes.clear()
+            text = qualify(
+                root,
+                '#include "ox/io/IXMLReader.h"\nnamespace daisy {\nnamespace io {\nclass X\n{\n    ox::core::TArray<int> Items;\n};\n}\n}\n',
+                "daisy/io/X.h",
+            )
+            self.assertIn('#include "ox/core/TArray.h"', text)
+
+
 class TopLevelNames(unittest.TestCase):
     def test_a_name_declared_at_the_top_of_ox_is_qualified_and_its_header_included(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -735,7 +735,7 @@ def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool
             declarations.append((body.find(found[1]), found[1].strip()))
         before = header.read_text()
         if "Unrecovered[" in before:  # the placeholder hides fields and nested types the unit uses, so the class is replaced whole
-            text = _whole_class(root, before, name, irrlicht)
+            text = qualify(root, _whole_class(root, before, name, irrlicht), header.relative_to(root / "src").as_posix())
             declarations = []
         else:
             text = _with_base(root, header, name, irrlicht, before)
