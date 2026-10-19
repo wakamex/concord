@@ -65,10 +65,8 @@ def complete_enum(root: Path, name: str) -> str | None:
     comes from an Irrlicht header with such an enum or it already has it."""
     for path in sorted((root / "src" / "ox").rglob("*.h")):
         text = path.read_text()
-        origin = ORIGIN.search(text)
-        if origin is None:
-            continue
-        original = root / "third_party" / "irrlicht-0.7" / "include" / origin[1]
+        origin = ORIGIN.search(text)  # a provisional header may lack the comment, and then shares its Irrlicht name
+        original = root / "third_party" / "irrlicht-0.7" / "include" / (origin[1] if origin else path.name)
         if not original.exists():
             continue
         for found in re.finditer(r"^[ \t]*enum (\w+)\s*\{[^}]*\};", original.read_text(encoding="latin-1"), re.MULTILINE):

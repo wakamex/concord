@@ -198,6 +198,35 @@ class Enums(unittest.TestCase):
             self.assertIsNone(complete_enum(root, "EAMT_MD2"))  # defined in another ox header
 
 
+class EnumsByFileName(unittest.TestCase):
+    IRR_XML = """namespace irr {
+namespace io {
+class IXMLReader
+{
+public:
+    enum EXML_NODE
+    {
+        EXN_NONE,
+        EXN_ELEMENT
+    };
+    virtual bool read() = 0;
+};
+}
+}
+"""
+
+    def test_a_header_without_an_origin_comment_takes_its_enum_from_the_irrlicht_header_of_the_same_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/ox/io").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include/IXMLReader.h").write_text(self.IRR_XML)
+            header = root / "src/ox/io/IXMLReader.h"
+            header.write_text("namespace ox {\nnamespace io {\nclass IXMLReader : public IUnknown\n{\n};\n}\n}\n")
+            self.assertEqual(complete_enum(root, "EXML_NODE"), "ox/io/IXMLReader.h")
+            self.assertIn("enum EXML_NODE", header.read_text())
+
+
 class FakeHarvest:
     """Two units include the header. `sensitive` is exact only when the header's
     member count is a multiple of 3; `steady` always is."""
