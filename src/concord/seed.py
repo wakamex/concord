@@ -756,7 +756,7 @@ def _whole_class(root: Path, text: str, name: str, irrlicht: str) -> str:
         return text
     end = _brace_end(irrlicht, start.end() - 1)
     body = qualify(root, irrlicht[start.start() : end + 2])
-    body = re.sub(r"^\t+", lambda indent: "    " * len(indent[0]), body, flags=re.MULTILINE)  # Harvest indents with spaces
+    body = body.expandtabs(4)  # Harvest indents and aligns with spaces
     stand_in = re.search(r"class " + re.escape(name) + r"\b[^;{]*\{", text)
     if stand_in is None:
         return text
