@@ -12,6 +12,7 @@ from concord.harvest import BUILD
 from concord.seed import (
     UNDEFINED,
     SeedResult,
+    _declare_members,
     _discard,
     _snapshot,
     _stub_failing,
@@ -19,6 +20,8 @@ from concord.seed import (
     replace_in_port,
     seed,
 )
+
+IRRLICHT_SOURCE = "third_party/irrlicht-0.7/source/Irrlicht"
 
 UNIT = b"""namespace daisy { namespace video {
 struct ILoader { virtual ~ILoader() {} };
@@ -196,6 +199,64 @@ int CLoaderPSD::uses(int x)
             self.assertNotIn("ox/core/CVector3d.h", result.written)
             self.assertEqual(result.stubbed, ["daisy/video/CLoaderPSD.cpp:6 CLoaderPSD::uses"])
             self.assertEqual((result.exact, result.functions), (2, 2))
+
+
+class DeclareMembers(unittest.TestCase):
+    """A provisional daisy class header gets the member declarations its unit needs,
+    copied from Irrlicht's class, and keeps its placeholder that sets the size."""
+
+    IRRLICHT = """namespace irr {
+namespace io {
+class CTextReader : public IUnknown
+{
+public:
+    CTextReader(IReadFile* file);
+    virtual ~CTextReader();
+    wchar_t* getText();
+    int getTextSize() const;
+private:
+    void readFile(IReadFile* file);
+    char* CData;
+};
+}
+}
+"""
+    HARVEST = """#ifndef DAISY_IO_CTEXTREADER_H
+#define DAISY_IO_CTEXTREADER_H
+namespace daisy {
+namespace io {
+class CTextReader : public ox::IUnknown
+{
+public:
+    CTextReader(ox::io::IReadFile* file);
+private:
+    char Unrecovered[0x30 - sizeof(ox::IUnknown)];
+};
+}
+}
+#endif
+"""
+    OUTPUT = (
+        "src/daisy/io/CTextReader.cpp:3: error: no 'wchar_t* daisy::io::CTextReader::getText()' member function declared in class 'daisy::io::CTextReader'\n"
+        "src/daisy/io/CTextReader.cpp:9: error: definition of implicitly-declared 'virtual daisy::io::CTextReader::~CTextReader()'\n"
+    )
+
+    def test_only_the_missing_declarations_are_copied_and_the_placeholder_stays(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / IRRLICHT_SOURCE).mkdir(parents=True)
+            (root / IRRLICHT_SOURCE / "CTextReader.h").write_text(self.IRRLICHT)
+            (root / "src" / "daisy" / "io").mkdir(parents=True)
+            header = root / "src" / "daisy" / "io" / "CTextReader.h"
+            header.write_text(self.HARVEST)
+            originals = {}
+            self.assertTrue(_declare_members(root, self.OUTPUT, originals))
+            text = header.read_text()
+            self.assertIn("public:\n    virtual ~CTextReader();\n    wchar_t* getText();\n    CTextReader(ox::io::IReadFile* file);", text)
+            self.assertNotIn("readFile", text)
+            self.assertIn("char Unrecovered[0x30 - sizeof(ox::IUnknown)];", text)
+            self.assertEqual(originals, {"daisy/io/CTextReader.h": self.HARVEST})
+            self.assertFalse(_declare_members(root, self.OUTPUT, {}))  # declared once
 
 
 if __name__ == "__main__":

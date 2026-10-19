@@ -93,6 +93,8 @@ def seed(
         progressed = _include_incomplete(root, target, output)
         missing = (missing_members(output) - tried) if complete_types else set()
         failed = set()
+        if complete_types and _declare_members(root, output, originals):
+            progressed = True
         for ox_type, member in sorted(missing):
             # one member at a time: one that calls an Irrlicht helper Harvest lacks
             # would break every unit including the header, and is left out
@@ -641,6 +643,67 @@ def _destination(root: Path, source: Path, name: str) -> tuple[Path, str] | None
     else:
         destination = source.parent / origin
     return (destination, origin) if _original(root, origin) else None
+
+
+MISSING_MEMBER = re.compile(r"no '[^']*? [\w:]+::(\w+)\(.*?' member function declared in class '([\w:]+)'")
+IMPLICIT_DESTRUCTOR = re.compile(r"definition of implicitly-declared 'virtual ([\w:]+)::(~\w+)\(\)'")
+
+
+def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool:
+    """Declare in a provisional daisy class header each member function the unit
+    defines but the header lacks, copying its declaration from Irrlicht's class in
+    the Irrlicht order. The header's placeholder array keeps the class's size, so
+    only function declarations are added. The header's text before the change goes
+    into originals, to be settled with the other changes. Returns whether a header
+    changed."""
+    wanted: dict[str, set[str]] = {}
+    for member, cls in MISSING_MEMBER.findall(output):
+        wanted.setdefault(cls, set()).add(member)
+    for cls, dtor in IMPLICIT_DESTRUCTOR.findall(output):
+        wanted.setdefault(cls, set()).add(dtor)
+    changed = False
+    for cls, members in sorted(wanted.items()):
+        name = cls.split("::")[-1]
+        namespace = "/".join(cls.split("::")[:-1])
+        header = root / "src" / namespace / f"{name}.h"
+        original = _original(root, f"{name}.h")
+        if not header.exists() or original is None or "Unrecovered[" not in header.read_text():
+            continue
+        irrlicht = translate(original.read_text(encoding="latin-1"), "daisy")
+        start = re.search(r"class " + name + r"\b[^;{]*\{", irrlicht)
+        if start is None:
+            continue
+        end = _brace_end(irrlicht, start.end() - 1)
+        body = irrlicht[start.end() : end]
+        declarations = []
+        for member in sorted(members):
+            found = re.search(r"^[ \t]*((?:virtual\s+)?[^;{}\n]*?(?<!\w)" + re.escape(member) + r"\s*\([^;{}]*\)\s*(?:const\s*)?;)", body, re.MULTILINE)
+            if found is None:
+                continue
+            declarations.append((body.find(found[1]), found[1].strip()))
+        text = header.read_text()
+        present = text[text.find("class " + name) :]
+        declarations = [
+            d for _, d in sorted(declarations) if not re.search(r"(?<!\w)" + re.escape(d.split("(")[0].split()[-1]) + r"\s*\(", present)
+        ]
+        if not declarations:
+            continue
+        originals.setdefault(header.relative_to(root / "src").as_posix(), text)
+        lines = "".join(f"    {qualify(root, d)}\n" for d in declarations)
+        at = text.index("public:", text.index("class " + name)) + len("public:\n")
+        header.write_text(text[:at] + lines + text[at:])
+        changed = True
+    return changed
+
+
+def _brace_end(text: str, opening: int) -> int:
+    """The index of the brace that closes the one at `opening`."""
+    depth = 0
+    for index in range(opening, len(text)):
+        depth += {"{": 1, "}": -1}.get(text[index], 0)
+        if depth == 0:
+            return index
+    return len(text)
 
 
 def _original(root: Path, name: str) -> Path | None:
