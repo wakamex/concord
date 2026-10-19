@@ -15,7 +15,9 @@ from concord.seed import (
     SeedResult,
     _declare_members,
     _discard,
+    _include_incomplete,
     _includes,
+    _index,
     _mac_path,
     _snapshot,
     _stub_failing,
@@ -370,6 +372,45 @@ class SettleTogether(unittest.TestCase):
             self.assertEqual(notes, ["completing daisy/io/CXMLWriter.h makes bad worse"])
             self.assertEqual((root / "src/daisy/io/CXMLWriter.h").read_text(), "b")
             self.assertEqual((root / "src/ox/io/IXMLWriter.h").read_text(), "changed")
+
+
+class IncompleteAndNamespaces(unittest.TestCase):
+    def test_an_incomplete_daisy_type_gets_its_header(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/daisy/io").mkdir(parents=True)
+            (root / "src/daisy/io/CTextReader.h").write_text("namespace daisy {\nnamespace io {\nclass CTextReader\n{\n};\n}\n}\n")
+            unit = root / "src/daisy/io/CXMLReader.cpp"
+            unit.write_text('#include "CXMLReader.h"\n')
+            seed_module._indexes.clear()
+            self.assertTrue(_include_incomplete(root, unit, "src/daisy/io/CXMLReader.cpp:3: error: invalid use of incomplete type 'class daisy::io::CTextReader'\n"))
+            self.assertIn('#include "daisy/io/CTextReader.h"', unit.read_text())
+
+    def test_a_name_in_a_nested_namespace_of_a_top_level_header_is_not_a_top_level_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/ox/video").mkdir(parents=True)
+            (root / "src/ox/IOxDevice.h").write_text("namespace ox {\nnamespace video {\nenum E_DRIVER_TYPE\n{\n    EDT_NULL = 0,\n    EDT_SOFTWARE\n};\n}\n}\n")
+            seed_module._indexes.clear()
+            top = _index(root, root / "src/ox", recursive=False)
+            self.assertNotIn("EDT_SOFTWARE", top.enumerators)
+            video = _index(root, root / "src/ox/video")
+            self.assertEqual(video.headers.get("EDT_SOFTWARE"), "ox/IOxDevice.h")
+            self.assertIn("EDT_SOFTWARE", video.enumerators)
+
+    def test_a_daisy_class_a_header_uses_is_included_when_the_header_lacks_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/daisy/video/Null").mkdir(parents=True)
+            (root / "src/daisy/video/Software").mkdir(parents=True)
+            (root / "src/daisy/video/Null/CImage.h").write_text("namespace daisy {\nnamespace video {\nclass CImage\n{\n};\n}\n}\n")
+            seed_module._indexes.clear()
+            text = qualify(
+                root,
+                "namespace daisy {\nnamespace video {\nclass CSoftwareTexture\n{\n    CImage* getImage();\n};\n}\n}\n",
+                "daisy/video/Software/CSoftwareTexture.h",
+            )
+            self.assertIn('#include "daisy/video/Null/CImage.h"', text)
 
 
 class TopLevelNames(unittest.TestCase):

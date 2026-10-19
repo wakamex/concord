@@ -308,22 +308,50 @@ _indexes: dict[tuple[Path, bool], Index] = {}
 def _index(root: Path, directory: Path, recursive: bool = True) -> Index:
     if (directory, recursive) not in _indexes:
         index = Index()
+        top = directory == root / "src" / "ox" and not recursive
         for header in sorted(directory.rglob("*.h") if recursive else directory.glob("*.h")):
             text = header.read_text(errors="replace")
-            index.names |= {found[1] or found[2] for found in DECLARATION.finditer(text)}
-            for found in DEFINITION.finditer(text):
-                name = found[1] or found[2]
-                index.headers.setdefault(name, header.relative_to(root / "src").as_posix())
-                if found[3]:
-                    enumerators = set(re.findall(r"^\s*(\w+)", found[3], re.MULTILINE))
-                    index.enumerators |= enumerators
-                    for enumerator in enumerators:
-                        index.headers.setdefault(enumerator, header.relative_to(root / "src").as_posix())
-            for constant in CONSTANT.findall(text):
-                index.enumerators.add(constant)
-                index.headers.setdefault(constant, header.relative_to(root / "src").as_posix())
+            if top:  # a name in a nested namespace belongs to that namespace, not to ox
+                text = _without_namespaces(text, NAMESPACES)
+            _index_text(root, index, header, text)
+        if directory.parent == root / "src" / "ox" and directory.name in NAMESPACES:
+            # a top-level ox header may open this namespace, as IOxDevice.h opens video
+            for header in sorted((root / "src" / "ox").glob("*.h")):
+                body = _namespace_text(header.read_text(errors="replace"), directory.name)
+                if body:
+                    _index_text(root, index, header, body)
         _indexes[(directory, recursive)] = index
     return _indexes[(directory, recursive)]
+
+
+def _index_text(root: Path, index: Index, header: Path, text: str) -> None:
+    """Add the names a header's text declares to the index, under the header's path."""
+    relative = header.relative_to(root / "src").as_posix()
+    index.names |= {found[1] or found[2] for found in DECLARATION.finditer(text)}
+    for found in DEFINITION.finditer(text):
+        name = found[1] or found[2]
+        index.headers.setdefault(name, relative)
+        if found[3]:
+            enumerators = set(re.findall(r"^\s*(\w+)", found[3], re.MULTILINE))
+            index.enumerators |= enumerators
+            for enumerator in enumerators:
+                index.headers.setdefault(enumerator, relative)
+    for constant in CONSTANT.findall(text):
+        index.enumerators.add(constant)
+        index.headers.setdefault(constant, relative)
+
+
+def _without_namespaces(text: str, names: tuple[str, ...]) -> str:
+    """The text without the blocks of the named namespaces."""
+    pattern = re.compile(r"namespace (?:" + "|".join(names) + r")\s*\{")
+    while found := pattern.search(text):
+        text = text[: found.start()] + text[_brace_end(text, found.end() - 1) + 1 :]
+    return text
+
+
+def _namespace_text(text: str, name: str) -> str:
+    """The bodies of the blocks of the named namespace, joined."""
+    return "\n".join(text[found.end() : _brace_end(text, found.end() - 1)] for found in re.finditer(r"namespace " + name + r"\s*\{", text))
 
 
 def _in_code(pattern: str, replacement: str, text: str) -> str:
@@ -392,6 +420,12 @@ def qualify(root: Path, text: str, own: str = "") -> str:
     for name in sorted(words & set(top.headers)):
         if re.search(r"\box::" + name + r"\b", text) and not _includes(text, top.headers[name]):
             needed.append(f'#include "{top.headers[name]}"\n')
+    if not inside and own.endswith(".h"):  # a daisy class a header uses, which the provisional header did not declare or include
+        for ns in sorted(opened):
+            daisy = _index(root, root / "src" / "daisy" / ns)
+            for name in sorted(words & set(daisy.headers)):
+                if daisy.headers[name] != own and not _includes(text, daisy.headers[name]) and not re.search(r"\b(?:class|struct)\s+" + name + r"\b", text):
+                    needed.append(f'#include "{daisy.headers[name]}"\n')
     if needed:
         added = "".join(dict.fromkeys(needed))
         if re.search(r"^#include ", text, flags=re.MULTILINE):
@@ -447,7 +481,7 @@ def provenance(text: str, original: str, namespace: str = "daisy") -> str:
     return text.replace(IRRLICHT_NOTICE, notice, 1)
 
 
-INCOMPLETE = re.compile(r"invalid use of incomplete type '(?:const )?(?:struct|class) ox::(\w+)::(\w+)'")
+INCOMPLETE = re.compile(r"invalid use of incomplete type '(?:const )?(?:struct|class) (ox|daisy)::(\w+)::(\w+)'")
 
 
 def _include_incomplete(root: Path, source: Path, output: str) -> bool:
@@ -455,8 +489,8 @@ def _include_incomplete(root: Path, source: Path, output: str) -> bool:
     which the unit uses through a pointer some other header only forward-declares."""
     text = source.read_text()
     added = []
-    for ns, name in sorted(set(INCOMPLETE.findall(output))):
-        header = _index(root, root / "src" / "ox" / ns).headers.get(name)
+    for tree, ns, name in sorted(set(INCOMPLETE.findall(output))):
+        header = _index(root, root / "src" / tree / ns).headers.get(name)
         if header and f'#include "{header}"' not in text:
             added.append(f'#include "{header}"\n')
     if added:
@@ -750,7 +784,7 @@ def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool
                 continue
             declarations.append((body.find(found[1]), found[1].strip()))
         before = header.read_text()
-        if "Unrecovered[" in before:  # the placeholder hides fields and nested types the unit uses, so the class is replaced whole
+        if "Unrecovered[" in before and "#ifdef HARVEST_PORT" not in before:  # the placeholder hides fields and nested types the unit uses, so the class is replaced whole
             for inc in re.findall(r'^#include "(ox/[^"]+)"', before, re.MULTILINE):  # the interface it derives from is completed too
                 ox_before = (root / "src" / inc).read_text() if (root / "src" / inc).exists() else ""
                 ox_original = _original(root, Path(inc).name)
