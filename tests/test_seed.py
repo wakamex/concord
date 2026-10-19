@@ -579,7 +579,7 @@ class InventedStructs(unittest.TestCase):
                 "namespace daisy {\nnamespace video {\nstruct S2DVertex\n{\n};\nS2DVertex Unused[4];\n}\n}\n"
             )
             unit = root / "src/daisy/video/Software/CVideoSoftware.h"
-            unit.write_text('#include "daisy/video/Null/CVideoNull.h"\n')
+            unit.write_text('#include "../Null/CVideoNull.h"\n')  # reached through a relative include
             seed_module._indexes.clear()
             renamed = seed_module._rename_invented_structs(root, ["daisy/video/Software/CVideoSoftware.h"])
             self.assertEqual(renamed, ["daisy/video/Null/CVideoNull.h"])

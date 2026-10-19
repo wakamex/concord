@@ -716,22 +716,30 @@ def _rename_invented_structs(root: Path, written: list[str]) -> list[str]:
         text = path.read_text(errors="replace")
         if ORIGIN_COMMENT in text:
             origin |= set(re.findall(r"^\s*struct (\w+)\b", text, re.MULTILINE))
+    src = (root / "src").resolve()
     renamed = []
-    for name in written:
-        for include in re.findall(r'^#include "(daisy/[^"]+)"', (root / "src" / name).read_text(), re.MULTILINE):
-            header = root / "src" / include
-            if not header.exists() or ORIGIN_COMMENT in header.read_text(errors="replace"):
-                continue
-            text = header.read_text()
-            original = _original(root, header.name)
-            kept = set(re.findall(r"^\s*struct (\w+)\b", original.read_text(encoding="latin-1"), re.MULTILINE)) if original else set()
-            invented = {found for found in re.findall(r"^\s*struct (\w+)\b", text, re.MULTILINE) if found in origin and found not in kept}
-            if not invented:
-                continue
-            for struct in sorted(invented):
-                text = _in_code(r"\b" + struct + r"\b", f"{struct}_", text)
-            header.write_text(text)
-            renamed.append(include)
+    pending = [src / name for name in written]
+    seen: set[Path] = set()
+    while pending:  # every header the written files reach, through their includes
+        path = pending.pop()
+        if path in seen or not path.exists():
+            continue
+        seen.add(path)
+        for include in re.findall(r'^#include "([^"]+)"', path.read_text(errors="replace"), re.MULTILINE):
+            candidates = [(path.parent / include).resolve(), src / include]
+            pending.extend(candidate for candidate in candidates if candidate.exists())
+        if path.suffix != ".h" or ORIGIN_COMMENT in path.read_text(errors="replace"):
+            continue
+        text = path.read_text()
+        original = _original(root, path.name)
+        kept = set(re.findall(r"^\s*struct (\w+)\b", original.read_text(encoding="latin-1"), re.MULTILINE)) if original else set()
+        invented = {found for found in re.findall(r"^\s*struct (\w+)\b", text, re.MULTILINE) if found in origin and found not in kept}
+        if not invented:
+            continue
+        for struct in sorted(invented):
+            text = _in_code(r"\b" + struct + r"\b", f"{struct}_", text)
+        path.write_text(text)
+        renamed.append(path.relative_to(src).as_posix())
     return sorted(set(renamed))
 
 
