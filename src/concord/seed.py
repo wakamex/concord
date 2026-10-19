@@ -97,7 +97,7 @@ def seed(
     target.parent.mkdir(parents=True, exist_ok=True)
     present = _snapshot(root)
     shared_enums(root)
-    text = provenance(translate(irrlicht.read_text(encoding="latin-1")), f"source/Irrlicht/{irrlicht.name}")
+    text = _tidy(provenance(translate(irrlicht.read_text(encoding="latin-1")), f"source/Irrlicht/{irrlicht.name}"))
     if _has_static_initializer(root, unit):
         text = re.sub(r"^#include", "#include <iostream>\n#include", text, count=1, flags=re.MULTILINE)
     target.write_text(text)
@@ -870,7 +870,14 @@ def _translation(root: Path, original: Path, relative: str, origin: str) -> str:
     if relative.startswith("ox/core/"):
         translated = bare(translated, "ox::core::")
     where = f"{original.parent.relative_to(root / IRRLICHT).as_posix()}/{origin}"
-    return provenance(translated, where, "::".join(relative.split("/")[:-1]) if ox else "daisy")
+    return _tidy(provenance(translated, where, "::".join(relative.split("/")[:-1]) if ox else "daisy"))
+
+
+def _tidy(text: str) -> str:
+    """A file's text with no blank lines after its last line, and one newline at the end."""
+    return text.rstrip() + "\n"
+
+
 
 
 def _headers(root: Path, source: Path, text: str, seen: set[str]) -> list[str]:

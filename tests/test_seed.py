@@ -22,6 +22,7 @@ from concord.seed import (
     _rodata_reference,
     _snapshot,
     _stub_failing,
+    _tidy,
     _whole_class,
     port_conflicts,
     qualify,
@@ -472,6 +473,12 @@ table:
             offset, _, start, size = _rodata_reference(root, "d/f.cpp")
             self.assertEqual((start, size), (0, 9))
             self.assertTrue(start <= offset < start + size)
+
+
+class TidyFiles(unittest.TestCase):
+    def test_a_file_ends_after_its_last_code_line_with_one_newline(self):
+        self.assertEqual(_tidy("class C\n{\n};\n\n\n"), "class C\n{\n};\n")
+        self.assertEqual(_tidy("class C\n{\n};"), "class C\n{\n};\n")
 
 
 class TopLevelNames(unittest.TestCase):

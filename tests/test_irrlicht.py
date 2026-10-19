@@ -51,6 +51,9 @@ class Translate(unittest.TestCase):
         self.assertIn('os::Printer::log("msg", ELL_WARNING);', out)
         self.assertIn('os::Printer::log("msg", hint, ELL_ERROR);', out)
 
+    def test_trailing_spaces_and_tabs_are_removed_from_each_line(self):
+        self.assertEqual(translate("class C  \n{\t\n    int x;\n};  \n", "daisy"), "class C\n{\n    int x;\n};\n")
+
     def test_nested_templates_are_spaced_and_shifts_are_not(self):
         out = translate("core::array<core::vector3df> a; value = (value >> 16);")
         self.assertIn("ox::TArray<ox::core::CVector3d<float> > a;", out)

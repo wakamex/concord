@@ -102,7 +102,7 @@ def translate(source: str, namespace: str = "daisy") -> str:
     source = re.sub(r"\bos::Printer::log\(([^,;()]+,(?!\s*ELL_)[^,;]+)\);", r"os::Printer::log(\1, ELL_INFORMATION);", source, flags=re.DOTALL)  # a hint is not a level
     for pattern, replacement in CONTAINER_CALLS:
         source = re.sub(pattern, replacement, source)
-    return _unqualify_in_class(source)
+    return "\n".join(line.rstrip() for line in _unqualify_in_class(source).split("\n"))  # no trailing spaces
 
 
 # Irrlicht's core::array and core::list calls as calls on the std::vector and
