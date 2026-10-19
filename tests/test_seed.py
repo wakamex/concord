@@ -105,6 +105,21 @@ class Discard(unittest.TestCase):
 
 
 class Stubs(unittest.TestCase):
+    def test_a_failing_body_keeps_a_base_initializer_list_that_compiles(self):
+        source = b"""A::A(int x)
+    : X(x)
+{
+    go(missing);
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src" / "d").mkdir(parents=True)
+            (root / "src" / "d" / "A.cpp").write_bytes(source)
+            _stub_failing(root, "src/d/A.cpp:4: error: 'missing' was not declared\n", {"d/A.cpp"})
+            text = (root / "src" / "d" / "A.cpp").read_bytes()
+            self.assertTrue(text.startswith(b"A::A(int x)\n    : X(x)\n{\n    // Not recovered"), text)
+
     def test_only_failing_function_bodies_in_written_files_are_stubbed(self):
         source = b"""A::A(int x)
     : X(x), Y(missing(x))
@@ -278,6 +293,24 @@ class WholeHeaderIncludes(unittest.TestCase):
             self.assertIn('#include "ox/core/TArray.h"', text)
 
 
+class CompanionHeaders(unittest.TestCase):
+    def test_a_units_own_adapted_header_is_translated_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / IRRLICHT_SOURCE).mkdir(parents=True)
+            (root / IRRLICHT_SOURCE / "CFoo.h").write_text("namespace irr {\nnamespace scene {\nclass CFoo\n{\npublic:\n    int value();\n};\n}\n}\n")
+            (root / "src" / "daisy" / "scene").mkdir(parents=True)
+            source = root / "src" / "daisy" / "scene" / "CFoo.cpp"
+            source.write_text('#include "CFoo.h"\n')
+            header = root / "src" / "daisy" / "scene" / "CFoo.h"
+            header.write_text("// Adapted from Irrlicht 0.7 source/Irrlicht/CFoo.h\nold text\n")
+            seed_module._indexes.clear()
+            written = seed_module._headers(root, source, source.read_text(), set())
+            self.assertEqual(written, ["daisy/scene/CFoo.h"])
+            self.assertIn("class CFoo", header.read_text())
+            self.assertNotIn("old text", header.read_text())
+
+
 class TopLevelNames(unittest.TestCase):
     def test_a_name_declared_at_the_top_of_ox_is_qualified_and_its_header_included(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -288,6 +321,7 @@ class TopLevelNames(unittest.TestCase):
             seed_module._indexes.clear()
             text = qualify(root, "namespace daisy {\nnamespace scene {\nEKEY_CODE key = KEY_UP;\n}\n}\n")
             self.assertIn("ox::EKEY_CODE key = ox::KEY_UP;", text)
+            self.assertIn("ox::KEY_UP", qualify(root, "namespace daisy {\nnamespace scene {\nint k = daisy::KEY_UP;\n}\n}\n"))
             self.assertIn('#include "ox/Keycodes.h"', text)
 
 

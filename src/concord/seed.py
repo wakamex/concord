@@ -221,12 +221,15 @@ def _stub_failing(root: Path, output: str, written: set[str]) -> list[str]:
                 body = node.child_by_field_name("body")
                 first, last = node.start_point[0] + 1, node.end_point[0] + 1
                 if body is not None and any(first <= line <= last for line in lines) and body.text != STUB.strip():
-                    start = node.child_by_field_name("declarator").end_byte
-                    edits.append((start, body.end_byte, node))
+                    if any(line <= body.start_point[0] for line in lines if first <= line <= last):
+                        edits.append((node.child_by_field_name("declarator").end_byte, body.end_byte, node))  # the initializer list fails: drop it
+                    else:  # only the body fails: keep a base-class initializer list that compiles
+                        edits.append((body.start_byte, body.end_byte, node))
                 continue
             stack.extend(node.children)
         for start, end, node in sorted(edits, key=lambda edit: -edit[0]):
-            source = source[:start] + STUB + source[end:]
+            stub = STUB if source[start:start + 1] != b"{" else STUB.lstrip()  # a body start already has no newline before it
+            source = source[:start] + stub + source[end:]
             name = node.child_by_field_name("declarator").text.decode().split("(")[0].strip()
             stubbed.append(f"{relative}:{node.start_point[0] + 1} {name}")
         if edits:
@@ -373,6 +376,7 @@ def qualify(root: Path, text: str, own: str = "") -> str:
     if not inside:  # a name declared at the top of ox, such as EKEY_CODE in Keycodes.h, is qualified as ox::
         for name in (set(top.headers) | top.enumerators) - reachable:
             text = _in_code(r"(?<![\w:.>])" + name + r"\b(?!\s*\()", f"ox::{name}", text)
+            text = _in_code(r"(?<![\w:])daisy::" + name + r"\b", f"ox::{name}", text)  # Irrlicht's irr::KEY_UP became daisy::KEY_UP
     for name in sorted(words & set(top.headers)):
         if re.search(r"\box::" + name + r"\b", text) and not _includes(text, top.headers[name]):
             needed.append(f'#include "{top.headers[name]}"\n')
@@ -788,6 +792,25 @@ def _original(root: Path, name: str) -> Path | None:
     return None
 
 
+def _adapted_companion(root: Path, source: Path, name: str) -> Path | None:
+    """The header in src/ a unit includes as its own, when an earlier seed translated
+    it from Irrlicht (it carries the origin comment) and Irrlicht has it."""
+    if Path(name).stem != source.stem or _original(root, name) is None:
+        return None
+    found = [path for path in (root / "src").rglob(Path(name).name) if "// Adapted from Irrlicht 0.7 " in path.read_text(errors="replace")]
+    return found[0] if len(found) == 1 else None
+
+
+def _translation(root: Path, original: Path, relative: str, origin: str) -> str:
+    """The Irrlicht header translated for its place under src/, with its provenance."""
+    ox = relative.startswith("ox/")
+    translated = translate(original.read_text(encoding="latin-1"), "ox" if ox else "daisy")
+    if relative.startswith("ox/core/"):
+        translated = bare(translated, "ox::core::")
+    where = f"{original.parent.relative_to(root / IRRLICHT).as_posix()}/{origin}"
+    return provenance(translated, where, "::".join(relative.split("/")[:-1]) if ox else "daisy")
+
+
 def _headers(root: Path, source: Path, text: str, seen: set[str]) -> list[str]:
     """Translate each Irrlicht header the text includes that Harvest lacks, and the
     headers those include, to the path the Mac debug map records for it (the
@@ -796,6 +819,16 @@ def _headers(root: Path, source: Path, text: str, seen: set[str]) -> list[str]:
     header."""
     written = []
     for name in re.findall(r'^#include "([^"]+)"', text, flags=re.MULTILINE):
+        companion = _adapted_companion(root, source, name)
+        if companion is not None:  # the unit's own header, an earlier seed's translation, is translated again
+            relative = companion.relative_to(root / "src").as_posix()
+            if relative not in seen:
+                seen.add(relative)
+                translated = _translation(root, _original(root, name), relative, name)
+                companion.write_text(translated)
+                written.append(relative)
+                written += _headers(root, companion, translated, seen)
+            continue
         if _resolvable(root, source.parent, name):
             continue
         existing = sorted((root / "src" / "ox").rglob(Path(name).name)) or sorted((root / "src").rglob(Path(name).name))
@@ -814,13 +847,7 @@ def _headers(root: Path, source: Path, text: str, seen: set[str]) -> list[str]:
         if relative in seen:
             continue
         seen.add(relative)
-        original = _original(root, origin)
-        ox = relative.startswith("ox/")
-        translated = translate(original.read_text(encoding="latin-1"), "ox" if ox else "daisy")
-        if relative.startswith("ox/core/"):
-            translated = bare(translated, "ox::core::")
-        where = f"{original.parent.relative_to(root / IRRLICHT).as_posix()}/{origin}"
-        translated = provenance(translated, where, "::".join(relative.split("/")[:-1]) if ox else "daisy")
+        translated = _translation(root, _original(root, origin), relative, origin)
         header.parent.mkdir(parents=True, exist_ok=True)
         header.write_text(translated)
         written.append(relative)
