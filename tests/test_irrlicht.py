@@ -45,6 +45,12 @@ class Translate(unittest.TestCase):
         self.assertIn("ox::algo::sort(vec.begin(), vec.end());", out)
         self.assertNotIn("set_sorted", out)
 
+    def test_erase_by_index_becomes_erase_by_iterator_and_iterators_stay(self):
+        out = translate("node->Triangles.erase(i);\nlist.erase(it);\nlist.erase(ait);\n", "daisy")
+        self.assertIn("node->Triangles.erase(node->Triangles.begin() + i);", out)
+        self.assertIn("list.erase(it);", out)
+        self.assertIn("list.erase(ait);", out)
+
     def test_a_two_argument_log_gets_a_level_unless_it_has_one(self):
         out = translate('os::Printer::log("msg", hint);\nos::Printer::log("msg", ELL_WARNING);\nos::Printer::log("msg", hint, ELL_ERROR);\n', "daisy")
         self.assertIn('os::Printer::log("msg", hint, ELL_INFORMATION);', out)

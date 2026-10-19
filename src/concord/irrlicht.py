@@ -116,6 +116,7 @@ CONTAINER_CALLS = [
     (OBJECT + r"->pointer\(\)\[", r"(*\1)["),
     (OBJECT + r"->pointer\(\)", r"&(*\1)[0]"),
     (OBJECT + r"\.sort\(\)", r"ox::algo::sort(\1.begin(), \1.end())"),
+    (OBJECT + r"\.erase\((?!a?it\))(\w+)\)", r"\1.erase(\1.begin() + \2)"),  # Irrlicht erased by index; a vector erases by iterator
     (r"\s*[^\n;]+\.set_sorted\([^)]*\);\s*\n", "\n"),  # a sorted flag has no counterpart in a vector
     (r"(\.|->)set_used\(", r"\1resize("),
     (r"(\.|->)reallocate\(", r"\1reserve("),
