@@ -62,6 +62,24 @@ def _mac_path(root: Path, unit: str) -> str:
     return found[1] if found else unit
 
 
+def _settle_headers(root: Path, originals: dict[str, str], allowed: frozenset[str]) -> tuple[list[str], list[str]]:
+    """The changed headers kept, and a note for each one restored. Headers that settle
+    together are kept together, since one alone can make a unit worse that the pair does
+    not, as a class header and the interface it derives from. Only when the set does not
+    settle is each header tried alone."""
+    if originals and not regressions(Harvest(root), originals, allowed):
+        return sorted(originals), []
+    kept, notes = [], []
+    for header, text in sorted(originals.items()):  # one at a time: each has its own includers
+        regressed = regressions(Harvest(root), {header: text}, allowed)
+        if regressed:
+            (root / "src" / header).write_text(text)
+            notes.append(f"completing {header} makes {', '.join(regressed)} worse")
+        else:
+            kept.append(header)
+    return kept, notes
+
+
 def seed(
     root: Path, unit: str, complete_types: bool = False, allowed: frozenset[str] = frozenset(), stub: bool = False
 ) -> SeedResult:
@@ -139,14 +157,8 @@ def seed(
         if not progressed:
             break
         output = _match(root, unit, learn=False)
-    unsettled = []  # a header whose completion makes other units worse is restored, and its unit seeded without it
-    for header, text in sorted(originals.items()):  # one at a time: each has its own includers
-        regressed = regressions(Harvest(root), {header: text}, allowed)
-        if regressed:
-            (root / "src" / header).write_text(text)
-            unsettled.append(f"completing {header} makes {', '.join(regressed)} worse")
-        else:
-            result.written.append(header)
+    kept, unsettled = _settle_headers(root, originals, allowed)  # a header whose change makes other units worse is restored
+    result.written += kept
     note = "; ".join(unsettled)
     if unsettled and not stub:
         result.error = note
@@ -392,7 +404,7 @@ def qualify(root: Path, text: str, own: str = "") -> str:
 def _includes(text: str, header: str) -> bool:
     """Whether the text includes the header, by its path under src/ or by file name
     alone, as a file beside it does."""
-    return f'#include "{header}"' in text or f'#include "{Path(header).name}"' in text
+    return bool(re.search(r'^#include "(?:[^"\n]*/)?' + re.escape(Path(header).name) + r'"', text, re.MULTILINE))
 
 
 COLOR_PACKING = Path("src/ox/video/ColorPacking.h")
@@ -739,6 +751,13 @@ def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool
             declarations.append((body.find(found[1]), found[1].strip()))
         before = header.read_text()
         if "Unrecovered[" in before:  # the placeholder hides fields and nested types the unit uses, so the class is replaced whole
+            for inc in re.findall(r'^#include "(ox/[^"]+)"', before, re.MULTILINE):  # the interface it derives from is completed too
+                ox_before = (root / "src" / inc).read_text() if (root / "src" / inc).exists() else ""
+                ox_original = _original(root, Path(inc).name)
+                if "Partial and provisional" in ox_before and ox_original is not None:
+                    ox_text = qualify(root, _whole_class(root, ox_before, Path(inc).stem, translate(ox_original.read_text(encoding="latin-1"), "ox")), inc)
+                    originals.setdefault(inc, ox_before)
+                    (root / "src" / inc).write_text(ox_text)
             text = qualify(root, _whole_class(root, before, name, irrlicht), header.relative_to(root / "src").as_posix())
             declarations = []
         else:
@@ -766,8 +785,7 @@ def _whole_class(root: Path, text: str, name: str, irrlicht: str) -> str:
     if start is None:
         return text
     end = _brace_end(irrlicht, start.end() - 1)
-    body = qualify(root, irrlicht[start.start() : end + 2])
-    body = body.expandtabs(4)  # Harvest indents and aligns with spaces
+    body = irrlicht[start.start() : end + 2].expandtabs(4)  # Harvest indents and aligns with spaces
     stand_in = re.search(r"class " + re.escape(name) + r"\b[^;{]*\{", text)
     if stand_in is None:
         return text

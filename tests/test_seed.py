@@ -9,14 +9,17 @@ from unittest import mock
 
 from concord import seed as seed_module
 from concord.harvest import BUILD
+from concord.irrlicht import translate
 from concord.seed import (
     UNDEFINED,
     SeedResult,
     _declare_members,
     _discard,
+    _includes,
     _mac_path,
     _snapshot,
     _stub_failing,
+    _whole_class,
     port_conflicts,
     qualify,
     replace_in_port,
@@ -309,6 +312,64 @@ class CompanionHeaders(unittest.TestCase):
             self.assertEqual(written, ["daisy/scene/CFoo.h"])
             self.assertIn("class CFoo", header.read_text())
             self.assertNotIn("old text", header.read_text())
+
+
+class ReplacedInterfaces(unittest.TestCase):
+    def test_a_replaced_ox_class_keeps_its_names_bare_inside_the_namespace(self):
+        irrlicht = "namespace irr {\nnamespace io {\nclass IXMLReader : public IUnknown\n{\npublic:\n    virtual bool read() = 0;\n};\n}\n}\n"
+        text = "namespace ox {\nnamespace io {\nclass IXMLReader : public IUnknown\n{\n};\n}\n}\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            out = _whole_class(Path(tmp), text, "IXMLReader", translate(irrlicht, "ox"))
+        self.assertIn("class IXMLReader : public ox::IUnknown\n", out)
+        self.assertNotIn("class ox::io::IXMLReader", out)
+        self.assertIn("virtual bool read() = 0;", out)
+
+    def test_an_include_of_the_same_file_name_counts_whatever_its_path(self):
+        self.assertTrue(_includes('#include "../IUnknown.h"\n', "ox/IUnknown.h"))
+        self.assertTrue(_includes('#include "ox/IUnknown.h"\n', "ox/IUnknown.h"))
+        self.assertFalse(_includes('#include "IUnknownList.h"\n', "ox/IUnknown.h"))
+
+    def test_a_replaced_daisy_class_also_completes_the_ox_interface_it_includes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / IRRLICHT_SOURCE).mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include").mkdir(parents=True)
+            (root / IRRLICHT_SOURCE / "CXMLReader.h").write_text("namespace irr {\nnamespace io {\nclass CXMLReader : public IXMLReader\n{\npublic:\n    virtual bool read();\n};\n}\n}\n")
+            (root / "third_party/irrlicht-0.7/include/IXMLReader.h").write_text("namespace irr {\nnamespace io {\nclass IXMLReader : public IUnknown\n{\npublic:\n    virtual bool read() = 0;\n};\n}\n}\n")
+            (root / "src/ox/io").mkdir(parents=True)
+            (root / "src/ox/io/IXMLReader.h").write_text("// Partial and provisional: the game never uses XML.\nnamespace ox {\nnamespace io {\nclass IXMLReader : public IUnknown\n{\n};\n}\n}\n")
+            (root / "src/daisy/io").mkdir(parents=True)
+            header = root / "src/daisy/io/CXMLReader.h"
+            header.write_text('#include "ox/io/IXMLReader.h"\nnamespace daisy {\nnamespace io {\nclass CXMLReader : public ox::io::IXMLReader\n{\npublic:\n    CXMLReader();\nprivate:\n    char Unrecovered[8];\n};\n}\n}\n')
+            originals = {}
+            seed_module._indexes.clear()
+            output = "src/daisy/io/CXMLReader.cpp:9: error: no 'bool daisy::io::CXMLReader::read()' member function declared in class 'daisy::io::CXMLReader'\n"
+            self.assertTrue(_declare_members(root, output, originals))
+            self.assertIn("virtual bool read() = 0;", (root / "src/ox/io/IXMLReader.h").read_text())
+            self.assertEqual(originals["ox/io/IXMLReader.h"], "// Partial and provisional: the game never uses XML.\nnamespace ox {\nnamespace io {\nclass IXMLReader : public IUnknown\n{\n};\n}\n}\n")
+            self.assertIn("virtual bool read()", header.read_text())
+
+
+class SettleTogether(unittest.TestCase):
+    def test_headers_that_settle_together_are_kept_together(self):
+        originals = {"ox/io/IXMLWriter.h": "a", "daisy/io/CXMLWriter.h": "b"}
+        with mock.patch.object(seed_module, "Harvest"), mock.patch.object(seed_module, "regressions", lambda harvest, changed, allowed=frozenset(): [] if len(changed) == 2 else ["bad"]):
+            self.assertEqual(seed_module._settle_headers(Path("."), originals, frozenset()), (["daisy/io/CXMLWriter.h", "ox/io/IXMLWriter.h"], []))
+
+    def test_a_pair_that_does_not_settle_is_tried_one_header_at_a_time(self):
+        originals = {"ox/io/IXMLWriter.h": "a", "daisy/io/CXMLWriter.h": "b"}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/ox/io").mkdir(parents=True)
+            (root / "src/daisy/io").mkdir(parents=True)
+            (root / "src/ox/io/IXMLWriter.h").write_text("changed")
+            (root / "src/daisy/io/CXMLWriter.h").write_text("changed")
+            with mock.patch.object(seed_module, "Harvest"), mock.patch.object(seed_module, "regressions", lambda harvest, changed, allowed=frozenset(): ["bad"] if len(changed) == 2 or "daisy/io/CXMLWriter.h" in changed else []):
+                kept, notes = seed_module._settle_headers(root, originals, frozenset())
+            self.assertEqual(kept, ["ox/io/IXMLWriter.h"])
+            self.assertEqual(notes, ["completing daisy/io/CXMLWriter.h makes bad worse"])
+            self.assertEqual((root / "src/daisy/io/CXMLWriter.h").read_text(), "b")
+            self.assertEqual((root / "src/ox/io/IXMLWriter.h").read_text(), "changed")
 
 
 class TopLevelNames(unittest.TestCase):
