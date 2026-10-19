@@ -370,11 +370,18 @@ def qualify(root: Path, text: str, own: str = "") -> str:
             if (ns in used or qualified or (inside and ns in opened)) and index.headers[name] != own and not _includes(text, index.headers[name]):
                 needed.append(f'#include "{index.headers[name]}"\n')
     top = _index(root, root / "src" / "ox", recursive=False)
+    if not inside:  # a name declared at the top of ox, such as EKEY_CODE in Keycodes.h, is qualified as ox::
+        for name in (set(top.headers) | top.enumerators) - reachable:
+            text = _in_code(r"(?<![\w:.>])" + name + r"\b(?!\s*\()", f"ox::{name}", text)
     for name in sorted(words & set(top.headers)):
         if re.search(r"\box::" + name + r"\b", text) and not _includes(text, top.headers[name]):
             needed.append(f'#include "{top.headers[name]}"\n')
     if needed:
-        text = re.sub(r"^(#include [^\n]*\n)", lambda m: m[1] + "".join(dict.fromkeys(needed)), text, count=1, flags=re.MULTILINE)
+        added = "".join(dict.fromkeys(needed))
+        if re.search(r"^#include ", text, flags=re.MULTILINE):
+            text = re.sub(r"^(#include [^\n]*\n)", lambda m: m[1] + added, text, count=1, flags=re.MULTILINE)
+        elif re.search(r"^namespace ", text, flags=re.MULTILINE):  # a file with no include yet gets its first at the top
+            text = added + text
     return text
 
 

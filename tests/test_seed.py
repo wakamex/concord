@@ -18,6 +18,7 @@ from concord.seed import (
     _snapshot,
     _stub_failing,
     port_conflicts,
+    qualify,
     replace_in_port,
     seed,
 )
@@ -259,6 +260,19 @@ private:
             self.assertNotIn("Unrecovered", text)
             self.assertEqual(originals, {"daisy/io/CTextReader.h": self.HARVEST})
             self.assertFalse(_declare_members(root, self.OUTPUT, {}))  # replaced once
+
+
+class TopLevelNames(unittest.TestCase):
+    def test_a_name_declared_at_the_top_of_ox_is_qualified_and_its_header_included(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src" / "ox").mkdir(parents=True)
+            (root / "src" / "ox" / "Keycodes.h").write_text("namespace ox {\nenum EKEY_CODE\n{\n    KEY_UP = 1\n};\n}\n")
+            (root / "src" / "daisy" / "scene").mkdir(parents=True)
+            seed_module._indexes.clear()
+            text = qualify(root, "namespace daisy {\nnamespace scene {\nEKEY_CODE key = KEY_UP;\n}\n}\n")
+            self.assertIn("ox::EKEY_CODE key = ox::KEY_UP;", text)
+            self.assertIn('#include "ox/Keycodes.h"', text)
 
 
 class ProvisionalHeaders(unittest.TestCase):
