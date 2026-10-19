@@ -27,7 +27,7 @@ from concord.complete import (
     complete,
     complete_enum,
     missing_members,
-    settle,
+    regressions,
     undeclared,
 )
 from concord.harvest import BUILD, Harvest
@@ -122,18 +122,22 @@ def seed(
         if not progressed:
             break
         output = _match(root, unit, learn=False)
-    unsettled = []
+    unsettled = []  # a header whose completion makes other units worse is restored, and its unit seeded without it
     for header, text in sorted(originals.items()):  # one at a time: each has its own includers
-        if settle(Harvest(root), {header: text}, allowed):
-            result.written.append(header)
-        else:
+        regressed = regressions(Harvest(root), {header: text}, allowed)
+        if regressed:
             (root / "src" / header).write_text(text)
-            unsettled.append(header)
-    if unsettled:
-        result.error = "completing " + ", ".join(unsettled) + " makes functions in other units worse"
+            unsettled.append(f"completing {header} makes {', '.join(regressed)} worse")
+        else:
+            result.written.append(header)
+    note = "; ".join(unsettled)
+    if unsettled and not stub:
+        result.error = note
         _unregister(root, unit)
         _discard(root, result, present)
         return result
+    if unsettled:
+        output = _match(root, unit, learn=False)
     for _ in range(6 if stub else 0):  # a stubbed body can expose errors the compiler stopped before
         if "error:" not in output:
             break
@@ -143,7 +147,8 @@ def seed(
         result.stubbed += stubbed
         output = _match(root, unit, learn=False)
     if "error:" in output or "returned non-zero" in output:
-        result.error = "\n".join(line for line in output.splitlines() if "error" in line)[:3000]
+        errors = "\n".join(line for line in output.splitlines() if "error" in line)[:3000]
+        result.error = f"{note}\n{errors}" if note else errors
         _unregister(root, unit)
         _discard(root, result, present)
         return result
@@ -161,7 +166,8 @@ def seed(
         result.exact, result.functions = int(found[1]), int(found[2])
     else:
         # the matcher stopped, as on a placement outside the target: undo the seed as for a compile error
-        result.error = output.strip().splitlines()[-1] if output.strip() else "hv match printed no result"
+        last = output.strip().splitlines()[-1] if output.strip() else "hv match printed no result"
+        result.error = f"{note}\n{last}" if note else last
         _unregister(root, unit)
         _discard(root, result, present)
     return result

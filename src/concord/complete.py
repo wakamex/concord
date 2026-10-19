@@ -170,8 +170,13 @@ def state(harvest: Harvest, units: list[str], overlays: dict[str, bytes] | None 
 
 def worse(before: State, after: State) -> set[str]:
     """Units with a function that stopped matching, scores lower or is gone."""
+    return {key[0] for key in regressed(before, after)}
+
+
+def regressed(before: State, after: State) -> set[tuple[str, str]]:
+    """The (unit, symbol) functions that stopped matching, scores lower or are gone."""
     return {
-        key[0]
+        key
         for key, (exact, score) in before.items()
         if key not in after or (exact and not after[key][0]) or after[key][1] < score
     }
@@ -181,19 +186,27 @@ FILL = 30  # more members than this cannot reach a count the first 30 did not
 
 
 def settle(harvest: Harvest, originals: dict[str, str], allowed: frozenset[str] = frozenset()) -> bool:
-    """Whether the units including the changed headers (header under src/ -> its
-    text before the change) are no worse than before, after adding further
-    Irrlicht members to those headers if that is what it takes. Functions whose
-    symbols are in `allowed` may get worse: a trade the caller made knowingly."""
+    """Whether regressions(...) finds nothing."""
+    return not regressions(harvest, originals, allowed)
+
+
+def regressions(harvest: Harvest, originals: dict[str, str], allowed: frozenset[str] = frozenset()) -> list[str]:
+    """The functions ("unit symbol") that the change to the headers makes worse,
+    after adding further Irrlicht members to those headers if that is what it
+    takes; empty when the units including them are no worse than before. Header
+    paths are under src/, and originals maps each to its text before the change.
+    Functions whose symbols are in `allowed` may get worse: a trade the caller
+    made knowingly."""
     root = harvest.root
     units = sorted({unit for header in originals for unit in harvest.dependents(f"src/{header}")})
     if not units:
-        return True
+        return []
     before = state(harvest, units, {f"src/{h}": text.encode() for h, text in originals.items()})
     before = {key: value for key, value in before.items() if key[1] not in allowed}
-    broken = worse(before, state(harvest, units))
-    if not broken:
-        return True
+    first = regressed(before, state(harvest, units))
+    if not first:
+        return []
+    broken = {unit for unit, _ in first}
     narrow = {key: value for key, value in before.items() if key[0] in broken}
     for header in originals:
         ox_type = next((t for t, (h, _, _) in TYPES.items() if h == header), None)
@@ -208,8 +221,8 @@ def settle(harvest: Harvest, originals: dict[str, str], allowed: frozenset[str] 
                 (root / "src" / header).write_text(previous)  # the member does not compile here
                 continue
             if not worse(narrow, after) and not worse(before, state(harvest, units)):
-                return True
-    return False
+                return []
+    return [f"{unit} {symbol}" for unit, symbol in sorted(first)]
 
 
 def _class_members(source: str, cls: str, declarations: bool = False) -> list[Node]:

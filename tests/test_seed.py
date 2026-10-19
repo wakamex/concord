@@ -5,7 +5,9 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from concord import seed as seed_module
 from concord.harvest import BUILD
 from concord.seed import (
     UNDEFINED,
@@ -15,6 +17,7 @@ from concord.seed import (
     _stub_failing,
     port_conflicts,
     replace_in_port,
+    seed,
 )
 
 UNIT = b"""namespace daisy { namespace video {
@@ -128,6 +131,71 @@ int A::bad(int n)
             self.assertIn(b"int A::bad(int n)\n{\n    // Not recovered: Irrlicht 0.7's body does not compile against daisy's interfaces.\n    __builtin_trap();\n}", text)
             self.assertEqual((root / "src" / "d" / "Other.cpp").read_bytes(), source)
             self.assertEqual(_stub_failing(root, output, {"d/A.cpp"}), [])  # a stub is not stubbed again
+
+
+class CompletionRejected(unittest.TestCase):
+    """seed --complete --stub when settle rejects the header completion: the header is
+    restored and the unit is still seeded, with the function that needed the member stubbed."""
+
+    IRRLICHT = b"""bool CLoaderPSD::load(int x)
+{
+    return x > 0;
+}
+
+int CLoaderPSD::uses(int x)
+{
+    return CVector3d::member_use(x);
+}
+"""
+    HEADER = b"struct CVector3d { int x; };\n"
+
+    def test_a_rejected_header_is_restored_and_the_failing_function_is_stubbed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            irrlicht = root / seed_module.IRRLICHT / "source" / "Irrlicht"
+            irrlicht.mkdir(parents=True)
+            (irrlicht / "CLoaderPSD.cpp").write_bytes(self.IRRLICHT)
+            (root / "src" / "ox" / "core").mkdir(parents=True)
+            header = root / "src" / "ox" / "core" / "CVector3d.h"
+            header.write_bytes(self.HEADER)
+            (root / "src" / "daisy" / "video").mkdir(parents=True)
+            target = root / "src" / "daisy" / "video" / "CLoaderPSD.cpp"
+
+            def complete(_root, members):  # the completion adds the member the body needs
+                header.write_bytes(self.HEADER + b"// member_use\n")
+                return True
+
+            def match(_root, unit, learn):  # the unit fails to compile while the member is absent
+                errors = "".join(
+                    f"src/daisy/video/CLoaderPSD.cpp:{number}: error: no member_use\n"
+                    for number, line in enumerate(target.read_text().splitlines(), 1)
+                    if "member_use(" in line and "member_use" not in header.read_text()
+                )
+                return errors or "functions 2/2"
+
+            with (
+                mock.patch.object(seed_module, "translate", lambda text: text),
+                mock.patch.object(seed_module, "provenance", lambda text, original: text),
+                mock.patch.object(seed_module, "_color_helpers", lambda _root, _text: []),
+                mock.patch.object(seed_module, "_has_static_initializer", lambda _root, _unit: False),
+                mock.patch.object(seed_module, "_match", match),
+                mock.patch.object(seed_module, "Harvest"),
+                mock.patch.object(seed_module, "missing_members", lambda output: {("CVector3d", "member_use")}),
+                mock.patch.object(seed_module, "complete", complete),
+                mock.patch.object(seed_module, "_compiles", lambda _root, _unit, _header: True),
+                mock.patch.object(seed_module, "_include_incomplete", lambda _root, _source, _output: False),
+                mock.patch.object(seed_module, "regressions", lambda *args, **kwargs: ["daisy/scene/CBspTree.cpp CBspTree::build"]),
+                mock.patch.object(seed_module, "_register"),
+                mock.patch.object(seed_module, "_unregister") as unregister,
+                mock.patch.object(seed_module, "port_conflicts", lambda _root, _unit: []),
+            ):
+                result = seed(root, "daisy/video/CLoaderPSD.cpp", complete_types=True, stub=True)
+            self.assertEqual(result.error, "")
+            self.assertFalse(unregister.called)
+            self.assertEqual(header.read_bytes(), self.HEADER)
+            self.assertNotIn("ox/core/CVector3d.h", result.written)
+            self.assertEqual(result.stubbed, ["daisy/video/CLoaderPSD.cpp:6 CLoaderPSD::uses"])
+            self.assertEqual((result.exact, result.functions), (2, 2))
 
 
 if __name__ == "__main__":
