@@ -87,6 +87,14 @@ def translate(source: str, namespace: str = "daisy") -> str:
     for name, replacement in TYPEDEFS.items():
         source = re.sub(r"\b" + name + r"\b", replacement, source)
     source = re.sub(r"\bEVDF_BILINEAR_FILER\b", "EVDF_BILINEAR_FILTER", source)  # Irrlicht's spelling; ox's is FILTER
+    source = re.sub(
+        r"(\w+)\.clipAgainst\(([^)]+)\);",
+        r"if ((\2).LowerRightCorner.X < \1.LowerRightCorner.X) \1.LowerRightCorner.X = (\2).LowerRightCorner.X; "
+        r"if ((\2).LowerRightCorner.Y < \1.LowerRightCorner.Y) \1.LowerRightCorner.Y = (\2).LowerRightCorner.Y; "
+        r"if ((\2).UpperLeftCorner.X > \1.UpperLeftCorner.X) \1.UpperLeftCorner.X = (\2).UpperLeftCorner.X; "
+        r"if ((\2).UpperLeftCorner.Y > \1.UpperLeftCorner.Y) \1.UpperLeftCorner.Y = (\2).UpperLeftCorner.Y;",
+        source,
+    )  # Irrlicht's CRect::clipAgainst, written out, so ox's CRect needs no member for it
     source = re.sub(r"((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+(?:\([^)]*\))?)\.toA1R5G5B5\(\)", r"ox::video::toA1R5G5B5(\1.color)", source)  # a colour's packing is a free function in ox
     source = re.sub(r"(=\s*)((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+->getColorFormat\(\))", r"\1(ECOLOR_FORMAT)\2", source)  # ox's IImage returns int
     source = re.sub(r"\b(\w+)\(\1\s*&", r"\1(const \1&", source)  # copies of Harvest's containers take const references

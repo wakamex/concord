@@ -75,6 +75,12 @@ class Translate(unittest.TestCase):
         out = translate("ECOLOR_FORMAT f = image->getColorFormat();\n", "daisy")
         self.assertIn("ECOLOR_FORMAT f = (ECOLOR_FORMAT)image->getColorFormat();", out)
 
+    def test_clip_against_is_written_out_as_corner_comparisons(self):
+        out = translate("void f(core::rect<s32>& r, core::rect<s32> c)\n{\n    r.clipAgainst(c);\n}\n", "daisy")
+        self.assertIn("if ((c).LowerRightCorner.X < r.LowerRightCorner.X) r.LowerRightCorner.X = (c).LowerRightCorner.X;", out)
+        self.assertIn("if ((c).UpperLeftCorner.Y > r.UpperLeftCorner.Y) r.UpperLeftCorner.Y = (c).UpperLeftCorner.Y;", out)
+        self.assertNotIn("clipAgainst", out)
+
     def test_nested_templates_are_spaced_and_shifts_are_not(self):
         out = translate("core::array<core::vector3df> a; value = (value >> 16);")
         self.assertIn("ox::TArray<ox::core::CVector3d<float> > a;", out)
