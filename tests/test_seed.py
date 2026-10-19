@@ -14,6 +14,7 @@ from concord.seed import (
     SeedResult,
     _declare_members,
     _discard,
+    _mac_path,
     _snapshot,
     _stub_failing,
     port_conflicts,
@@ -257,6 +258,86 @@ private:
             self.assertIn("char Unrecovered[0x30 - sizeof(ox::IUnknown)];", text)
             self.assertEqual(originals, {"daisy/io/CTextReader.h": self.HARVEST})
             self.assertFalse(_declare_members(root, self.OUTPUT, {}))  # declared once
+
+
+class ProvisionalHeaders(unittest.TestCase):
+    """A provisional header in the directory the Mac map gives its unit gets the
+    base class and member declarations Irrlicht's class has, and keeps its daisy-only
+    declarations."""
+
+    IRRLICHT = """namespace irr {
+namespace video {
+class CImageLoaderJPG : public IImageLoader
+{
+public:
+    CImageLoaderJPG();
+    virtual ~CImageLoaderJPG();
+    virtual bool isALoadableFileExtension(const char* fileName);
+private:
+    int unused;
+};
+}
+}
+"""
+    HARVEST = """// PROVISIONAL: only the JPEG writer is declared.
+#ifndef DAISY_VIDEO_NULL_CIMAGELOADERJPG_H
+#define DAISY_VIDEO_NULL_CIMAGELOADERJPG_H
+
+namespace ox {
+namespace io { class IWriteFile; }
+}
+
+namespace daisy {
+namespace video {
+
+class CImageLoaderJPG
+{
+public:
+    static bool saveImage(ox::io::IWriteFile* file, unsigned char* data, int width, int height, int channels);
+};
+
+}
+}
+
+#endif
+"""
+    OUTPUT = (
+        "src/daisy/video/CImageLoaderJPG.cpp:18: error: definition of implicitly-declared 'daisy::video::CImageLoaderJPG::CImageLoaderJPG()'\n"
+        "src/daisy/video/CImageLoaderJPG.cpp:27: error: definition of implicitly-declared 'daisy::video::CImageLoaderJPG::~CImageLoaderJPG()'\n"
+    )
+
+    def test_the_header_in_the_mac_directory_gets_its_base_and_members_and_keeps_saveimage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / IRRLICHT_SOURCE).mkdir(parents=True)
+            (root / IRRLICHT_SOURCE / "CImageLoaderJPG.h").write_text(self.IRRLICHT)
+            (root / "src" / "ox" / "video").mkdir(parents=True)
+            (root / "src" / "ox" / "video" / "IImageLoader.h").write_text("namespace ox {\nnamespace video {\nclass IImageLoader\n{\n};\n}\n}\n")
+            header = root / "src" / "daisy" / "video" / "Null" / "CImageLoaderJPG.h"
+            header.parent.mkdir(parents=True)
+            header.write_text(self.HARVEST)
+            _index_cache_clear()
+            originals = {}
+            self.assertTrue(_declare_members(root, self.OUTPUT, originals))
+            text = header.read_text()
+            self.assertIn('#define DAISY_VIDEO_NULL_CIMAGELOADERJPG_H\n#include "../../../ox/video/IImageLoader.h"\n', text)
+            self.assertIn("class CImageLoaderJPG : public ox::video::IImageLoader\n{\npublic:\n    CImageLoaderJPG();\n    virtual ~CImageLoaderJPG();\n", text)
+            self.assertIn("static bool saveImage(", text)
+            self.assertEqual(originals, {"daisy/video/Null/CImageLoaderJPG.h": self.HARVEST})
+
+    def test_a_unit_resolves_to_the_directory_the_mac_map_gives_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "reference" / "1.18-mac-i386").mkdir(parents=True)
+            (root / "reference" / "1.18-mac-i386" / "symbols.csv").write_text(
+                '0x1,"__TEXT,__text",global,daisy/video/Null/CImage.cpp,_Z1f,f()\n'
+            )
+            self.assertEqual(_mac_path(root, "daisy/video/CImage.cpp"), "daisy/video/Null/CImage.cpp")
+            self.assertEqual(_mac_path(root, "daisy/io/CTextReader.cpp"), "daisy/io/CTextReader.cpp")
+
+
+def _index_cache_clear():
+    seed_module._indexes.clear()
 
 
 if __name__ == "__main__":

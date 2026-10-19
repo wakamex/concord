@@ -14,6 +14,7 @@ object's functions, preferring the run nearest the unit's placed inline copies.
 from __future__ import annotations
 
 import csv
+import os
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -50,6 +51,17 @@ class SeedResult:
     error: str = ""
 
 
+def _mac_path(root: Path, unit: str) -> str:
+    """The daisy path the Mac debug map gives a unit with this file name, which
+    can sit in a subdirectory the path given does not name, such as Null/ or
+    Software/. The path given when the map has none."""
+    symbols = root / "reference" / "1.18-mac-i386" / "symbols.csv"
+    if not symbols.exists():
+        return unit
+    found = re.search(r",(daisy/[^,\s]*/" + re.escape(Path(unit).name) + r"),", symbols.read_text())
+    return found[1] if found else unit
+
+
 def seed(
     root: Path, unit: str, complete_types: bool = False, allowed: frozenset[str] = frozenset(), stub: bool = False
 ) -> SeedResult:
@@ -57,6 +69,7 @@ def seed(
     With `stub`, a function of the translated files whose body does not compile
     keeps its declarator and gets a body that traps, so the rest of the unit can
     compile and match."""
+    unit = _mac_path(root, unit)
     result = SeedResult(unit)
     irrlicht = root / IRRLICHT / "source" / "Irrlicht" / Path(unit).name
     if not irrlicht.exists():
@@ -646,7 +659,39 @@ def _destination(root: Path, source: Path, name: str) -> tuple[Path, str] | None
 
 
 MISSING_MEMBER = re.compile(r"no '[^']*? [\w:]+::(\w+)\(.*?' member function declared in class '([\w:]+)'")
-IMPLICIT_DESTRUCTOR = re.compile(r"definition of implicitly-declared 'virtual ([\w:]+)::(~\w+)\(\)'")
+IMPLICIT_DESTRUCTOR = re.compile(r"definition of implicitly-declared '(?:virtual )?([\w:]+)::(~?\w+)\(\)'")
+
+
+def _provisional_header(root: Path, namespace: str, name: str) -> Path | None:
+    """The header of a daisy class that Harvest keeps as a provisional stand-in, in the
+    class's namespace directory first, such as src/daisy/video/Null/ for a class the
+    Mac map puts there."""
+    candidates = sorted((root / "src" / "daisy").rglob(f"{name}.h"), key=lambda path: "/".join(path.relative_to(root / "src").parts[:-1]) != namespace)
+    for path in candidates:
+        text = path.read_text()
+        if "Unrecovered[" in text or "PROVISIONAL" in text:
+            return path
+    return None
+
+
+def _with_base(root: Path, header: Path, name: str, irrlicht: str, text: str) -> str:
+    """Give the class in a provisional header the base class Irrlicht's class has,
+    when the header has none, with an include of the header that declares the base."""
+    head = re.search(r"class " + re.escape(name) + r"\b[^;{]*\{", irrlicht)
+    base = re.search(r":\s*public\s+(\w+)", head[0]) if head else None
+    stand_in = re.search(r"class " + re.escape(name) + r"\b[^;{]*\{", text)
+    if base is None or stand_in is None or ":" in stand_in[0]:
+        return text
+    declared = _index(root, root / "src" / "ox").headers.get(base[1])
+    if declared is None:
+        return text
+    base_name = qualify(root, base[1])
+    text = text[: stand_in.start()] + f"class {name} : public {base_name}\n{{" + text[stand_in.end() :]
+    include = f'#include "{Path(os.path.relpath(root / "src" / declared, header.parent)).as_posix()}"\n'
+    lines = list(re.finditer(r'^#include "[^"]*"\n', text, re.MULTILINE))
+    guard = re.search(r"^#define \w+\n", text, re.MULTILINE)
+    at = lines[-1].end() if lines else guard.end()
+    return text[:at] + include + text[at:]
 
 
 def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool:
@@ -665,9 +710,9 @@ def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool
     for cls, members in sorted(wanted.items()):
         name = cls.split("::")[-1]
         namespace = "/".join(cls.split("::")[:-1])
-        header = root / "src" / namespace / f"{name}.h"
         original = _original(root, f"{name}.h")
-        if not header.exists() or original is None or "Unrecovered[" not in header.read_text():
+        header = _provisional_header(root, namespace, name)
+        if header is None or original is None:
             continue
         irrlicht = translate(original.read_text(encoding="latin-1"), "daisy")
         start = re.search(r"class " + name + r"\b[^;{]*\{", irrlicht)
@@ -677,21 +722,24 @@ def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool
         body = irrlicht[start.end() : end]
         declarations = []
         for member in sorted(members):
-            found = re.search(r"^[ \t]*((?:virtual\s+)?[^;{}\n]*?(?<!\w)" + re.escape(member) + r"\s*\([^;{}]*\)\s*(?:const\s*)?;)", body, re.MULTILINE)
+            found = re.search(r"^[ \t]*((?:virtual\s+)?[^;{}\n]*?(?<![\w~])" + re.escape(member) + r"\s*\([^;{}]*\)\s*(?:const\s*)?;)", body, re.MULTILINE)
             if found is None:
                 continue
             declarations.append((body.find(found[1]), found[1].strip()))
-        text = header.read_text()
+        before = header.read_text()
+        text = _with_base(root, header, name, irrlicht, before)
         present = text[text.find("class " + name) :]
         declarations = [
             d for _, d in sorted(declarations) if not re.search(r"(?<!\w)" + re.escape(d.split("(")[0].split()[-1]) + r"\s*\(", present)
         ]
-        if not declarations:
+        if not declarations and text == before:
             continue
-        originals.setdefault(header.relative_to(root / "src").as_posix(), text)
-        lines = "".join(f"    {qualify(root, d)}\n" for d in declarations)
-        at = text.index("public:", text.index("class " + name)) + len("public:\n")
-        header.write_text(text[:at] + lines + text[at:])
+        if declarations:
+            lines = "".join(f"    {qualify(root, d)}\n" for d in declarations)
+            at = text.index("public:", text.index("class " + name)) + len("public:\n")
+            text = text[:at] + lines + text[at:]
+        originals.setdefault(header.relative_to(root / "src").as_posix(), before)
+        header.write_text(text)
         changed = True
     return changed
 
