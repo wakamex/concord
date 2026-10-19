@@ -60,6 +60,21 @@ class Translate(unittest.TestCase):
     def test_trailing_spaces_and_tabs_are_removed_from_each_line(self):
         self.assertEqual(translate("class C  \n{\t\n    int x;\n};  \n", "daisy"), "class C\n{\n    int x;\n};\n")
 
+    def test_typedef_names_behind_irr_are_resolved_and_the_irrlicht_spellings_are_ox_names(self):
+        out = translate("irr::u16 a = 0;\nint f = EVDF_BILINEAR_FILER;\n", "daisy")
+        self.assertIn("unsigned short a = 0;", out)
+        self.assertIn("EVDF_BILINEAR_FILTER;", out)
+
+    def test_packing_a_colour_is_the_ox_helper_on_its_colour_member(self):
+        out = translate("s16 a = color.toA1R5G5B5();\ns16 b = currentVertex->Color.toA1R5G5B5();\ns16 c = imageToCopy->getPixel(x,y).toA1R5G5B5();\n", "daisy")
+        self.assertIn("ox::video::toA1R5G5B5(color.color)", out)
+        self.assertIn("ox::video::toA1R5G5B5(currentVertex->Color.color)", out)
+        self.assertIn("ox::video::toA1R5G5B5(imageToCopy->getPixel(x,y).color)", out)
+
+    def test_a_colour_format_is_cast_from_the_int_ox_returns(self):
+        out = translate("ECOLOR_FORMAT f = image->getColorFormat();\n", "daisy")
+        self.assertIn("ECOLOR_FORMAT f = (ECOLOR_FORMAT)image->getColorFormat();", out)
+
     def test_nested_templates_are_spaced_and_shifts_are_not(self):
         out = translate("core::array<core::vector3df> a; value = (value >> 16);")
         self.assertIn("ox::TArray<ox::core::CVector3d<float> > a;", out)

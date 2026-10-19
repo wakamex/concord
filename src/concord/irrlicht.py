@@ -77,7 +77,7 @@ def translate(source: str, namespace: str = "daisy") -> str:
     """The Irrlicht source with ox's types and headers, in daisy's namespace, or in
     ox's for one of Irrlicht's public types, which daisy kept there."""
     source = re.sub(r"\bnamespace irr\b", f"namespace {namespace}", source)
-    source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui)::)", "", source)  # qualified again below
+    source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui|" + "|".join(TYPEDEFS) + r")\b)", "", source)  # qualified again below
     source = re.sub(r"\birr::", "daisy::", source)
     source = re.sub(r"\bOnEvent\(\s*SEvent\b", "OnEvent(const SEvent&", source)  # Harvest takes SEvent by const reference
     for name, replacement in sorted(TYPES.items(), key=lambda kv: -len(kv[0])):
@@ -86,6 +86,9 @@ def translate(source: str, namespace: str = "daisy") -> str:
             source = source.replace(replacement + ">", replacement + " >")
     for name, replacement in TYPEDEFS.items():
         source = re.sub(r"\b" + name + r"\b", replacement, source)
+    source = re.sub(r"\bEVDF_BILINEAR_FILER\b", "EVDF_BILINEAR_FILTER", source)  # Irrlicht's spelling; ox's is FILTER
+    source = re.sub(r"((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+(?:\([^)]*\))?)\.toA1R5G5B5\(\)", r"ox::video::toA1R5G5B5(\1.color)", source)  # a colour's packing is a free function in ox
+    source = re.sub(r"(=\s*)((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+->getColorFormat\(\))", r"\1(ECOLOR_FORMAT)\2", source)  # ox's IImage returns int
     source = re.sub(r"\b(\w+)\(\1\s*&", r"\1(const \1&", source)  # copies of Harvest's containers take const references
     source = re.sub(r"\boperator\s*<\(\s*(\w+)\s*&", r"operator <(const \1&", source)
     source = re.sub(r"\bE_DRIVER_TYPE(\s+(?:\w+::)?getDriverType\s*\()", r"int\1", source)  # ox's drivers return int
