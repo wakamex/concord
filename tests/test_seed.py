@@ -13,6 +13,7 @@ from concord.irrlicht import translate
 from concord.seed import (
     UNDEFINED,
     SeedResult,
+    _color_helpers,
     _declare_members,
     _discard,
     _include_incomplete,
@@ -505,6 +506,22 @@ class PortGuard(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(seed_module.subprocess, "run", run):
             self.assertEqual(port_unresolved(Path(tmp)), {})
         self.assertEqual(commands, ["harvest", "census"])
+
+
+class ColorPacking(unittest.TestCase):
+    def test_a_colour_packing_helper_is_added_and_its_header_included(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/ox/video").mkdir(parents=True)
+            (root / "src/ox/video/ColorPacking.h").write_text("namespace ox {\nnamespace video {\n} // end namespace video\n} // end namespace ox\n")
+            (root / "third_party/irrlicht-0.7/include").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include/SColor.h").write_text("")
+            (root / "src/daisy/video").mkdir(parents=True)
+            seed_module._indexes.clear()
+            self.assertEqual(_color_helpers(root, "x = ox::video::toA1R5G5B5(c);\n"), ["ox/video/ColorPacking.h"])
+            self.assertIn("inline short toA1R5G5B5(unsigned int c)", (root / "src/ox/video/ColorPacking.h").read_text())
+            unit = qualify(root, "namespace daisy {\nnamespace video {\nint x = ox::video::toA1R5G5B5(c);\n}\n}\n", "daisy/video/X.cpp")
+            self.assertIn('#include "ox/video/ColorPacking.h"', unit)
 
 
 class TopLevelNames(unittest.TestCase):

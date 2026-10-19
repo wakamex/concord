@@ -428,6 +428,11 @@ def qualify(root: Path, text: str, own: str = "") -> str:
     for name in sorted(words & set(top.headers)):
         if re.search(r"\box::" + name + r"\b", text) and not _includes(text, top.headers[name]):
             needed.append(f'#include "{top.headers[name]}"\n')
+    packing = root / COLOR_PACKING
+    if packing.exists() and not _includes(text, COLOR_PACKING.relative_to("src").as_posix()) and any(
+        re.search(r"\box::video::" + name + r"\(", text) for name in re.findall(r"inline \w+ (\w+)\(", packing.read_text())
+    ):
+        needed.append('#include "ox/video/ColorPacking.h"\n')  # a helper from it is called
     if "ox::algo::" in text and not _includes(text, "ox/algo/CArrayFunctions.h"):  # ox::algo::sort is declared there
         needed.append('#include "ox/algo/CArrayFunctions.h"\n')
     if not inside and own.endswith(".h"):  # a daisy class a header uses, which the provisional header did not declare or include
@@ -454,6 +459,12 @@ def _includes(text: str, header: str) -> bool:
 COLOR_PACKING = Path("src/ox/video/ColorPacking.h")
 
 
+# Daisy's packing of a colour to A1R5G5B5 (CVideoNull.cpp), as a free function for ox
+PACKING_HELPERS = {
+    "toA1R5G5B5": "inline short toA1R5G5B5(unsigned int c)\n{\n    return (short)(((c & 0xff000000) ? 0x8000 : 0) | ((c >> 9) & 0x7c00) | ((c >> 6) & 0x3e0) | ((c >> 3) & 0x1f));\n}\n\n",
+}
+
+
 def _color_helpers(root: Path, text: str) -> list[str]:
     """Add to ox/video/ColorPacking.h each of Irrlicht's packed 16-bit color helpers
     (the free inline functions of include/SColor.h, such as getRed(s16)) that the
@@ -465,6 +476,9 @@ def _color_helpers(root: Path, text: str) -> list[str]:
     added = []
     for name in sorted(set(re.findall(r"ox::video::(\w+)\(", text))):
         if re.search(r"\b" + name + r"\(", current):
+            continue
+        if name in PACKING_HELPERS:  # a member of Irrlicht's SColor, which Harvest packs as a free function
+            added.append(PACKING_HELPERS[name])
             continue
         found = re.search(r"\tinline (\w+) " + name + r"\((short|int) (\w+)\)\s*\{(.*?)\}", irrlicht, re.DOTALL)
         if found is None:
