@@ -189,6 +189,12 @@ def seed(
         _register(root, unit, result.placements)
     for _ in range(2):  # a learned address can let the next run learn another
         output = _match(root, unit, learn=True)
+        if "unmapped or truncated range:" in output and ".rodata" not in result.placements:
+            # a jump table's function laid out past its FDE, so its table is read from the target's code
+            rodata = _place_rodata(root, unit)
+            if rodata:
+                result.placements.update(rodata)
+                _register(root, unit, result.placements)
     result.port_conflicts = port_conflicts(root, unit)
     found = re.search(r"functions (\d+)/(\d+)", output)
     if found:
@@ -251,10 +257,12 @@ def _stub_failing(root: Path, output: str, written: set[str]) -> list[str]:
 
 def _snapshot(root: Path) -> dict[Path, bytes]:
     """Every source and header under src/ with its contents, and the port's build
-    file, so a failed seed can put the checkout back as it found it."""
+    file and the target's config, so a failed seed can put the checkout back as it
+    found it."""
     files = [path for pattern in ("*.h", "*.cpp") for path in (root / "src").rglob(pattern)]
-    build = root / "port" / "build.zig"
-    return {path: path.read_bytes() for path in [*files, *([build] if build.exists() else [])]}
+    # the build file and the target's config, which a seed's learning pass and registration write
+    others = [root / "port" / "build.zig", root / "config" / BUILD / "symbols.tsv", root / "config" / BUILD / "units.toml"]
+    return {path: path.read_bytes() for path in [*files, *(other for other in others if other.exists())]}
 
 
 def _discard(root: Path, result: SeedResult, present: dict[Path, bytes]) -> None:
@@ -1000,6 +1008,59 @@ def _place_bss(root: Path, unit: str) -> dict[str, int]:
         return {}
     address = _ios_init_object(root, text + inits[0])
     return {".bss": address} if address is not None else {}
+
+
+def _rodata_reference(root: Path, unit: str) -> tuple[int, int, int, int] | None:
+    """The relocation in the object's .text that points into its .rodata, as
+    (offset in .text, addend, start and size of the function holding it), or None."""
+    slug = unit.replace("/", "__").removesuffix(".cpp")
+    with open(root / "build" / "match" / BUILD / f"{slug}.o", "rb") as stream:
+        elf = ELFFile(stream)
+        names = [section.name for section in elf.iter_sections()]
+        if ".rodata" not in names or ".rela.text" not in names:
+            return None
+        rodata = names.index(".rodata")
+        text_index = names.index(".text")
+        symbols = elf.get_section_by_name(".symtab")
+        functions = sorted(
+            (sym["st_value"], sym["st_size"])
+            for sym in symbols.iter_symbols()
+            if sym["st_shndx"] == text_index and sym["st_info"]["type"] == "STT_FUNC"
+        )
+        for relocation in elf.get_section_by_name(".rela.text").iter_relocations():
+            target = symbols.get_symbol(relocation["r_info_sym"])
+            if target["st_shndx"] != rodata:
+                continue
+            for start, size in functions:
+                if start <= relocation["r_offset"] < start + size:
+                    return relocation["r_offset"], relocation["r_addend"], start, size
+    return None
+
+
+def _place_rodata(root: Path, unit: str) -> dict[str, int]:
+    """The .rodata address a unit's jump table lives at, found through the target FDE
+    of the same size as the function holding the table's reference. A stub before the
+    function can move the FDE the matcher lays out, so the table is read from the
+    target's own code, where the reference is, and the address is checked against the
+    target's .rodata."""
+    found = _rodata_reference(root, unit)
+    if found is None:
+        return {}
+    offset, addend, start, size = found
+    anchors = _anchors(root, unit.replace("/", "__").removesuffix(".cpp"))
+    candidates = [(fde, fsize) for fde, fsize in _extents(root) if fsize == size]
+    if anchors:
+        candidates = [(fde, fsize) for fde, fsize in candidates if min(anchors) - 0x20000 <= fde <= max(anchors) + 0x20000]
+    with open(root / "orig" / BUILD / "Harvest", "rb") as stream:
+        elf = ELFFile(stream)
+        text = elf.get_section_by_name(".text")
+        rodata = elf.get_section_by_name(".rodata")
+        for fde, _ in sorted(candidates, key=lambda c: min((abs(c[0] - a) for a in anchors), default=0)):
+            where = fde + (offset - start) - text["sh_addr"]
+            value = int.from_bytes(text.data()[where : where + 4], "little", signed=True) - addend
+            if rodata["sh_addr"] <= value < rodata["sh_addr"] + rodata["sh_size"]:
+                return {".rodata": value}
+    return {}
 
 
 def _extents(root: Path) -> list[tuple[int, int]]:

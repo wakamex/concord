@@ -19,6 +19,7 @@ from concord.seed import (
     _includes,
     _index,
     _mac_path,
+    _rodata_reference,
     _snapshot,
     _stub_failing,
     _whole_class,
@@ -432,6 +433,45 @@ class PortListsAndAlgo(unittest.TestCase):
             seed_module._indexes.clear()
             text = qualify(root, "namespace daisy {\nnamespace scene {\nvoid f(int* a) { ox::algo::sort(a, a + 1); }\n}\n}\n", "daisy/scene/X.cpp")
             self.assertIn('#include "ox/algo/CArrayFunctions.h"', text)
+
+
+class RollbackConfig(unittest.TestCase):
+    def test_a_failed_seed_restores_the_target_config_it_changed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config" / BUILD).mkdir(parents=True)
+            symbols = root / "config" / BUILD / "symbols.tsv"
+            symbols.write_text("0x1\t4\tf\tmatch:d/f.cpp\n")
+            present = _snapshot(root)
+            symbols.write_text("0x1\t4\tf\tmatch:d/f.cpp\n0x2\t4\tg\tmatch:d/f.cpp\n")
+            _discard(root, SeedResult("d/f.cpp"), present)
+            self.assertEqual(symbols.read_text(), "0x1\t4\tf\tmatch:d/f.cpp\n")
+
+
+@unittest.skipUnless(shutil.which("as"), "needs as")
+class RodataReference(unittest.TestCase):
+    ASSEMBLY = """    .text
+    .globl f
+    .type f, @function
+f:
+    movq table(,%rdi,8), %rax
+    ret
+    .size f, .-f
+    .section .rodata
+table:
+    .quad 1, 2, 3
+"""
+
+    def test_a_relocation_into_rodata_is_found_with_the_function_holding_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = root / "build" / "match" / BUILD
+            out.mkdir(parents=True)
+            (root / "f.s").write_text(self.ASSEMBLY)
+            subprocess.run(["as", str(root / "f.s"), "-o", str(out / "d__f.o")], check=True)
+            offset, _, start, size = _rodata_reference(root, "d/f.cpp")
+            self.assertEqual((start, size), (0, 9))
+            self.assertTrue(start <= offset < start + size)
 
 
 class TopLevelNames(unittest.TestCase):
