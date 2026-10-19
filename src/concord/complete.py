@@ -87,7 +87,9 @@ def complete_enum(root: Path, name: str) -> str | None:
     return None
 
 
-ENUM_BODY = re.compile(r"^([ \t]*)enum (\w+)\s*\{([^}]*)\}\s*;", re.MULTILINE)
+ENUM_BODY = re.compile(
+    r"(?P<comment>(?:[ \t]*//[^\n]*\n)*)[ \t]*enum (?P<name>\w+)\s*\{(?P<body>[^}]*)\}\s*;[ \t]*\n(?:[ \t]*\n)?",
+)
 
 
 def shared_enums(root: Path) -> list[str]:
@@ -100,15 +102,15 @@ def shared_enums(root: Path) -> list[str]:
     owners: dict[str, Path] = {}
     for path, text in texts.items():
         for found in ENUM_BODY.finditer(text):
-            if re.search(r"\w", found[3]):
-                owners.setdefault(found[2], path)
+            if re.search(r"\w", found["body"]):
+                owners.setdefault(found["name"], path)
     changed = []
     for path, text in texts.items():
         updated = text
         includes = []
         for found in ENUM_BODY.finditer(text):
-            owner = owners.get(found[2])
-            if owner is None or owner == path or re.search(r"\w", found[3]):
+            owner = owners.get(found["name"])
+            if owner is None or owner == path or re.search(r"\w", found["body"]):
                 continue
             updated = updated.replace(found[0], "", 1)
             includes.append(f'#include "{Path(os.path.relpath(owner, path.parent)).as_posix()}"\n')

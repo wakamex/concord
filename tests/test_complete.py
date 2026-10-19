@@ -287,6 +287,7 @@ enum EMD2_ANIMATION_TYPE
 namespace ox {
 namespace scene {
 
+//! Animation types of MD2 meshes; the enumerators are not recovered.
 enum EMD2_ANIMATION_TYPE
 {
 };
@@ -310,7 +311,7 @@ class IAnimatedMeshSceneNode : public ISceneNode
             text = (scene / "IAnimatedMeshSceneNode.h").read_text()
             self.assertEqual(
                 text,
-                '#include "ISceneNode.h"\n#include "IAnimatedMeshMD2.h"\n\nnamespace ox {\nnamespace scene {\n\n\n\nclass IAnimatedMeshSceneNode : public ISceneNode\n{\n};\n\n}\n}\n',
+                '#include "ISceneNode.h"\n#include "IAnimatedMeshMD2.h"\n\nnamespace ox {\nnamespace scene {\n\nclass IAnimatedMeshSceneNode : public ISceneNode\n{\n};\n\n}\n}\n',
             )
             self.assertEqual((scene / "IAnimatedMeshMD2.h").read_text(), self.FULL)
             self.assertEqual(shared_enums(root), [])  # idempotent
