@@ -79,6 +79,7 @@ def translate(source: str, namespace: str = "daisy") -> str:
     source = re.sub(r"\bnamespace irr\b", f"namespace {namespace}", source)
     source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui)::)", "", source)  # qualified again below
     source = re.sub(r"\birr::", "daisy::", source)
+    source = re.sub(r"\bOnEvent\(\s*SEvent\b", "OnEvent(const SEvent&", source)  # Harvest takes SEvent by const reference
     for name, replacement in sorted(TYPES.items(), key=lambda kv: -len(kv[0])):
         source = re.sub(r"(?<![\w:])" + re.escape(name) + r"\b", replacement, source)
         if replacement.endswith(">"):  # GCC 4.4 reads the >> of nested template arguments as a shift

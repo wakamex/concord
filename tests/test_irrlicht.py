@@ -22,6 +22,10 @@ class Translate(unittest.TestCase):
         self.assertIn("int red = ox::video::getRed(color);", out)
         self.assertNotIn("setDebugName", out)
 
+    def test_onevent_takes_its_event_by_const_reference(self):
+        out = translate("namespace irr\n{\nclass C\n{\n    virtual bool OnEvent(SEvent event);\n};\n}\n", "daisy")
+        self.assertIn("OnEvent(const SEvent& event)", out)
+
     def test_nested_templates_are_spaced_and_shifts_are_not(self):
         out = translate("core::array<core::vector3df> a; value = (value >> 16);")
         self.assertIn("ox::TArray<ox::core::CVector3d<float> > a;", out)
