@@ -111,6 +111,7 @@ def seed(
         path = root / "src" / written
         path.write_text(qualify(root, path.read_text(), written))
     result.written += helpers
+    result.written += _rename_invented_structs(root, result.written)
     _register(root, unit, {})
     output = _match(root, unit, learn=False)
     tried: set[tuple[str, str]] = set()
@@ -702,6 +703,38 @@ def _resolvable(root: Path, directory: Path, name: str) -> bool:
     return False
 
 
+ORIGIN_COMMENT = "// Adapted from Irrlicht 0.7 "
+
+
+def _rename_invented_structs(root: Path, written: list[str]) -> list[str]:
+    """Rename a struct a provisional header invents, when a header Irrlicht adapted
+    defines the same name: CVideoNull.h's own S2DVertex collides with Software's
+    S2DVertex.h, which the unit's headers include too. The invented struct is renamed
+    in its header, so both can be included. Returns the headers changed."""
+    origin: set[str] = set()
+    for path in (root / "src").rglob("*.h"):
+        text = path.read_text(errors="replace")
+        if ORIGIN_COMMENT in text:
+            origin |= set(re.findall(r"^\s*struct (\w+)\b", text, re.MULTILINE))
+    renamed = []
+    for name in written:
+        for include in re.findall(r'^#include "(daisy/[^"]+)"', (root / "src" / name).read_text(), re.MULTILINE):
+            header = root / "src" / include
+            if not header.exists() or ORIGIN_COMMENT in header.read_text(errors="replace"):
+                continue
+            text = header.read_text()
+            original = _original(root, header.name)
+            kept = set(re.findall(r"^\s*struct (\w+)\b", original.read_text(encoding="latin-1"), re.MULTILINE)) if original else set()
+            invented = {found for found in re.findall(r"^\s*struct (\w+)\b", text, re.MULTILINE) if found in origin and found not in kept}
+            if not invented:
+                continue
+            for struct in sorted(invented):
+                text = _in_code(r"\b" + struct + r"\b", f"{struct}_", text)
+            header.write_text(text)
+            renamed.append(include)
+    return sorted(set(renamed))
+
+
 def _seeded(root: Path, path: Path) -> bool:
     tracked = subprocess.run(
         ["git", "ls-files", "--error-unmatch", str(path)], cwd=root, capture_output=True, check=False
@@ -1127,7 +1160,7 @@ def _ios_init_object(root: Path, address: int) -> int | None:
     longer function) points at unrelated code whose immediate means nothing."""
     image = root / "orig" / BUILD / "Harvest"
     done = subprocess.run(
-        ["objdump", "-d", f"--start-address={address:#x}", f"--stop-address={address + 16:#x}", str(image)],
+        ["objdump", "-d", f"--start-address={address:#x}", f"--stop-address={address + 32:#x}", str(image)],
         capture_output=True, text=True, check=True,
     )  # fmt: skip
     found = re.search(r"mov\s+\$0x([0-9a-f]+),%edi", done.stdout)

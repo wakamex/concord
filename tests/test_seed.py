@@ -563,6 +563,32 @@ class ColourFormats(unittest.TestCase):
             self.assertTrue(header.startswith('#include "ox/video/IVideoDriver.h"\n'))
 
 
+class InventedStructs(unittest.TestCase):
+    def test_a_provisional_struct_that_clashes_with_an_adapted_one_is_renamed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/daisy/video/Software").mkdir(parents=True)
+            (root / "src/daisy/video/Null").mkdir(parents=True)
+            (root / IRRLICHT_SOURCE / "include").mkdir(parents=True)
+            (root / "src/daisy/video/Software/S2DVertex.h").write_text(
+                "// Adapted from Irrlicht 0.7 include/S2DVertex.h\nnamespace daisy {\nnamespace video {\nstruct S2DVertex\n{\n};\n}\n}\n"
+            )
+            (root / IRRLICHT_SOURCE / "CVideoNull.h").write_text("namespace irr {\nclass CVideoNull {};\n}\n")
+            provisional = root / "src/daisy/video/Null/CVideoNull.h"
+            provisional.write_text(
+                "namespace daisy {\nnamespace video {\nstruct S2DVertex\n{\n};\nS2DVertex Unused[4];\n}\n}\n"
+            )
+            unit = root / "src/daisy/video/Software/CVideoSoftware.h"
+            unit.write_text('#include "daisy/video/Null/CVideoNull.h"\n')
+            seed_module._indexes.clear()
+            renamed = seed_module._rename_invented_structs(root, ["daisy/video/Software/CVideoSoftware.h"])
+            self.assertEqual(renamed, ["daisy/video/Null/CVideoNull.h"])
+            text = provisional.read_text()
+            self.assertIn("struct S2DVertex_", text)
+            self.assertIn("S2DVertex_ Unused[4];", text)
+            self.assertEqual(seed_module._rename_invented_structs(root, ["daisy/video/Software/CVideoSoftware.h"]), [])
+
+
 class TopLevelNames(unittest.TestCase):
     def test_a_name_declared_at_the_top_of_ox_is_qualified_and_its_header_included(self):
         with tempfile.TemporaryDirectory() as tmp:
