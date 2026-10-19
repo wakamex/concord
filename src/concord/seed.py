@@ -28,6 +28,7 @@ from concord.complete import (
     complete_enum,
     missing_members,
     regressions,
+    shared_enums,
     undeclared,
 )
 from concord.harvest import BUILD, Harvest
@@ -64,6 +65,7 @@ def seed(
     target = root / "src" / unit
     target.parent.mkdir(parents=True, exist_ok=True)
     present = _snapshot(root)
+    shared_enums(root)
     text = provenance(translate(irrlicht.read_text(encoding="latin-1")), f"source/Irrlicht/{irrlicht.name}")
     if _has_static_initializer(root, unit):
         text = re.sub(r"^#include", "#include <iostream>\n#include", text, count=1, flags=re.MULTILINE)

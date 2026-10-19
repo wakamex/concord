@@ -19,6 +19,7 @@ replaced Irrlicht's containers, so Irrlicht's members are not theirs.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -84,6 +85,41 @@ def complete_enum(root: Path, name: str) -> str | None:
             path.write_text(text[:at] + definition + text[at:])
             return path.relative_to(root / "src").as_posix()
     return None
+
+
+ENUM_BODY = re.compile(r"^([ \t]*)enum (\w+)\s*\{([^}]*)\}\s*;", re.MULTILINE)
+
+
+def shared_enums(root: Path) -> list[str]:
+    """Make each enum an ox header defines only in one ox header. A header that
+    keeps an enum with no enumerators, as a placeholder, gets an include of the
+    header that defines it with enumerators, since a second definition does not
+    compile. Returns the headers changed, under src/."""
+    ox = sorted((root / "src" / "ox").rglob("*.h"))
+    texts = {path: path.read_text() for path in ox}
+    owners: dict[str, Path] = {}
+    for path, text in texts.items():
+        for found in ENUM_BODY.finditer(text):
+            if re.search(r"\w", found[3]):
+                owners.setdefault(found[2], path)
+    changed = []
+    for path, text in texts.items():
+        updated = text
+        includes = []
+        for found in ENUM_BODY.finditer(text):
+            owner = owners.get(found[2])
+            if owner is None or owner == path or re.search(r"\w", found[3]):
+                continue
+            updated = updated.replace(found[0], "", 1)
+            includes.append(f'#include "{Path(os.path.relpath(owner, path.parent)).as_posix()}"\n')
+        if includes:  # outside the namespaces, after the last include the header has
+            last = list(re.finditer(r'^#include "[^"]*"\n', updated, re.MULTILINE))
+            at = last[-1].end() if last else 0
+            updated = updated[:at] + "".join(includes) + updated[at:]
+        if updated != text:
+            path.write_text(updated)
+            changed.append(path.relative_to(root / "src").as_posix())
+    return changed
 
 
 def missing_members(compiler_output: str) -> set[tuple[str, str]]:

@@ -13,6 +13,7 @@ from concord.complete import (
     complete_enum,
     missing_members,
     settle,
+    shared_enums,
     undeclared,
     worse,
 )
@@ -266,6 +267,62 @@ class Settle(unittest.TestCase):
         harvest = self.harvest(period=31)
         complete(self.root, {("CAabbox3d", "reset")})
         self.assertFalse(settle(harvest, {"ox/core/CAabbox3d.h": OX_AABBOX}))
+
+
+class SharedEnums(unittest.TestCase):
+    FULL = """namespace ox {
+namespace scene {
+
+enum EMD2_ANIMATION_TYPE
+{
+    EMAT_STAND = 0,
+    EMAT_RUN,
+};
+
+}
+}
+"""
+    PLACEHOLDER = """#include "ISceneNode.h"
+
+namespace ox {
+namespace scene {
+
+enum EMD2_ANIMATION_TYPE
+{
+};
+
+class IAnimatedMeshSceneNode : public ISceneNode
+{
+};
+
+}
+}
+"""
+
+    def test_a_placeholder_enum_becomes_an_include_of_the_header_that_defines_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scene = root / "src" / "ox" / "scene"
+            scene.mkdir(parents=True)
+            (scene / "IAnimatedMeshMD2.h").write_text(self.FULL)
+            (scene / "IAnimatedMeshSceneNode.h").write_text(self.PLACEHOLDER)
+            self.assertEqual(shared_enums(root), ["ox/scene/IAnimatedMeshSceneNode.h"])
+            text = (scene / "IAnimatedMeshSceneNode.h").read_text()
+            self.assertEqual(
+                text,
+                '#include "ISceneNode.h"\n#include "IAnimatedMeshMD2.h"\n\nnamespace ox {\nnamespace scene {\n\n\n\nclass IAnimatedMeshSceneNode : public ISceneNode\n{\n};\n\n}\n}\n',
+            )
+            self.assertEqual((scene / "IAnimatedMeshMD2.h").read_text(), self.FULL)
+            self.assertEqual(shared_enums(root), [])  # idempotent
+
+    def test_an_enum_with_enumerators_in_two_headers_is_left_for_the_caller(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scene = root / "src" / "ox" / "scene"
+            scene.mkdir(parents=True)
+            (scene / "A.h").write_text(self.FULL)
+            (scene / "B.h").write_text(self.FULL)
+            self.assertEqual(shared_enums(root), [])
 
 
 if __name__ == "__main__":
