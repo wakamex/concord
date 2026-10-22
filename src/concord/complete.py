@@ -41,6 +41,8 @@ TYPES = {
     "CTriangle3d": ("ox/core/CTriangle3d.h", "triangle3d.h", "triangle3d"),
     "CMatrix4": ("ox/core/CMatrix4.h", "matrix4.h", "matrix4"),
     "SColor": ("ox/video/SColor.h", "SColor.h", "SColor"),
+    "SColorf": ("ox/video/SLight.h", "SColor.h", "SColorf"),  # SLight.h keeps SColor.h's float color
+    "S3DVertex": ("ox/video/S3DVertex.h", "S3DVertex.h", "S3DVertex"),
 }
 
 MISSING = re.compile(r"'(?:class|struct|const class|const struct) ox::(?:core|video)::(\w+)(?:<[^']*>)?' has no member named '(\w+)'")
@@ -49,13 +51,24 @@ MISSING = re.compile(r"'(?:class|struct|const class|const struct) ox::(?:core|vi
 NO_CONSTRUCTOR = re.compile(r"no matching function for call to 'ox::(?:core|video)::(\w+)(?:<[^']*?>)?::\1\(")
 
 
+# GCC 4.4 prints `in '... ox::video::S3DVertex ...'`; newer GCC prints `(operand types are ...)`.
+# A translated container search needs the element type's operator== or operator<.
+NO_OPERATOR = re.compile(r"no match for '(operator[^']*)' (?:in |\(operand types are )([^\n]*)")
+OPERAND_TYPE = re.compile(r"\box::(?:core|video)::(\w+)")
+
+
 UNDECLARED = re.compile(r"'(\w+)' (?:does not name a type|was not declared in this scope|has not been declared)")
 ORIGIN = re.compile(r"^// Adapted from Irrlicht 0\.7 include/(\S+\.h)", re.MULTILINE)
 
 
+def _diagnostics(output: str) -> str:
+    """GCC uses curly quotes in UTF-8 locales and ASCII quotes in the C locale."""
+    return output.translate(str.maketrans({"‘": "'", "’": "'"}))
+
+
 def undeclared(compiler_output: str) -> set[str]:
     """Names the compiler reports undeclared."""
-    return set(UNDECLARED.findall(compiler_output))
+    return set(UNDECLARED.findall(_diagnostics(compiler_output)))
 
 
 def complete_enum(root: Path, name: str) -> str | None:
@@ -125,9 +138,15 @@ def shared_enums(root: Path) -> list[str]:
 def missing_members(compiler_output: str) -> set[tuple[str, str]]:
     """(ox type, member) pairs the compiler reports missing, for types this module
     completes. A constructor call that matches no overload names the type's
-    Irrlicht class as the member."""
+    Irrlicht class as the member; an operator the operands' types cannot provide
+    names the operator on each named ox type."""
+    compiler_output = _diagnostics(compiler_output)
     missing = {(t, m) for t, m in MISSING.findall(compiler_output) if t in TYPES}
-    return missing | {(t, TYPES[t][2]) for t in NO_CONSTRUCTOR.findall(compiler_output) if t in TYPES}
+    missing |= {(t, TYPES[t][2]) for t in NO_CONSTRUCTOR.findall(compiler_output) if t in TYPES}
+    for operator, operands in NO_OPERATOR.findall(compiler_output):
+        member = "operator" + operator.removeprefix("operator").strip()
+        missing |= {(t, member) for t in OPERAND_TYPE.findall(operands) if t in TYPES}
+    return missing
 
 
 def complete(root: Path, missing: set[tuple[str, str]]) -> list[str]:

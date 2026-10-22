@@ -52,6 +52,15 @@ class Complete(unittest.TestCase):
         output = "x.h:161: error: no matching function for call to 'ox::core::CAabbox3d<float>::CAabbox3d(ox::core::CVector3d<float>&)'\n"
         self.assertEqual(missing_members(output), {("CAabbox3d", "aabbox3d")})
 
+    def test_a_missing_operator_names_the_ox_type_in_its_operands(self):
+        output = (
+            "x.cpp:9: error: no match for 'operator==' (operand types are 'ox::video::S3DVertex' and 'const ox::video::S3DVertex')\n"
+            "x.cpp:9: error: no match for ‘operator<’ (operand types are ‘const ox::core::CMatrix4’ and ‘const ox::core::CMatrix4’)\n"
+            "/usr/include/c++/4.4/bits/stl_algo.h:178: error: no match for 'operator==' in '__first.operator* [with _Iterator = ox::video::S3DVertex*]() == __val'\n"
+            "x.cpp:9: error: no match for 'operator+' (operand types are 'int' and 'float')\n"
+        )
+        self.assertEqual(missing_members(output), {("S3DVertex", "operator=="), ("CMatrix4", "operator<")})
+
     def test_every_overload_is_taken_and_translated(self):
         members = [_indent(_rename(m, "ox::core::")) for m in _members(AABBOX, "aabbox3d", "reset")]
         self.assertEqual(len(members), 2)
@@ -173,6 +182,99 @@ class IAnimatedMesh : public IUnknown
 } // end namespace scene
 } // end namespace ox
 """
+
+
+IRR_SCOLOR = """namespace irr {
+namespace video {
+class SColorf
+{
+public:
+	SColorf() {}
+	//! Converts this color to a SColor without floats.
+	SColor toSColor() const
+	{
+		return SColor((s32)(a*255.0f), (s32)(r*255.0f), (s32)(g*255.0f), (s32)(b*255.0f));
+	}
+	f32 r;
+	f32 g;
+	f32 b;
+	f32 a;
+};
+}
+}
+"""
+
+IRR_VERTEX = """namespace irr {
+namespace video {
+struct S3DVertex
+{
+	S3DVertex() {}
+	bool operator == (const S3DVertex& other) const
+	{
+		return (Pos == other.Pos && Color == other.Color);
+	}
+};
+}
+}
+"""
+
+OX_SLIGHT = """namespace ox {
+namespace video {
+
+class SColorf
+{
+public:
+    SColorf() {}
+    float r;
+    float g;
+    float b;
+    float a;
+};
+
+}
+}
+"""
+
+OX_VERTEX = """namespace ox {
+namespace video {
+
+struct S3DVertex
+{
+    S3DVertex() {}
+};
+
+}
+}
+"""
+
+
+class OtherHeaders(unittest.TestCase):
+    """Types that complete into a header other than their Irrlicht original's
+    namesake: SLight.h keeps SColor.h's float color, S3DVertex.h its vertex."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        (self.root / "src/ox/video").mkdir(parents=True)
+        (self.root / "third_party/irrlicht-0.7/include").mkdir(parents=True)
+        (self.root / "third_party/irrlicht-0.7/include/SColor.h").write_text(IRR_SCOLOR)
+        (self.root / "third_party/irrlicht-0.7/include/S3DVertex.h").write_text(IRR_VERTEX)
+        self.slight = self.root / "src/ox/video/SLight.h"
+        self.slight.write_text(OX_SLIGHT)
+        self.vertex = self.root / "src/ox/video/S3DVertex.h"
+        self.vertex.write_text(OX_VERTEX)
+
+    def test_scolorf_completes_into_slight_h_from_scolor_h(self):
+        self.assertEqual(complete(self.root, {("SColorf", "toSColor")}), ["ox/video/SLight.h"])
+        text = self.slight.read_text()
+        self.assertIn("    SColor toSColor() const\n    {\n        return SColor((int)(a*255.0f),", text)
+        self.assertEqual(absent(self.root, "SColorf"), [])
+
+    def test_an_operator_the_class_defines_is_copied(self):
+        self.assertEqual(complete(self.root, {("S3DVertex", "operator==")}), ["ox/video/S3DVertex.h"])
+        text = self.vertex.read_text()
+        self.assertIn("    bool operator == (const S3DVertex& other) const\n    {\n        return (Pos == other.Pos && Color.color == other.Color.color);\n    }", text)
 
 
 class Enums(unittest.TestCase):

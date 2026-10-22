@@ -136,7 +136,8 @@ def seed(
             if not complete(root, {(ox_type, member)}):
                 tried.add((ox_type, member))
                 continue
-            if not _compiles(root, unit, header) and not (_bring_includes(root, ox_type) and _compiles(root, unit, header)):
+            errors = _compile_errors(root, header)
+            if errors and not _settle_completion(root, header, ox_type, errors, originals):
                 (root / "src" / header).write_text(before)
                 failed.add((ox_type, member))
                 continue
@@ -438,6 +439,16 @@ def qualify(root: Path, text: str, own: str = "") -> str:
         needed.append('#include "ox/video/ColorPacking.h"\n')  # a helper from it is called
     if "ox::algo::" in text and not _includes(text, "ox/algo/CArrayFunctions.h"):  # ox::algo::sort is declared there
         needed.append('#include "ox/algo/CArrayFunctions.h"\n')
+    elif (
+        re.search(r"\bstd::(?:find|sort|lower_bound|upper_bound|find_if|distance)\s*\(", text)
+        and "#include <algorithm>" not in text
+        and not _includes(text, "ox/algo/CArrayFunctions.h")  # it includes <algorithm> itself
+    ):
+        needed.append("#include <algorithm>\n")  # a translated search calls the std algorithm directly
+    if "ox::core::GRAD_PI2" in text and not _includes(text, "ox/core/irrMath.h"):
+        needed.append('#include "ox/core/irrMath.h"\n')
+    if own.endswith(".cpp") and re.search(r"\bS3DVertex(?:\s+\w+)?\s*\([^;\n]*,", text) and not _includes(text, "ox/video/S3DVertexInline.h"):
+        needed.append('#include "ox/video/S3DVertexInline.h"\n')  # the 9-argument S3DVertex constructor lives out of S3DVertex.h
     if not inside and own.endswith(".h"):  # a daisy class a header uses, which the provisional header did not declare or include
         for ns in sorted(opened):
             daisy = _index(root, root / "src" / "daisy" / ns)
@@ -547,36 +558,56 @@ def _bring_includes(root: Path, ox_type: str) -> bool:
 
 def _compiles_header(root: Path, header: str) -> bool:
     """Whether a file that only includes the header compiles with a built unit's flags."""
-    host = next((p.name.removesuffix(".json") for p in sorted((root / "build" / "match" / BUILD).glob("*.json"))), None)
-    if host is None:
-        return False
-    try:
-        harvest = Harvest(root)
-        evaluation = harvest.evaluate(harvest.source(host), {"probe": f'#include "{header}"\n'.encode()})["probe"]
-    except (OSError, RuntimeError, KeyError):
-        return False
-    return not evaluation.error
+    return not _compile_errors(root, header)
 
 
-def _compiles(root: Path, unit: str, header: str) -> bool:
-    """Whether a file including the header and explicitly instantiating its class
-    (which compiles every member of a template) compiles with the unit's flags."""
-    ox_type = next(t for t, (h, _, _) in TYPES.items() if h == header)
-    namespace = header.split("/")[1]
+def _settle_completion(
+    root: Path, header: str, ox_type: str, errors: str, originals: dict[str, str], depth: int = 0
+) -> bool:
+    """Whether the completed header compiles once its dependencies are satisfied:
+    the includes of its Irrlicht original, and the members the added members
+    themselves need, which complete transitively (S3DVertex's operator== compares
+    SColor fields, so it needs SColor's operator==). originals records each
+    changed header's text before the change, to be settled by the caller."""
+    if not errors:
+        return True
+    if _bring_includes(root, ox_type) and not _compile_errors(root, header):
+        return True
+    if depth >= 4:
+        return False
+    for sub_type, sub_member in sorted(missing_members(errors)):
+        sub_header = TYPES[sub_type][0]
+        sub_before = (root / "src" / sub_header).read_text()
+        if not complete(root, {(sub_type, sub_member)}):
+            continue
+        sub_errors = _compile_errors(root, sub_header)
+        if sub_errors and not _settle_completion(root, sub_header, sub_type, sub_errors, originals, depth + 1):
+            (root / "src" / sub_header).write_text(sub_before)
+            continue
+        originals.setdefault(sub_header, sub_before)
+    return not _compile_errors(root, header)
+
+
+def _compile_errors(root: Path, header: str) -> str:
+    """The compiler output of a file including the header and, when the header
+    declares one of the types this module completes, explicitly instantiating it
+    (which compiles every member of a template), with the flags of a built unit;
+    "" when it compiles, or a note when it cannot be tried."""
+    ox_type = next((t for t, (h, _, _) in TYPES.items() if h == header), None)
     probe = f'#include "{header}"\n'
     text = (root / "src" / header).read_text()
-    if re.search(r"template\s*<\s*class \w+\s*>\s*(class|struct) " + ox_type + r"\b", text):
-        probe += f"template class ox::{namespace}::{ox_type}<float>;\n"
+    if ox_type and re.search(r"template\s*<\s*class \w+\s*>\s*(class|struct) " + ox_type + r"\b", text):
+        probe += f"template class ox::{header.split('/')[1]}::{ox_type}<float>;\n"
     # compile as a unit the last hv match built, since the one being seeded may not build yet
     host = next((p.name.removesuffix(".json") for p in sorted((root / "build" / "match" / BUILD).glob("*.json"))), None)
     if host is None:
-        return False
+        return f"{header}: no built unit to compile with"
     try:
         harvest = Harvest(root)
         evaluation = harvest.evaluate(harvest.source(host), {"probe": probe.encode()})["probe"]
     except (OSError, RuntimeError, KeyError):
-        return False
-    return not evaluation.error
+        return f"{header}: could not compile"
+    return evaluation.error
 
 
 def port_conflicts(root: Path, unit: str) -> list[str]:
@@ -1083,14 +1114,20 @@ def _place_bss(root: Path, unit: str) -> dict[str, int]:
 
 
 def _rodata_reference(root: Path, unit: str) -> tuple[int, int, int, int] | None:
-    """The relocation in the object's .text that points into its .rodata, as
+    """The first relocation in the object's .text that points into its .rodata, as
     (offset in .text, addend, start and size of the function holding it), or None."""
+    return next(iter(_rodata_references(root, unit)), None)
+
+
+def _rodata_references(root: Path, unit: str) -> list[tuple[int, int, int, int]]:
+    """Every relocation in the object's .text that points into its .rodata, as
+    (offset in .text, addend, start and size of the function holding it)."""
     slug = unit.replace("/", "__").removesuffix(".cpp")
     with open(root / "build" / "match" / BUILD / f"{slug}.o", "rb") as stream:
         elf = ELFFile(stream)
         names = [section.name for section in elf.iter_sections()]
         if ".rodata" not in names or ".rela.text" not in names:
-            return None
+            return []
         rodata = names.index(".rodata")
         text_index = names.index(".text")
         symbols = elf.get_section_by_name(".symtab")
@@ -1099,39 +1136,40 @@ def _rodata_reference(root: Path, unit: str) -> tuple[int, int, int, int] | None
             for sym in symbols.iter_symbols()
             if sym["st_shndx"] == text_index and sym["st_info"]["type"] == "STT_FUNC"
         )
+        references = []
         for relocation in elf.get_section_by_name(".rela.text").iter_relocations():
             target = symbols.get_symbol(relocation["r_info_sym"])
             if target["st_shndx"] != rodata:
                 continue
             for start, size in functions:
                 if start <= relocation["r_offset"] < start + size:
-                    return relocation["r_offset"], relocation["r_addend"], start, size
-    return None
+                    references.append((relocation["r_offset"], relocation["r_addend"], start, size))
+                    break
+        return references
 
 
 def _place_rodata(root: Path, unit: str) -> dict[str, int]:
     """The .rodata address a unit's jump table lives at, found through the target FDE
-    of the same size as the function holding the table's reference. A stub before the
-    function can move the FDE the matcher lays out, so the table is read from the
-    target's own code, where the reference is, and the address is checked against the
-    target's .rodata."""
-    found = _rodata_reference(root, unit)
-    if found is None:
+    of the same size as a function holding a table reference. Earlier functions in the
+    unit may differ in size, so every .rodata reference is tried."""
+    references = _rodata_references(root, unit)
+    if not references:
         return {}
-    offset, addend, start, size = found
     anchors = _anchors(root, unit.replace("/", "__").removesuffix(".cpp"))
-    candidates = [(fde, fsize) for fde, fsize in _extents(root) if fsize == size]
-    if anchors:
-        candidates = [(fde, fsize) for fde, fsize in candidates if min(anchors) - 0x20000 <= fde <= max(anchors) + 0x20000]
+    extents = _extents(root)
     with open(root / "orig" / BUILD / "Harvest", "rb") as stream:
         elf = ELFFile(stream)
         text = elf.get_section_by_name(".text")
         rodata = elf.get_section_by_name(".rodata")
-        for fde, _ in sorted(candidates, key=lambda c: min((abs(c[0] - a) for a in anchors), default=0)):
-            where = fde + (offset - start) - text["sh_addr"]
-            value = int.from_bytes(text.data()[where : where + 4], "little", signed=True) - addend
-            if rodata["sh_addr"] <= value < rodata["sh_addr"] + rodata["sh_size"]:
-                return {".rodata": value}
+        for offset, addend, start, size in references:
+            candidates = [(fde, fsize) for fde, fsize in extents if fsize == size]
+            if anchors:
+                candidates = [(fde, fsize) for fde, fsize in candidates if min(anchors) - 0x20000 <= fde <= max(anchors) + 0x20000]
+            for fde, _ in sorted(candidates, key=lambda c: min((abs(c[0] - a) for a in anchors), default=0)):
+                where = fde + (offset - start) - text["sh_addr"]
+                value = int.from_bytes(text.data()[where : where + 4], "little", signed=True) - addend
+                if rodata["sh_addr"] <= value < rodata["sh_addr"] + rodata["sh_size"]:
+                    return {".rodata": value}
     return {}
 
 

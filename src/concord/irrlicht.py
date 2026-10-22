@@ -70,6 +70,7 @@ HEADERS = {
     "triangle3d.h": "ox/core/CTriangle3d.h",
     "plane3d.h": "ox/core/CPlane3d.h",
     "quaternion.h": "ox/core/CQuaternion.h",
+    "irrMath.h": "ox/core/irrMath.h",
 }
 
 
@@ -77,7 +78,7 @@ def translate(source: str, namespace: str = "daisy") -> str:
     """The Irrlicht source with ox's types and headers, in daisy's namespace, or in
     ox's for one of Irrlicht's public types, which daisy kept there."""
     source = re.sub(r"\bnamespace irr\b", f"namespace {namespace}", source)
-    source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui|" + "|".join(TYPEDEFS) + r")\b)", "", source)  # qualified again below
+    source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui|ELL_\w+|" + "|".join(TYPEDEFS) + r")\b)", "", source)  # qualified again below
     source = re.sub(r"\birr::", "daisy::", source)
     source = re.sub(r"\bOnEvent\(\s*SEvent\b", "OnEvent(const SEvent&", source)  # Harvest takes SEvent by const reference
     for name, replacement in sorted(TYPES.items(), key=lambda kv: -len(kv[0])):
@@ -96,6 +97,27 @@ def translate(source: str, namespace: str = "daisy") -> str:
         source,
     )  # Irrlicht's CRect::clipAgainst, written out, so ox's CRect needs no member for it
     source = re.sub(r"((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+(?:\([^)]*\))?)\.toA1R5G5B5\(\)", r"ox::video::toA1R5G5B5(\1.color)", source)  # a colour's packing is a free function in ox
+    # SColor, CVector3d and CMatrix4 members written out where completing the shared ox header shifts DECL_UID modulo 31
+    source = re.sub(r"\bColor\s*==\s*other\.Color\b", "Color.color == other.Color.color", source)
+    source = re.sub(r"(\w+(?:\.\w+)*)\.set\(\s*([^,()]+),\s*([^,()]+),\s*([^,()]+),\s*([^,()]+)\)", r"\1 = ox::video::SColor(\2, \3, \4, \5)", source)
+    source = re.sub(
+        r"(\w+)\.rotateXYBy\(([^,]+),\s*([^)]+)\);",
+        r"{ double deg = (\2) * ox::core::GRAD_PI2; float cs = (float)cos(deg); float sn = (float)sin(deg); "
+        r"\1.X -= (\3).X; \1.Y -= (\3).Y; \1.set(\1.X*cs - \1.Y*sn, \1.X*sn + \1.Y*cs, \1.Z); \1.X += (\3).X; \1.Y += (\3).Y; }",
+        source,
+    )
+    source = re.sub(
+        r"(\w+)\.rotateXZBy\(([^,]+),\s*([^)]+)\);",
+        r"{ double deg = (\2) * ox::core::GRAD_PI2; float cs = (float)cos(deg); float sn = (float)sin(deg); "
+        r"\1.X -= (\3).X; \1.Z -= (\3).Z; \1.set(\1.X*cs - \1.Z*sn, \1.Y, \1.X*sn + \1.Z*cs); \1.X += (\3).X; \1.Z += (\3).Z; }",
+        source,
+    )
+    source = re.sub(
+        r"(\w+(?:\.\w+)*)\s*(\*?=)\s*([^;\n]*?)\.interpolate\(\s*([^,]+?),\s*([^)]+)\);",
+        r"{ float ntime = 1.0f - (\5); ox::core::CMatrix4 mat; for (int k=0; k<16; ++k) mat.M[k] = (\3).M[k]*ntime + (\4).M[k]*(\5); \1 \2 mat; }",
+        source,
+        flags=re.DOTALL,
+    )
     source = re.sub(r"(=\s*)((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+->getColorFormat\(\))", r"\1(ECOLOR_FORMAT)\2", source)  # ox's IImage returns int
     source = re.sub(r"\b(\w+)\(\1\s*&", r"\1(const \1&", source)  # copies of Harvest's containers take const references
     source = re.sub(r"\boperator\s*<\(\s*(\w+)\s*&", r"operator <(const \1&", source)
@@ -113,12 +135,23 @@ def translate(source: str, namespace: str = "daisy") -> str:
     source = re.sub(r"\bos::Printer::log\(([^,;()]+,(?!\s*ELL_)[^,;]+)\);", r"os::Printer::log(\1, ELL_INFORMATION);", source, flags=re.DOTALL)  # a hint is not a level
     for pattern, replacement in CONTAINER_CALLS:
         source = re.sub(pattern, replacement, source)
+    # ox's ISceneManager::registerNodeForRendering takes the render time Irrlicht defaulted
+    source = re.sub(r"(\.|->)registerNodeForRendering\(([^,()]+)\)", r"\1registerNodeForRendering(\2, SNRT_DEFAULT)", source)
+    # Irrlicht's const list::begin() yields Iterator; a const std::list's yields const_iterator
+    for name in set(re.findall(r"\bconst\s+[^;=\n]*?\b(\w+)\s*=", source)):
+        source = re.sub(
+            r">::iterator(\s+\w+\s*=[^;\n]*?\b" + name + r"\s*\.\s*(?:begin|end|rbegin|rend)\s*\()",
+            r">::const_iterator\1",
+            source,
+        )
     return "\n".join(line.rstrip() for line in _unqualify_in_class(source).split("\n"))  # no trailing spaces
 
 
 # Irrlicht's core::array and core::list calls as calls on the std::vector and
-# std::list that ox::TArray and ox::TList derive from.
+# std::list that ox::TArray and ox::TList derive from. Searches become the
+# free ox::algo helpers daisy calls on those containers' iterators.
 OBJECT = r"((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+(?:\[[^\]\n]*\])?)"
+ARG = r"((?:\([^()]*\)|[^()])*?)"  # one argument, allowing one level of parentheses
 CONTAINER_CALLS = [
     (OBJECT + r"\.const_pointer\(\)", r"&\1[0]"),
     (OBJECT + r"\.pointer\(\)\[", r"\1["),  # an element, not a pointer to the array's first element
@@ -127,11 +160,14 @@ CONTAINER_CALLS = [
     (OBJECT + r"->pointer\(\)\[", r"(*\1)["),
     (OBJECT + r"->pointer\(\)", r"&(*\1)[0]"),
     (OBJECT + r"\.sort\(\)", r"ox::algo::sort(\1.begin(), \1.end())"),
+    (OBJECT + r"\.binary_search\(" + ARG + r"\)", r"ox::algo::binarySearchPos(\1.begin(), \1.end(), \2)"),
+    (OBJECT + r"\.linear_(?:reverse_)?search\(" + ARG + r"\)", r"ox::algo::linearSearchPos(\1.begin(), \1.end(), \2)"),
     (OBJECT + r"\.erase\((?!a?it\))(\w+)\)", r"\1.erase(\1.begin() + \2)"),  # Irrlicht erased by index; a vector erases by iterator
     (r"\s*[^\n;]+\.set_sorted\([^)]*\);\s*\n", "\n"),  # a sorted flag has no counterpart in a vector
     (r"(\.|->)set_used\(", r"\1resize("),
     (r"(\.|->)reallocate\(", r"\1reserve("),
     (r"(\.|->)getLast\(\)", r"\1back()"),
+    (r"::ConstIterator\b", "::const_iterator"),
     (r"::Iterator\b", "::iterator"),
 ]
 

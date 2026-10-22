@@ -93,6 +93,65 @@ class Translate(unittest.TestCase):
         self.assertIn("b->Vertices.reserve(n);", out)
         self.assertIn("ox::TList<T>::iterator it;", out)
 
+    def test_container_searches_become_the_ox_algo_helpers(self):
+        out = translate(
+            "s32 i = Meshes.binary_search(e);\n"
+            "s32 w = mesh.SkinWeights[k].Weights.binary_search(CXFileReader::SXWeight(idx));\n"
+            "s32 l = list.linear_search(x);\n"
+            "s32 n = buf->Vertices.linear_reverse_search(v);\n",
+            "daisy",
+        )
+        self.assertIn("int i = ox::algo::binarySearchPos(Meshes.begin(), Meshes.end(), e);", out)
+        self.assertIn(
+            "ox::algo::binarySearchPos(mesh.SkinWeights[k].Weights.begin(), mesh.SkinWeights[k].Weights.end(), CXFileReader::SXWeight(idx))",
+            out,
+        )
+        self.assertIn("int l = ox::algo::linearSearchPos(list.begin(), list.end(), x);", out)
+        self.assertIn("int n = ox::algo::linearSearchPos(buf->Vertices.begin(), buf->Vertices.end(), v);", out)
+
+    def test_shared_header_helpers_expand_at_the_call_site(self):
+        out = translate(
+            "vtx.Color.set(255, 255, 255, 255);\n"
+            "Pos.rotateXYBy(nRotY, Target);\n"
+            "Pos.rotateXZBy(-nRotX, Target);\n"
+            "joint.LocalAnimatedMatrix *= mat1.interpolate(mat2, factor);\n"
+            'os::Printer::log("bad", file->getFileName(), irr::ELL_WARNING);\n',
+            "daisy",
+        )
+        self.assertIn("vtx.Color = ox::video::SColor(255, 255, 255, 255);", out)
+        self.assertIn("double deg = (nRotY) * ox::core::GRAD_PI2;", out)
+        self.assertIn("double deg = (-nRotX) * ox::core::GRAD_PI2;", out)
+        self.assertIn("mat.M[k] = (mat1).M[k]*ntime + (mat2).M[k]*(factor); joint.LocalAnimatedMatrix *= mat;", out)
+        self.assertIn("ELL_WARNING);", out)
+        self.assertNotIn("daisy::ELL_WARNING", out)
+
+    def test_a_container_iterated_while_const_gets_a_const_iterator(self):
+        out = translate(
+            "const core::list<ISceneNode*>& list = start->getChildren();\n"
+            "core::list<ISceneNode*>::Iterator it = list.begin();\n"
+            "core::list<ISceneNode*>::ConstIterator end = list.end();\n"
+            "core::list<ISceneNode*>::Iterator rest = other.begin();\n"
+            "for (; it != list.end(); ++it)\n    f(*it);\n",
+            "daisy",
+        )
+        self.assertIn("ox::TList<ISceneNode*>::const_iterator it = list.begin();", out)
+        self.assertIn("ox::TList<ISceneNode*>::const_iterator end = list.end();", out)
+        self.assertIn("ox::TList<ISceneNode*>::iterator rest = other.begin();", out)
+        self.assertIn("it != list.end();", out)
+
+    def test_registering_for_rendering_names_the_time_irrlicht_defaulted(self):
+        out = translate(
+            "if (IsVisible)\n    SceneManager->registerNodeForRendering(this);\n"
+            "SceneManager->registerNodeForRendering(this, SNRT_LIGHT_AND_CAMERA);\n",
+            "daisy",
+        )
+        self.assertIn("SceneManager->registerNodeForRendering(this, SNRT_DEFAULT);", out)
+        self.assertIn("SceneManager->registerNodeForRendering(this, SNRT_LIGHT_AND_CAMERA);", out)
+
+    def test_irrlicht_s_math_constants_header_is_ox_s(self):
+        out = translate('#include "irrMath.h"\n#include "irrTypes.h"\n', "daisy")
+        self.assertIn('#include "ox/core/irrMath.h"', out)
+
     def test_a_member_qualified_inside_its_class_loses_the_qualifier(self):
         source = "class quaternion\n{\n\tquaternion quaternion::operator*(const quaternion& other) const;\n};\ninline quaternion quaternion::operator*(const quaternion& other) const\n{\n}\n"
         out = translate(source)

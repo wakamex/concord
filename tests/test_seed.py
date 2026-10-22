@@ -211,7 +211,7 @@ int CLoaderPSD::uses(int x)
                 mock.patch.object(seed_module, "Harvest"),
                 mock.patch.object(seed_module, "missing_members", lambda output: {("CVector3d", "member_use")}),
                 mock.patch.object(seed_module, "complete", complete),
-                mock.patch.object(seed_module, "_compiles", lambda _root, _unit, _header: True),
+                mock.patch.object(seed_module, "_compile_errors", lambda _root, _header: ""),
                 mock.patch.object(seed_module, "_include_incomplete", lambda _root, _source, _output: False),
                 mock.patch.object(seed_module, "regressions", lambda *args, **kwargs: ["daisy/scene/CBspTree.cpp CBspTree::build"]),
                 mock.patch.object(seed_module, "_register"),
@@ -437,6 +437,129 @@ class PortListsAndAlgo(unittest.TestCase):
             seed_module._indexes.clear()
             text = qualify(root, "namespace daisy {\nnamespace scene {\nvoid f(int* a) { ox::algo::sort(a, a + 1); }\n}\n}\n", "daisy/scene/X.cpp")
             self.assertIn('#include "ox/algo/CArrayFunctions.h"', text)
+
+    def test_a_std_algorithm_call_includes_algorithm_unless_the_array_functions_are_there(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/daisy/scene").mkdir(parents=True)
+            seed_module._indexes.clear()
+            text = qualify(
+                root,
+                "namespace daisy {\nnamespace scene {\nvoid f(int* a, int* b, int v) { std::find(a, b, v); }\n}\n}\n",
+                "daisy/scene/X.cpp",
+            )
+            self.assertIn("#include <algorithm>", text)
+            seed_module._indexes.clear()
+            text = qualify(
+                root,
+                'namespace daisy {\nnamespace scene {\nvoid f(int* a, int* b, int v) { std::find(a, b, v); ox::algo::sort(a, b); }\n}\n}\n',
+                "daisy/scene/X.cpp",
+            )
+            self.assertIn('#include "ox/algo/CArrayFunctions.h"', text)  # it includes <algorithm> itself
+            self.assertNotIn("#include <algorithm>", text)
+
+    def test_a_nine_argument_s3dvertex_constructor_in_a_cpp_file_includes_s3dvertexinline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/daisy/scene").mkdir(parents=True)
+            seed_module._indexes.clear()
+            text = qualify(
+                root,
+                '#include "ox/video/S3DVertex.h"\nnamespace daisy {\nnamespace scene {\nvoid f() { ox::video::S3DVertex v(0,0,0, -1,-1,-1, ox::video::SColor(255,255,255,255), 0, 1); }\n}\n}\n',
+                "daisy/scene/CTestSceneNode.cpp",
+            )
+            self.assertIn('#include "ox/video/S3DVertexInline.h"', text)
+
+
+class SettleCompletion(unittest.TestCase):
+    """A completed member can itself call a member Harvest's headers lack, as
+    S3DVertex's operator== compares SColor fields; the member completes too."""
+
+    IRR_VERTEX = """namespace irr {
+namespace video {
+struct S3DVertex
+{
+	bool operator == (const S3DVertex& other) const
+	{
+		return (Color == other.Color);
+	}
+};
+}
+}
+"""
+    IRR_SCOLOR = """namespace irr {
+namespace video {
+class SColor
+{
+public:
+	bool operator==(const SColor& other) const { return other.color == color; }
+};
+}
+}
+"""
+    OX_VERTEX = """namespace ox {
+namespace video {
+
+struct S3DVertex
+{
+    S3DVertex() {}
+};
+
+}
+}
+"""
+    OX_SCOLOR = """namespace ox {
+namespace video {
+
+class SColor
+{
+public:
+    unsigned int color;
+};
+
+}
+}
+"""
+
+    def test_a_member_the_added_member_needs_completes_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/ox/video").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include/S3DVertex.h").write_text(self.IRR_VERTEX)
+            (root / "third_party/irrlicht-0.7/include/SColor.h").write_text(self.IRR_SCOLOR)
+            (root / "src/ox/video/S3DVertex.h").write_text(self.OX_VERTEX)
+            scolor = root / "src/ox/video/SColor.h"
+            scolor.write_text(self.OX_SCOLOR)
+
+            def compile_errors(_root, header):
+                if header == "ox/video/S3DVertex.h" and "operator==" not in scolor.read_text():
+                    return "x.h:2: error: no match for 'operator==' (operand types are 'ox::video::SColor' and 'const ox::video::SColor')"
+                return ""
+
+            errors = "x.h:4: error: no match for 'operator==' (operand types are 'ox::video::SColor' and 'const ox::video::SColor')"
+            with mock.patch.object(seed_module, "_compile_errors", compile_errors):
+                seed_module.complete(root, {("S3DVertex", "operator==")})
+                originals = {}
+                self.assertTrue(
+                    seed_module._settle_completion(root, "ox/video/S3DVertex.h", "S3DVertex", errors, originals)
+                )
+            self.assertIn("bool operator==(const SColor& other) const", scolor.read_text())
+            self.assertEqual(sorted(originals), ["ox/video/SColor.h"])
+
+    def test_a_completion_that_cannot_settle_is_reported_unsettled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/ox/video").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include/S3DVertex.h").write_text(self.IRR_VERTEX)
+            vertex = root / "src/ox/video/S3DVertex.h"
+            vertex.write_text(self.OX_VERTEX)
+            errors = "x.cpp:9: error: no match for 'operator==' (operand types are 'ox::video::S3DVertex' and 'const ox::video::S3DVertex')"
+            with mock.patch.object(seed_module, "_compile_errors", lambda _root, _header: "still fails"):
+                self.assertFalse(
+                    seed_module._settle_completion(root, "ox/video/S3DVertex.h", "S3DVertex", errors, {})
+                )
 
 
 class RollbackConfig(unittest.TestCase):
