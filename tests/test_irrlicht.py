@@ -72,9 +72,10 @@ class Translate(unittest.TestCase):
         self.assertIn("ox::video::toA1R5G5B5(imageToCopy->getPixel(x,y).color)", out)
 
     def test_a_colour_format_is_cast_from_the_int_ox_returns(self):
-        out = translate("ECOLOR_FORMAT f = image->getColorFormat();\nswitch(Mesh->getMeshBuffer(b)->getVertexType())\n", "daisy")
+        out = translate("ECOLOR_FORMAT f = image->getColorFormat();\nswitch(Mesh->getMeshBuffer(b)->getVertexType())\nswitch(vertexType)\n", "daisy")
         self.assertIn("ECOLOR_FORMAT f = (ECOLOR_FORMAT)image->getColorFormat();", out)
         self.assertIn("switch((int)Mesh->getMeshBuffer(b)->getVertexType())", out)
+        self.assertIn("switch((int)vertexType)", out)
 
     def test_clip_against_is_written_out_as_corner_comparisons(self):
         out = translate("void f(core::rect<s32>& r, core::rect<s32> c)\n{\n    r.clipAgainst(c);\n}\n", "daisy")
@@ -88,11 +89,18 @@ class Translate(unittest.TestCase):
         self.assertIn("(value >> 16)", out)
 
     def test_container_calls_become_vector_and_list_calls(self):
-        out = translate("Vertices.set_used(4); return Indices.const_pointer(); b->Vertices.reallocate(n); core::list<T>::Iterator it;")
+        out = translate(
+            "Vertices.set_used(4); return Indices.const_pointer(); b->Vertices.reallocate(n); core::list<T>::Iterator it;\n"
+            "(*indices)[i].Indices.erase(t, 3);\n"
+        )
         self.assertIn("Vertices.resize(4);", out)
         self.assertIn("return &Indices[0];", out)
         self.assertIn("b->Vertices.reserve(n);", out)
         self.assertIn("ox::TList<T>::iterator it;", out)
+        self.assertIn(
+            "(*indices)[i].Indices.erase((*indices)[i].Indices.begin() + (int)t, (*indices)[i].Indices.begin() + (int)(t + 3));",
+            out,
+        )
 
     def test_container_searches_become_the_ox_algo_helpers(self):
         out = translate(
@@ -116,6 +124,10 @@ class Translate(unittest.TestCase):
             "mat.DiffuseColor = xmat.FaceColor.toSColor();\n"
             "Pos.rotateXYBy(nRotY, Target);\n"
             "Pos.rotateXZBy(-nRotX, Target);\n"
+            "p.vector.rotateYZBy((os::Randomizer::rand()%40)-20, core::vector3df(0,0,0));\n"
+            "core::vector3df extend = Box.getExtent();\n"
+            "particles[i].vector = particles[i].startVector.getInterpolated(Gravity, f);\n"
+            "Font->draw(Text.c_str(), r, Color, true, true);\n"
             "joint.LocalAnimatedMatrix *= mat1.interpolate(mat2, factor);\n"
             'os::Printer::log("bad", file->getFileName(), irr::ELL_WARNING);\n',
             "daisy",
@@ -124,9 +136,32 @@ class Translate(unittest.TestCase):
         self.assertIn("mat.DiffuseColor = ox::video::SColor((int)(xmat.FaceColor.a*255.0f),", out)
         self.assertIn("double deg = (nRotY) * ox::core::GRAD_PI2;", out)
         self.assertIn("double deg = (-nRotX) * ox::core::GRAD_PI2;", out)
+        self.assertIn("double deg = ((ox::algo::CRand::rand()%40)-20) * 0.017453290522098541;", out)
+        self.assertIn("ox::core::CVector3d<float> extend = ((Box).MaxEdge - (Box).MinEdge);", out)
+        self.assertIn("ox::core::CVector3d<float>((Gravity).X*(1.0f - (f)) + particles[i].startVector.X*(f),", out)
+        self.assertIn("Font->draw(Text.c_str(), r, Color, ox::gui::EFHA_CENTER, ox::gui::EFVA_CENTER, 0);", out)
         self.assertIn("joint.LocalAnimatedMatrix *= _concord_interpolate(mat1, mat2, factor);", out)
         self.assertIn("ELL_WARNING);", out)
         self.assertNotIn("daisy::ELL_WARNING", out)
+
+    def test_key_input_pressed_down_assignment_expands_to_event_branches(self):
+        out = translate(
+            "bool CCameraFPSSceneNode::OnEvent(SEvent event)\n"
+            "{\n"
+            "\tif (KeyMap[i].keycode == event.KeyInput.Key)\n"
+            "\t{\n"
+            "\t\tCursorKeys[KeyMap[i].action] = event.KeyInput.PressedDown;\n"
+            "\t\treturn true;\n"
+            "\t}\n"
+            "\treturn false;\n"
+            "}\n\n"
+            "void CCameraFPSSceneNode::setTarget(const core::vector3df& wtgt)\n"
+            "{\n"
+            "}\n",
+            "daisy",
+        )
+        self.assertIn("if (event.KeyInput.Event == ox::event::EKIE_KEY_PRESSED_DOWN)", out)
+        self.assertIn("else if (event.KeyInput.Event == ox::event::EKIE_KEY_LEFT_UP)", out)
 
     def test_a_container_iterated_while_const_gets_a_const_iterator(self):
         out = translate(
@@ -152,8 +187,9 @@ class Translate(unittest.TestCase):
         self.assertIn("SceneManager->registerNodeForRendering(this, SNRT_LIGHT_AND_CAMERA);", out)
 
     def test_irrlicht_s_math_constants_header_is_ox_s(self):
-        out = translate('#include "irrMath.h"\n#include "irrTypes.h"\n', "daisy")
+        out = translate('#include "irrMath.h"\n#include "irrTypes.h"\nconst f32 PI = 3.14159f;\n', "daisy")
         self.assertIn('#include "ox/core/irrMath.h"', out)
+        self.assertIn("const float PI = 3.14159274f;", out)
 
     def test_a_member_qualified_inside_its_class_loses_the_qualifier(self):
         source = "class quaternion\n{\n\tquaternion quaternion::operator*(const quaternion& other) const;\n};\ninline quaternion quaternion::operator*(const quaternion& other) const\n{\n}\n"
@@ -169,6 +205,24 @@ class Translate(unittest.TestCase):
         self.assertIn("\tCVector3d<float> v;", out)
         self.assertIn("inline CQuaternion::CQuaternion(const CMatrix4& mat)", out)
         self.assertNotIn("typedef", out)
+
+
+    def test_camera_on_pre_render_updates_position_and_sets_projection_after_view_area(self):
+        source = (
+            "void CCameraSceneNode::OnPreRender()\n{\n"
+            "\tvideo::IVideoDriver* driver = SceneManager->getVideoDriver();\n"
+            "\tif (!driver)\n\t\treturn;\n\n"
+            "\tif (SceneManager->getActiveCamera() == this)\n\t{\n"
+            "\t\tscreenDim.Width = (f32)driver->getScreenSize().Width;\n"
+            "\t\tscreenDim.Height = (f32)driver->getScreenSize().Height;\n\n"
+            "\t\tdriver->setTransform(video::ETS_PROJECTION, Projection);\n\n"
+            "\t\tView.buildCameraLookAtMatrixLH(pos, Target, up);\n"
+            "\t\trecalculateViewArea();\n\n"
+            "\t\tSceneManager->registerNodeForRendering(this, SNRT_LIGHT_AND_CAMERA);\n\t}\n}\n"
+        )
+        out = translate(source, "daisy")
+        self.assertIn("if (!driver)\n\t\treturn;\n\n\tupdateAbsolutePosition();\n\n\tif (SceneManager->getActiveCamera() == this)", out)
+        self.assertIn("recalculateViewArea();\n\t\tdriver->setTransform(video::ETS_PROJECTION, Projection);\n\n\t\tSceneManager->registerNodeForRendering", out)
 
 
 if __name__ == "__main__":

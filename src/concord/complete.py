@@ -25,7 +25,7 @@ from pathlib import Path
 
 from tree_sitter import Node, Parser
 
-from concord.harvest import Harvest
+from concord.harvest import Harvest, function_key
 from concord.irrlicht import bare, translate
 from concord.transforms import CPP
 
@@ -219,7 +219,7 @@ def state(harvest: Harvest, units: list[str], overlays: dict[str, bytes] | None 
     for name, evaluation in harvest.evaluate_overlays(items).items():
         for section in evaluation.sections:
             for row in section.get("functions", []):
-                found[(items[name][0], row["symbol"])] = (row["exact"], evaluation.fuzzy.get(row["symbol"], 0.0))
+                found[(items[name][0], function_key(row))] = (row["exact"], evaluation.fuzzy.get(row["symbol"], 0.0))
     return found
 
 

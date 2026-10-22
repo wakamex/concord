@@ -356,6 +356,34 @@ class ReplacedInterfaces(unittest.TestCase):
             self.assertEqual(originals["ox/io/IXMLReader.h"], "// Partial and provisional: the game never uses XML.\nnamespace ox {\nnamespace io {\nclass IXMLReader : public IUnknown\n{\n};\n}\n}\n")
             self.assertIn("virtual bool read()", header.read_text())
 
+    def test_an_included_ox_interface_gets_its_additional_base_and_destructor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "third_party/irrlicht-0.7/include").mkdir(parents=True)
+            (root / "third_party/irrlicht-0.7/include/ICameraSceneNode.h").write_text(
+                "namespace irr {\nnamespace scene {\nclass ICameraSceneNode : public ISceneNode, public IEventReceiver\n{\npublic:\n    ICameraSceneNode(ISceneNode* parent) : ISceneNode(parent) {}\n    virtual ~ICameraSceneNode() {};\n    virtual int getMeshType() const { return 0; }\n};\n}\n}\n"
+            )
+            (root / "src/ox/event").mkdir(parents=True)
+            (root / "src/ox/event/IEventReceiver.h").write_text("namespace ox {\nnamespace event {\nclass IEventReceiver\n{\n};\n}\n}\n")
+            (root / "src/ox/scene").mkdir(parents=True)
+            (root / "src/ox/scene/ISceneNode.h").write_text("namespace ox {\nnamespace scene {\nclass ISceneNode\n{\n};\n}\n}\n")
+            ox_header = root / "src/ox/scene/ICameraSceneNode.h"
+            ox_header.write_text(
+                '// Adapted from Irrlicht 0.7 include/ICameraSceneNode.h (license: third_party/irrlicht-0.7/include/irrlicht.h).\n#include "ISceneNode.h"\n#include "../event/IEventReceiver.h"\nnamespace ox {\nnamespace scene {\nclass ICameraSceneNode : public ISceneNode\n{\npublic:\n    ICameraSceneNode(ISceneNode* parent)\n        : ISceneNode(parent)\n    {\n    }\n};\n}\n}\n'
+            )
+            (root / "src/daisy/scene").mkdir(parents=True)
+            (root / "src/daisy/scene/CCameraSceneNode.h").write_text(
+                '#include "ox/scene/ICameraSceneNode.h"\nclass CCameraSceneNode : public ox::scene::ICameraSceneNode\n{\n};\n'
+            )
+            originals = {}
+            seed_module._indexes.clear()
+            self.assertTrue(seed_module._complete_interfaces(root, ["daisy/scene/CCameraSceneNode.h"], originals))
+            text = ox_header.read_text()
+            self.assertIn("class ICameraSceneNode : public ISceneNode, public ox::event::IEventReceiver", text)
+            self.assertIn("virtual ~ICameraSceneNode() {}", text)
+            self.assertIn("virtual int getMeshType() const\n    {\n        return 0;\n    }", text)
+            self.assertIn("ox/scene/ICameraSceneNode.h", originals)
+
 
 class SettleTogether(unittest.TestCase):
     def test_headers_that_settle_together_are_kept_together(self):
@@ -437,6 +465,8 @@ class PortListsAndAlgo(unittest.TestCase):
             seed_module._indexes.clear()
             text = qualify(root, "namespace daisy {\nnamespace scene {\nvoid f(int* a) { ox::algo::sort(a, a + 1); }\n}\n}\n", "daisy/scene/X.cpp")
             self.assertIn('#include "ox/algo/CArrayFunctions.h"', text)
+            rand_text = qualify(root, "namespace daisy {\nnamespace scene {\nint f() { return ox::algo::CRand::rand(); }\n}\n}\n", "daisy/scene/X.cpp")
+            self.assertIn('#include "ox/algo/CRand.h"', rand_text)
 
     def test_a_std_algorithm_call_includes_algorithm_unless_the_array_functions_are_there(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -599,6 +629,41 @@ table:
             offset, _, start, size = _rodata_reference(root, "d/f.cpp")
             self.assertEqual((start, size), (0, 9))
             self.assertTrue(start <= offset < start + size)
+
+    def test_an_unplaced_template_section_called_from_an_fde_sized_function_is_placed(self):
+        import json
+
+        unit_asm = """    .section .text.helper,"axG",@progbits,helper,comdat
+    .weak helper
+    .type helper, @function
+helper:
+    xorl %eax, %eax
+    ret
+    .size helper, .-helper
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = root / "build" / "match" / BUILD
+            out.mkdir(parents=True)
+            (root / "u.s").write_text(unit_asm)
+            subprocess.run(["as", str(root / "u.s"), "-o", str(out / "d__f.o")], check=True)
+            (out / "d__f.json").write_text(
+                json.dumps(
+                    {
+                        "unplaced_sections": [".text.helper"],
+                        "sections": [
+                            {
+                                "name": ".text",
+                                "address": "0x100",
+                                "bad_references": [{"symbol": "helper", "candidate": "0x300"}],
+                            },
+                        ],
+                    }
+                )
+            )
+            with mock.patch.object(seed_module, "_extents", lambda _root: [(0x300, 3)]):
+                self.assertEqual(seed_module._place_called_sections(root, "d/f.cpp"), {".text.helper": 0x300})
+
 
 
 class TidyFiles(unittest.TestCase):

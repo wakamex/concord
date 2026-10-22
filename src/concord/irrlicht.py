@@ -88,6 +88,7 @@ def translate(source: str, namespace: str = "daisy") -> str:
     for name, replacement in TYPEDEFS.items():
         source = re.sub(r"\b" + name + r"\b", replacement, source)
     source = re.sub(r"\bEVDF_BILINEAR_FILER\b", "EVDF_BILINEAR_FILTER", source)  # Irrlicht's spelling; ox's is FILTER
+    source = re.sub(r"\b(const\s+float\s+PI\s*=\s*)3\.14159f;", r"\g<1>3.14159274f;", source)  # Oxeye's full-precision float PI
     source = re.sub(
         r"(\w+)\.clipAgainst\(([^)]+)\);",
         r"if ((\2).LowerRightCorner.X < \1.LowerRightCorner.X) \1.LowerRightCorner.X = (\2).LowerRightCorner.X; "
@@ -106,15 +107,34 @@ def translate(source: str, namespace: str = "daisy") -> str:
         source,
     )
     source = re.sub(
-        r"(\w+)\.rotateXYBy\(([^,]+),\s*([^)]+)\);",
+        r"(\w+)\.rotateXYBy\(([^,]+),\s*([^;\n]+)\);",
         r"{ double deg = (\2) * ox::core::GRAD_PI2; float cs = (float)cos(deg); float sn = (float)sin(deg); "
         r"\1.X -= (\3).X; \1.Y -= (\3).Y; \1.set(\1.X*cs - \1.Y*sn, \1.X*sn + \1.Y*cs, \1.Z); \1.X += (\3).X; \1.Y += (\3).Y; }",
         source,
     )
     source = re.sub(
-        r"(\w+)\.rotateXZBy\(([^,]+),\s*([^)]+)\);",
+        r"(\w+)\.rotateXZBy\(([^,]+),\s*([^;\n]+)\);",
         r"{ double deg = (\2) * ox::core::GRAD_PI2; float cs = (float)cos(deg); float sn = (float)sin(deg); "
         r"\1.X -= (\3).X; \1.Z -= (\3).Z; \1.set(\1.X*cs - \1.Z*sn, \1.Y, \1.X*sn + \1.Z*cs); \1.X += (\3).X; \1.Z += (\3).Z; }",
+        source,
+    )
+    source = re.sub(
+        r"(\w+)\.rotateYZBy\(([^,]+),\s*([^;\n]+)\);",
+        r"{ double deg = (\2) * 0.017453290522098541; float cs = (float)cos(deg); float sn = (float)sin(deg); "
+        r"\1.Z -= (\3).Z; \1.Y -= (\3).Y; \1.set(\1.X, \1.Y*cs - \1.Z*sn, \1.Y*sn + \1.Z*cs); \1.Z += (\3).Z; \1.Y += (\3).Y; }",
+        source,
+    )
+    source = re.sub(r"(\w+)\.getExtent\(\)", r"((\1).MaxEdge - (\1).MinEdge)", source)
+    source = re.sub(
+        r"(\w+(?:\[\w+\]|\.\w+)+)\.getInterpolated\((?![^;\n]*?\b(?:Min|Max)StartColor\b)([^,()]+),\s*([^,()]+)\)",
+        r"ox::core::CVector3d<float>((\2).X*(1.0f - (\3)) + \1.X*(\3), (\2).Y*(1.0f - (\3)) + \1.Y*(\3), (\2).Z*(1.0f - (\3)) + \1.Z*(\3))",
+        source,
+    )
+    source = re.sub(r"\bos::Randomizer::rand\(\)", "ox::algo::CRand::rand()", source)
+    source = re.sub(r"\bos::Randomizer::reset\(\)", "ox::algo::CRand::reset()", source)
+    source = re.sub(
+        r"(\bFont->draw\([^,]+,\s*[^,]+,\s*[^,]+),\s*true,\s*true\)",
+        r"\1, ox::gui::EFHA_CENTER, ox::gui::EFVA_CENTER, 0)",
         source,
     )
     source = re.sub(
@@ -141,6 +161,19 @@ def translate(source: str, namespace: str = "daisy") -> str:
             "}\n} }\nnamespace daisy { namespace scene {\n"
         )
         source = re.sub(r"^(void\s+\w+::addFacesToBuffer\s*\()", vertex_eq + r"\1", source, count=1, flags=re.MULTILINE)
+    source = re.sub(
+        r"(\w+(?:\[(?:[^\[\]\n]|\[[^\]\n]*\])*\]|\.\w+)*)\s*=\s*event\.KeyInput\.PressedDown;[ \t]*\n([ \t]*)return true;",
+        r"if (event.KeyInput.Event == ox::event::EKIE_KEY_PRESSED_DOWN)\n\2{\n\2\t\1 = true;\n\2\treturn true;\n\2}\n\2else if (event.KeyInput.Event == ox::event::EKIE_KEY_LEFT_UP)\n\2{\n\2\t\1 = false;\n\2\treturn true;\n\2}\n\2return false;",
+        source,
+    )
+    source = re.sub(
+        r"(void\s+CCameraSceneNode::OnPreRender\s*\(\)\s*\{\s*(?:ox::)?video::IVideoDriver\*\s+driver\s*=\s*SceneManager->getVideoDriver\(\);\s*if\s*\(!driver\)\s*return;\n)"
+        r"(\s*if\s*\(SceneManager->getActiveCamera\(\)\s*==\s*this\)\s*\{\s*screenDim\.Width\s*=[^\n]+\n\s*screenDim\.Height\s*=[^\n]+\n)"
+        r"\s*driver->setTransform\(((?:ox::)?video::ETS_PROJECTION),\s*Projection\);\n"
+        r"([\s\S]*?recalculateViewArea\(\);\n)",
+        r"\1\n\tupdateAbsolutePosition();\n\2\4\t\tdriver->setTransform(\3, Projection);\n",
+        source,
+    )
     group_match = re.search(r"\n\n(void\s+C3DSMeshFileLoader::readMaterialGroup\s*\([^}]+\}\n)", source)
     if group_match and "bool C3DSMeshFileLoader::readMaterialChunk(" in source:
         source = source[: group_match.start()] + source[group_match.end() :]
@@ -150,7 +183,7 @@ def translate(source: str, namespace: str = "daisy") -> str:
             1,
         )
     source = re.sub(r"(=\s*)((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+->getColorFormat\(\))", r"\1(ECOLOR_FORMAT)\2", source)  # ox's IImage returns int
-    source = re.sub(r"(\bswitch\s*\()([^;\n]*?->getVertexType\(\)\))", r"\1(int)\2", source)
+    source = re.sub(r"(\bswitch\s*\()([^;\n]*?->getVertexType\(\)|vertexType)(\))", r"\1(int)\2\3", source)
     source = re.sub(r"\b(\w+)\(\1\s*&", r"\1(const \1&", source)  # copies of Harvest's containers take const references
     source = re.sub(r"\boperator\s*<\(\s*(\w+)\s*&", r"operator <(const \1&", source)
     source = re.sub(r"\bE_DRIVER_TYPE(\s+(?:\w+::)?getDriverType\s*\()", r"int\1", source)  # ox's drivers return int
@@ -182,7 +215,7 @@ def translate(source: str, namespace: str = "daisy") -> str:
 # Irrlicht's core::array and core::list calls as calls on the std::vector and
 # std::list that ox::TArray and ox::TList derive from. Searches become the
 # free ox::algo helpers daisy calls on those containers' iterators.
-OBJECT = r"((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+(?:\[[^\]\n]*\])?)"
+OBJECT = r"((?:\(\*\w+\)|\w+)(?:\[[^\]\n]*\])?(?:(?:\.|->)\w+(?:\[[^\]\n]*\])?)*)"
 ARG = r"((?:\([^()]*\)|[^()])*?)"  # one argument, allowing one level of parentheses
 CONTAINER_CALLS = [
     (OBJECT + r"\.const_pointer\(\)", r"&\1[0]"),
@@ -194,6 +227,7 @@ CONTAINER_CALLS = [
     (OBJECT + r"\.sort\(\)", r"ox::algo::sort(\1.begin(), \1.end())"),
     (OBJECT + r"\.binary_search\(" + ARG + r"\)", r"ox::algo::binarySearchPos(\1.begin(), \1.end(), \2)"),
     (OBJECT + r"\.linear_(?:reverse_)?search\(" + ARG + r"\)", r"ox::algo::linearSearchPos(\1.begin(), \1.end(), \2)"),
+    (OBJECT + r"\.erase\((?!a?it\))(\w+),\s*([^,()]+)\)", r"\1.erase(\1.begin() + (int)\2, \1.begin() + (int)(\2 + \3))"),
     (OBJECT + r"\.erase\((?!a?it\))(\w+)\)", r"\1.erase(\1.begin() + \2)"),  # Irrlicht erased by index; a vector erases by iterator
     (r"\s*[^\n;]+\.set_sorted\([^)]*\);\s*\n", "\n"),  # a sorted flag has no counterpart in a vector
     (r"(\.|->)set_used\(", r"\1resize("),

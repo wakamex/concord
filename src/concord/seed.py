@@ -121,6 +121,8 @@ def seed(
     # CSpritePackage::removeAnimationState did. A completion stays only if settle
     # finds those units no worse.
     originals: dict[str, str] = {}
+    if complete_types and _complete_interfaces(root, result.written, originals):
+        output = _match(root, unit, learn=False)
     names_tried: set[str] = set()
     for _ in range(8):  # each round can expose errors the previous ones hid
         progressed = _include_incomplete(root, target, output)
@@ -190,14 +192,23 @@ def seed(
         result.placements = _place_bss(root, unit)
     if result.placements:
         _register(root, unit, result.placements)
-    for _ in range(2):  # a learned address can let the next run learn another
+    for _ in range(3):  # a learned address can let the next run learn another
         output = _match(root, unit, learn=True)
-        if "unmapped or truncated range:" in output and ".rodata" not in result.placements:
-            # a jump table's function laid out past its FDE, so its table is read from the target's code
+        if ("unmapped or truncated range:" in output or ".rodata: not placed" in output) and ".rodata" not in result.placements:
+            # a jump table's function laid out past its FDE, or an inline after it holds a jump table
             rodata = _place_rodata(root, unit)
             if rodata:
                 result.placements.update(rodata)
                 _register(root, unit, result.placements)
+    for _ in range(2):
+        called = _place_called_sections(root, unit)
+        if not called:
+            break
+        _register(root, unit, {**result.placements, **called})
+        for _ in range(3):
+            output = _match(root, unit, learn=True)
+        _register(root, unit, result.placements)
+        output = _match(root, unit, learn=False)
     result.port_conflicts = port_conflicts(root, unit)
     found = re.search(r"functions (\d+)/(\d+)", output)
     if found:
@@ -284,6 +295,20 @@ def _discard(root: Path, result: SeedResult, present: dict[Path, bytes]) -> None
 def header(root: Path, name: str) -> list[str]:
     """Translate one Irrlicht header Harvest lacks, and the headers it includes, to
     the paths the Mac debug map records; return what was written."""
+    existing = [
+        p
+        for p in (root / "src").rglob(Path(name).name)
+        if ORIGIN_COMMENT in p.read_text(errors="replace")
+        and p.read_text(errors="replace").splitlines()[2].endswith("not the original source.")
+    ]
+    if len(existing) == 1 and _original(root, Path(name).name) is not None:
+        relative = existing[0].relative_to(root / "src").as_posix()
+        translated = _translation(root, _original(root, Path(name).name), relative, Path(name).name)
+        existing[0].write_text(translated)
+        _headers(root, existing[0], translated, {relative})
+        _indexes.clear()
+        existing[0].write_text(qualify(root, existing[0].read_text(), relative))
+        return [relative]
     probe = root / "src" / "concord_header_probe.cpp"
     probe.write_text(f'#include "{name}"\n')
     try:
@@ -390,7 +415,7 @@ def qualify(root: Path, text: str, own: str = "") -> str:
     src/) needs no using-directive and does not include itself."""
     inside = own.startswith("ox/")
     used = set()
-    opened = {ns for ns in NAMESPACES if re.search(r"namespace " + ns + r"\s*\{", text)}
+    opened = {ns for ns in NAMESPACES if re.search(r"^namespace " + ns + r"\s*\{", text, re.MULTILINE)}
     reachable = set()  # names visible unqualified: daisy's own and those of opened ox namespaces
     for ns in NAMESPACES:
         reachable |= set(_index(root, root / "src" / "daisy" / ns).headers)
@@ -437,7 +462,7 @@ def qualify(root: Path, text: str, own: str = "") -> str:
         re.search(r"\b(?:ox::video::)?" + name + r"\b", text) for name in names
     ):
         needed.append('#include "ox/video/ColorPacking.h"\n')  # a helper from it is called
-    if "ox::algo::" in text and not _includes(text, "ox/algo/CArrayFunctions.h"):  # ox::algo::sort is declared there
+    if re.search(r"\box::algo::(?:sort|linearSearchPos|binarySearchPos|binarySearchIf|linearSearchIf|advanceIterator)\b", text) and not _includes(text, "ox/algo/CArrayFunctions.h"):
         needed.append('#include "ox/algo/CArrayFunctions.h"\n')
     elif (
         re.search(r"\bstd::(?:find|sort|lower_bound|upper_bound|find_if|distance)\s*\(", text)
@@ -445,6 +470,8 @@ def qualify(root: Path, text: str, own: str = "") -> str:
         and not _includes(text, "ox/algo/CArrayFunctions.h")  # it includes <algorithm> itself
     ):
         needed.append("#include <algorithm>\n")  # a translated search calls the std algorithm directly
+    if "ox::algo::CRand" in text and not _includes(text, "ox/algo/CRand.h"):
+        needed.append('#include "ox/algo/CRand.h"\n')
     if "ox::core::GRAD_PI2" in text and not _includes(text, "ox/core/irrMath.h"):
         needed.append('#include "ox/core/irrMath.h"\n')
     if own.endswith(".cpp") and re.search(r"\bS3DVertex(?:\s+\w+)?\s*\([^;\n]*,", text) and not _includes(text, "ox/video/S3DVertexInline.h"):
@@ -855,6 +882,73 @@ def _with_base(root: Path, header: Path, name: str, irrlicht: str, text: str) ->
     return text[:at] + include + text[at:]
 
 
+def _complete_interfaces(root: Path, written: list[str], originals: dict[str, str]) -> bool:
+    """Give an ox interface header that a class in a written header derives from any
+    additional base classes and inline virtual methods its Irrlicht original declares."""
+    changed = False
+    src = (root / "src").resolve()
+    ox = (src / "ox").resolve()
+    pending = [src / item for item in written if item.endswith(".h") and (src / item).exists()]
+    seen: set[Path] = set()
+    included: set[str] = set()
+    while pending:
+        curr = pending.pop()
+        if curr in seen or not curr.exists():
+            continue
+        seen.add(curr)
+        text = curr.read_text(errors="replace")
+        bases = {
+            base.split("::")[-1]
+            for clause in re.findall(r"class\s+\w+\s*:\s*([^{;]+)\{", text)
+            for base in re.findall(r"(?:public|protected|private)\s+([\w:]+)", clause)
+        }
+        for raw in re.findall(r'^#include "([^"]+)"', text, re.MULTILINE):
+            for candidate in ((curr.parent / raw).resolve(), (src / raw).resolve()):
+                if candidate.exists() and ox in candidate.parents and candidate.stem in bases:
+                    included.add(candidate.relative_to(src).as_posix())
+                    pending.append(candidate)
+    for inc in sorted(included):
+        path = root / "src" / inc
+        original = _original(root, path.name)
+        if not path.exists() or original is None or not path.stem.startswith("I"):
+            continue
+        before = path.read_text()
+        if ORIGIN_COMMENT not in before:
+            continue
+        name = path.stem
+        irrlicht = translate(original.read_text(encoding="latin-1"), "ox")
+        irr_head = re.search(r"class " + re.escape(name) + r"\s*:\s*([^{;]+)\{", irrlicht)
+        ox_head = re.search(r"class " + re.escape(name) + r"\s*:\s*([^{;]+)\{", before)
+        if irr_head is None or ox_head is None:
+            continue
+        text = before
+        if irr_head[1].count(",") > ox_head[1].count(","):
+            text = text[: ox_head.start()] + f"class {name} : {irr_head[1].strip()}\n{{" + text[ox_head.end() :]
+            if re.search(r"virtual\s+~" + re.escape(name) + r"\s*\(\s*\)\s*\{", irrlicht) and f"~{name}(" not in text:
+                ctor = re.search(r"\b" + re.escape(name) + r"\s*\([^;{}]*\)\s*:[^{}]*\{\s*\}\n", text)
+                if ctor is not None:
+                    text = text[: ctor.end()] + f"\n    virtual ~{name}() {{}}\n" + text[ctor.end() :]
+        irr_body = irrlicht[irr_head.end() : _brace_end(irrlicht, irr_head.end() - 1)]
+        for match in re.finditer(
+            r"virtual\s+([\w:<>]+)\s+(\w+)\s*\(([^()]*)\)\s*(const\s*)?\{\s*(return\s+[^;{}]+;)?\s*\}",
+            irr_body,
+        ):
+            ret, member, args, const, body = match.groups()
+            if not re.search(r"\b" + re.escape(member) + r"\s*\(", text):
+                ox_match = re.search(r"class " + re.escape(name) + r"\s*:\s*[^{;]+\{", text)
+                close = _brace_end(text, ox_match.end() - 1)
+                suffix = " const" if const else ""
+                inner = f"\n        {body.strip()}\n    " if body else ""
+                method = f"\n    virtual {ret} {member}({args.strip()}){suffix}\n    {{{inner}}}\n"
+                text = text[:close] + method + text[close:]
+        if text != before:
+            text = qualify(root, text, inc)
+            originals.setdefault(inc, before)
+            path.write_text(text)
+            changed = True
+    return changed
+
+
 def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool:
     """Declare in a provisional daisy class header each member function the unit
     defines but the header lacks, copying its declaration from Irrlicht's class in
@@ -951,11 +1045,16 @@ def _original(root: Path, name: str) -> Path | None:
 
 
 def _adapted_companion(root: Path, source: Path, name: str) -> Path | None:
-    """The header in src/ a unit includes as its own, when an earlier seed translated
-    it from Irrlicht (it carries the origin comment) and Irrlicht has it."""
-    if Path(name).stem != source.stem or _original(root, name) is None:
+    """The header in src/ a unit includes as its own, or a stubbed header it
+    includes, when an earlier seed translated it from Irrlicht and Irrlicht has it."""
+    if _original(root, name) is None:
         return None
-    found = [path for path in (root / "src").rglob(Path(name).name) if "// Adapted from Irrlicht 0.7 " in path.read_text(errors="replace")]
+    found = [
+        path
+        for path in (root / "src").rglob(Path(name).name)
+        if "// Adapted from Irrlicht 0.7 " in path.read_text(errors="replace")
+        and (Path(name).stem == source.stem or "__builtin_trap();" in path.read_text(errors="replace"))
+    ]
     return found[0] if len(found) == 1 else None
 
 
@@ -1218,3 +1317,42 @@ def _ios_init_object(root: Path, address: int) -> int | None:
         bss = ELFFile(stream).get_section_by_name(".bss")
         inside = bss is not None and bss["sh_addr"] <= value < bss["sh_addr"] + bss["sh_size"]
     return value if inside else None
+
+
+def _place_called_sections(root: Path, unit: str) -> dict[str, int]:
+    """Target addresses of unplaced .text.<symbol> sections that a placed section
+    references with a candidate address, or that immediately follow a placed
+    .text.* section, when the target FDE has the section's size."""
+    import json
+
+    slug = unit.replace("/", "__").removesuffix(".cpp")
+    report = root / "build" / "match" / BUILD / f"{slug}.json"
+    obj = root / "build" / "match" / BUILD / f"{slug}.o"
+    if not report.exists() or not obj.exists():
+        return {}
+    data = json.loads(report.read_text())
+    unplaced = set(data.get("unplaced_sections", []))
+    if not unplaced:
+        return {}
+    placed_at = {s["name"]: int(s["address"], 16) for s in data.get("sections", []) if s.get("address")}
+    candidates = [
+        (f".text.{ref['symbol']}", int(ref["candidate"], 16))
+        for sec in data.get("sections", [])
+        for ref in sec.get("bad_references", [])
+        if ref.get("symbol") and ref.get("candidate") and f".text.{ref['symbol']}" in unplaced
+    ]
+    with open(obj, "rb") as stream:
+        order = [(s.name, s["sh_size"]) for s in ELFFile(stream).iter_sections() if s.name.startswith(".text.")]
+    sizes = {name: size for name, size in order if name in unplaced}
+    extents = _extents(root)
+    fde_sizes = dict(extents)
+    next_fde = {extents[i][0]: extents[i + 1] for i in range(len(extents) - 1)}
+    found = {name: dest for name, dest in candidates if fde_sizes.get(dest) == sizes.get(name)}
+    for i in range(len(order) - 1):
+        prev_name, prev_size = order[i]
+        curr_name, curr_size = order[i + 1]
+        if prev_name in placed_at and curr_name in unplaced and prev_name != curr_name:
+            following = next_fde.get(placed_at[prev_name])
+            if following and following[1] == curr_size and 0 <= following[0] - (placed_at[prev_name] + prev_size) < 16:
+                found.setdefault(curr_name, following[0])
+    return found

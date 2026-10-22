@@ -38,6 +38,14 @@ class FunctionVerdict:
 DRIVER = Path(__file__).with_name("harvest_driver.py")
 
 
+def function_key(row: dict) -> str:
+    """A function's stable identifier across compiles: its symbol, or its target
+    address for a GCC synthetic clone (T.<uid>) whose symbol suffix is the
+    declaration counter."""
+    symbol = row["symbol"]
+    return row["address"] if symbol.startswith("T.") and symbol[2:].isdigit() and row.get("address") else symbol
+
+
 @dataclass
 class Evaluation:
     """One candidate source compiled and compared by Harvest's matcher."""
@@ -57,7 +65,7 @@ class Evaluation:
         return None
 
     def exact_functions(self) -> set[str]:
-        return {row["symbol"] for s in self.sections for row in s.get("functions", []) if row["exact"]}
+        return {function_key(row) for s in self.sections for row in s.get("functions", []) if row["exact"]}
 
 
 _drivers: dict[Path, subprocess.Popen] = {}  # one driver per checkout, for the life of the process

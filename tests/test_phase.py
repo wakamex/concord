@@ -25,6 +25,7 @@ class FakeHarvest:
             k = text.count(b"concordPhase")
             rows = [
                 {"symbol": "always", "exact": True},
+                {"symbol": f"T.{100 + k}", "address": "0x4982f0", "exact": True},
                 {"symbol": "witness", "exact": k % 31 == 0},
                 {"symbol": "locked", "exact": k % 31 == 2},
                 {"symbol": "never", "exact": False},
@@ -57,9 +58,10 @@ class PhaseTest(unittest.TestCase):
         self.assertEqual(len(harvest.sources), 31)
         self.assertEqual(result.locked, {"locked": {2}})
         self.assertEqual(result.witnesses, {"witness": {0}})
-        self.assertEqual(result.exact(0), 2)
+        self.assertEqual(result.exact(0), 3)
         self.assertEqual(result.exact_at["never"], set())
         self.assertEqual(len(result.exact_at["always"]), 31)
+        self.assertEqual(len(result.exact_at["0x4982f0"]), 31)
 
     def test_best_phase_prefers_the_source_as_it_stands_on_a_tie(self):
         self.assertEqual(scan(FakeHarvest(self.root), "a.cpp", 31).best, 0)

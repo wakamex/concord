@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from concord.harvest import Harvest
+from concord.harvest import Harvest, function_key
 
 PHASES = 31  # slots in the hash table GCC 4.4 gives a function's variables before it grows
 
@@ -75,9 +75,10 @@ def scan(harvest: Harvest, unit: str, phases: int = PHASES) -> Scan:
             continue
         for section in evaluation.sections:
             for row in section.get("functions", []):
-                result.exact_at.setdefault(row["symbol"], set())
+                key = function_key(row)
+                result.exact_at.setdefault(key, set())
                 if row["exact"]:
-                    result.exact_at[row["symbol"]].add(k)
+                    result.exact_at[key].add(k)
     return result
 
 
