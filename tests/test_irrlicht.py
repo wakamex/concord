@@ -72,8 +72,9 @@ class Translate(unittest.TestCase):
         self.assertIn("ox::video::toA1R5G5B5(imageToCopy->getPixel(x,y).color)", out)
 
     def test_a_colour_format_is_cast_from_the_int_ox_returns(self):
-        out = translate("ECOLOR_FORMAT f = image->getColorFormat();\n", "daisy")
+        out = translate("ECOLOR_FORMAT f = image->getColorFormat();\nswitch(Mesh->getMeshBuffer(b)->getVertexType())\n", "daisy")
         self.assertIn("ECOLOR_FORMAT f = (ECOLOR_FORMAT)image->getColorFormat();", out)
+        self.assertIn("switch((int)Mesh->getMeshBuffer(b)->getVertexType())", out)
 
     def test_clip_against_is_written_out_as_corner_comparisons(self):
         out = translate("void f(core::rect<s32>& r, core::rect<s32> c)\n{\n    r.clipAgainst(c);\n}\n", "daisy")
@@ -112,6 +113,7 @@ class Translate(unittest.TestCase):
     def test_shared_header_helpers_expand_at_the_call_site(self):
         out = translate(
             "vtx.Color.set(255, 255, 255, 255);\n"
+            "mat.DiffuseColor = xmat.FaceColor.toSColor();\n"
             "Pos.rotateXYBy(nRotY, Target);\n"
             "Pos.rotateXZBy(-nRotX, Target);\n"
             "joint.LocalAnimatedMatrix *= mat1.interpolate(mat2, factor);\n"
@@ -119,9 +121,10 @@ class Translate(unittest.TestCase):
             "daisy",
         )
         self.assertIn("vtx.Color = ox::video::SColor(255, 255, 255, 255);", out)
+        self.assertIn("mat.DiffuseColor = ox::video::SColor((int)(xmat.FaceColor.a*255.0f),", out)
         self.assertIn("double deg = (nRotY) * ox::core::GRAD_PI2;", out)
         self.assertIn("double deg = (-nRotX) * ox::core::GRAD_PI2;", out)
-        self.assertIn("mat.M[k] = (mat1).M[k]*ntime + (mat2).M[k]*(factor); joint.LocalAnimatedMatrix *= mat;", out)
+        self.assertIn("joint.LocalAnimatedMatrix *= _concord_interpolate(mat1, mat2, factor);", out)
         self.assertIn("ELL_WARNING);", out)
         self.assertNotIn("daisy::ELL_WARNING", out)
 

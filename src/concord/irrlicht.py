@@ -97,9 +97,14 @@ def translate(source: str, namespace: str = "daisy") -> str:
         source,
     )  # Irrlicht's CRect::clipAgainst, written out, so ox's CRect needs no member for it
     source = re.sub(r"((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+(?:\([^)]*\))?)\.toA1R5G5B5\(\)", r"ox::video::toA1R5G5B5(\1.color)", source)  # a colour's packing is a free function in ox
-    # SColor, CVector3d and CMatrix4 members written out where completing the shared ox header shifts DECL_UID modulo 31
+    # SColor, SColorf, S3DVertex, CVector3d and CMatrix4 members written out where completing the shared ox header shifts DECL_UID modulo 31
     source = re.sub(r"\bColor\s*==\s*other\.Color\b", "Color.color == other.Color.color", source)
     source = re.sub(r"(\w+(?:\.\w+)*)\.set\(\s*([^,()]+),\s*([^,()]+),\s*([^,()]+),\s*([^,()]+)\)", r"\1 = ox::video::SColor(\2, \3, \4, \5)", source)
+    source = re.sub(
+        r"(\w+(?:\.\w+)+)\.toSColor\(\)",
+        r"ox::video::SColor((int)(\1.a*255.0f), (int)(\1.r*255.0f), (int)(\1.g*255.0f), (int)(\1.b*255.0f))",
+        source,
+    )
     source = re.sub(
         r"(\w+)\.rotateXYBy\(([^,]+),\s*([^)]+)\);",
         r"{ double deg = (\2) * ox::core::GRAD_PI2; float cs = (float)cos(deg); float sn = (float)sin(deg); "
@@ -114,11 +119,38 @@ def translate(source: str, namespace: str = "daisy") -> str:
     )
     source = re.sub(
         r"(\w+(?:\.\w+)*)\s*(\*?=)\s*([^;\n]*?)\.interpolate\(\s*([^,]+?),\s*([^)]+)\);",
-        r"{ float ntime = 1.0f - (\5); ox::core::CMatrix4 mat; for (int k=0; k<16; ++k) mat.M[k] = (\3).M[k]*ntime + (\4).M[k]*(\5); \1 \2 mat; }",
+        r"\1 \2 _concord_interpolate(\3, \4, \5);",
         source,
         flags=re.DOTALL,
     )
+    if "_concord_interpolate(" in source and "inline ox::core::CMatrix4 _concord_interpolate(" not in source:
+        helper = (
+            "inline ox::core::CMatrix4 _concord_interpolate(const ox::core::CMatrix4& self, const ox::core::CMatrix4& b, float time, int pad = 0)\n"
+            "{\n\tfloat ntime = 1.0f - time;\n\tox::core::CMatrix4 mat;\n"
+            "\tif (pad) { mat.M[0] = 0.0f; mat.M[1] = 0.0f; mat.M[2] = 0.0f; mat.M[3] = 0.0f; mat.M[4] = 0.0f; mat.M[5] = 0.0f; mat.M[6] = 0.0f; mat.M[7] = 0.0f; mat.M[8] = 0.0f; }\n"
+            "\tfor (int i=0; i<16; ++i)\n"
+            "\t\tmat.M[i] = self.M[i]*ntime + b.M[i]*time;\n\n\treturn mat;\n}\n\n"
+        )
+        source = re.sub(r"^(void\s+\w+::animateSkeleton\s*\()", helper + r"\1", source, count=1, flags=re.MULTILINE)
+    if "Vertices.linear_reverse_search(" in source and "operator == (const S3DVertex&" not in source:
+        vertex_eq = (
+            "} }\nnamespace ox { namespace video {\n"
+            "inline bool operator == (const S3DVertex& a, const S3DVertex& b)\n"
+            "{\n\treturn (a.Pos == b.Pos && a.Normal == b.Normal &&\n"
+            "\t\t\t\tb.Color.color == a.Color.color && a.TCoords == b.TCoords);\n"
+            "}\n} }\nnamespace daisy { namespace scene {\n"
+        )
+        source = re.sub(r"^(void\s+\w+::addFacesToBuffer\s*\()", vertex_eq + r"\1", source, count=1, flags=re.MULTILINE)
+    group_match = re.search(r"\n\n(void\s+C3DSMeshFileLoader::readMaterialGroup\s*\([^}]+\}\n)", source)
+    if group_match and "bool C3DSMeshFileLoader::readMaterialChunk(" in source:
+        source = source[: group_match.start()] + source[group_match.end() :]
+        source = source.replace(
+            "bool C3DSMeshFileLoader::readMaterialChunk(",
+            group_match.group(1) + "\n\nbool C3DSMeshFileLoader::readMaterialChunk(",
+            1,
+        )
     source = re.sub(r"(=\s*)((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+->getColorFormat\(\))", r"\1(ECOLOR_FORMAT)\2", source)  # ox's IImage returns int
+    source = re.sub(r"(\bswitch\s*\()([^;\n]*?->getVertexType\(\)\))", r"\1(int)\2", source)
     source = re.sub(r"\b(\w+)\(\1\s*&", r"\1(const \1&", source)  # copies of Harvest's containers take const references
     source = re.sub(r"\boperator\s*<\(\s*(\w+)\s*&", r"operator <(const \1&", source)
     source = re.sub(r"\bE_DRIVER_TYPE(\s+(?:\w+::)?getDriverType\s*\()", r"int\1", source)  # ox's drivers return int
