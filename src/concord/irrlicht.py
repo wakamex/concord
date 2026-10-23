@@ -77,6 +77,19 @@ HEADERS = {
 def translate(source: str, namespace: str = "daisy") -> str:
     """The Irrlicht source with ox's types and headers, in daisy's namespace, or in
     ox's for one of Irrlicht's public types, which daisy kept there."""
+    # GCC emits the destructor variants' exception tables in the target's
+    # order when the mesh destructor precedes its constructor.
+    destructor = re.search(r"(?://! destructor\n)?CMeshSceneNode::~CMeshSceneNode\(\)\s*\{.*?^\}", source, re.MULTILINE | re.DOTALL)
+    constructor = re.search(r"(?://! constructor\n)?CMeshSceneNode::CMeshSceneNode\(", source)
+    if destructor and constructor and destructor.start() > constructor.start():
+        source = source[:constructor.start()] + destructor.group() + "\n\n" + source[constructor.start():destructor.start()] + source[destructor.end():]
+    # The Maya camera writes the base position directly before updating its
+    # absolute transform; an unqualified call dispatches virtually in daisy.
+    source = re.sub(
+        r"(void CCameraMayaSceneNode::OnPostRender\([^)]*\)\s*\{[^}]*?)(?<!::)\bsetPosition\(Pos\);",
+        r"\1ISceneNode::setPosition(Pos);",
+        source,
+    )
     # Daisy's particle buffers reserve capacity without changing their size.
     # The target's reallocateBuffers calls vector::reserve and precedes the
     # simulation step; changing the shared array header affects other units.

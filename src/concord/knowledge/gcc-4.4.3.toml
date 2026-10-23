@@ -38,6 +38,7 @@ evidence = [
   { commit = "e4b0712", function = "harvest::gui::CMainMenuScreen", note = "restored definition order" },
   { function = "std::__final_insertion_sort for CVideoNull::SSurface", note = "hv search at 69ea9eb: defining CVideoNull::setInputTexture earlier made this libstdc++ instance exact, so order also steers template code whose source is fixed" },
   { function = "daisy::scene::CParticleSystemSceneNode::reallocateBuffers", note = "At target address 0x56d4b0, the 470-byte function matches when defined before doParticleSystem and its two Irrlicht set_used calls become reserve. The target calls vector::reserve at 0x5701e0 and 0x570760 and never changes the buffers' logical sizes. Seeding learns the previously unnamed function and the vertex reserve callee, giving 59/60 exact functions in the unit." },
+  { function = "daisy::scene::CMeshSceneNode destructor variants", note = "Defining the destructor before the constructor restores the target's destructor exception-table order. Four differing bytes otherwise reject the entire 173-byte .gcc_except_table section at 0x6636d2 even when all three destructor bodies match." },
 ]
 
 [[idiom]]
@@ -122,6 +123,17 @@ fix = "Leave the callee's source alone: the operand order appears to depend on w
 limits = "`concord survey --lines` puts 84 operand-order findings in 30 functions on one line, CString.h:159 (the copy loop of operator=(const B*)), and 41 more on CString.h:186-187 (operator<). Rewriting those lines in the header, judged by exact functions over all 110 units that include it, never gained: `l <= len` and swapped spellings compile to the same bytes, `l < used` lost 333 exact functions for 3, an unsigned counter lost 308 for 9, and Irrlicht's original append (len = other.size() + 1) lost 84 for 6. Caller-side no-ops in CMineralGatherEntity's constructor (a dummy local, braces, an implicit conversion, a const char* local) left its swapped compare in place, and naming the temporary or reordering statements made it worse. The header as written is the best uniform form, so the differing copies follow the unit's inlining context."
 evidence = [
   { function = "harvest::entity::CSparkMoverEntity and CMineralGatherEntity constructors", note = "only the first inlined CString copy loop has cmp len, i; single-string constructors match (harvest docs/matching.md)" },
+]
+
+[[idiom]]
+id = "qualified-base-call"
+cause = "inlining"
+status = "confirmed"
+symptom = "the candidate dispatches through a virtual table where the target contains the base method's inline body"
+fix = "When the target proves that the base implementation is called directly, qualify the call with its base class. This suppresses virtual dispatch without changing the shared class declaration."
+limits = "Qualifying a virtual call changes dispatch behavior, so require an exact target match."
+evidence = [
+  { function = "daisy::scene::CCameraMayaSceneNode::OnPostRender", note = "ISceneNode::setPosition(Pos) produces the target's three position stores and makes the 52-byte function exact; the unqualified call produces a 44-byte function with a virtual call." },
 ]
 
 [[idiom]]

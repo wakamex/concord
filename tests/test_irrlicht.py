@@ -6,6 +6,25 @@ from concord.irrlicht import bare, translate
 
 
 class Translate(unittest.TestCase):
+    def test_maya_post_render_sets_the_base_position(self):
+        source = "void CCameraMayaSceneNode::OnPostRender(u32 timeMs)\n{\n    animate();\n    setPosition(Pos);\n    updateAbsolutePosition();\n}\n"
+        out = translate(source)
+        self.assertIn("ISceneNode::setPosition(Pos);", out)
+        self.assertIn("updateAbsolutePosition();", out)
+        self.assertEqual(translate(out), out)
+        self.assertEqual(translate("setPosition(Pos);"), "setPosition(Pos);")
+
+    def test_mesh_destructor_precedes_constructor_with_its_comment(self):
+        source = (
+            "//! constructor\nCMeshSceneNode::CMeshSceneNode()\n{\n}\n\n"
+            "//! destructor\nCMeshSceneNode::~CMeshSceneNode()\n{\n    Mesh->drop();\n}\n"
+        )
+        out = translate(source)
+        self.assertTrue(out.startswith("//! destructor\nCMeshSceneNode::~CMeshSceneNode()"))
+        self.assertIn("//! constructor\nCMeshSceneNode::CMeshSceneNode()", out)
+        self.assertEqual(out.count("Mesh->drop();"), 1)
+        self.assertEqual(translate(out), out)
+
     def test_particle_buffers_reserve_before_simulation(self):
         source = (
             "void CParticleSystemSceneNode::doParticleSystem(u32 time)\n{\n}\n\n"
