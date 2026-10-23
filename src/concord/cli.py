@@ -9,7 +9,16 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
-from concord import __version__, bench, knowledge, layout, oracle, results, scores
+from concord import (
+    __version__,
+    bench,
+    blockers,
+    knowledge,
+    layout,
+    oracle,
+    results,
+    scores,
+)
 from concord.complete import TYPES, absent, complete, settle, state
 from concord.diff import diff_code, read_function
 from concord.finish import finish
@@ -205,6 +214,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_bench.add_argument("--save", type=Path, help="write every case and its outcome to this JSON Lines file")
 
+    p_blockers = sub.add_parser("blockers", help="why each stubbed method of seeded units still traps, grouped by cause")
+    p_blockers.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_blockers.add_argument("units", nargs="*", help="units to examine (default: every unit whose source has a stub)")
+
     p_clean = sub.add_parser("clean", help="remove concord's old work directories from the Harvest checkout")
     p_clean.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_clean.add_argument("--older-than", type=float, default=24.0, metavar="HOURS", help="keep directories changed more recently")
@@ -250,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
         return _scores(parser, args)
     if args.command == "vtables":
         return _vtables(args)
+    if args.command == "blockers":
+        return _blockers(args)
     if args.command == "clean":
         removed, freed = Harvest(args.harvest).clean(args.older_than * 3600)
         print(f"removed {removed} work directories, {freed / 1e9:.1f} GB")
@@ -527,6 +542,23 @@ def _member(symbol: str) -> str:
     """Class::member of a mangled member function."""
     name = subprocess.run(["c++filt", symbol], capture_output=True, text=True, check=False).stdout.split("(")[0]
     return "::".join(name.strip().split("::")[-2:])
+
+
+def _blockers(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    units = args.units or sorted(
+        path.relative_to(harvest.root / "src").as_posix()
+        for path in (harvest.root / "src").rglob("*.cpp")
+        if b"__builtin_trap();" in path.read_bytes()
+    )
+    found = blockers.stubs(harvest, units)
+    for stub in found:
+        print(f"{stub.unit}  {stub.name}: {'; '.join(sorted(stub.causes)) or 'compiles now'}", flush=True)
+    print(f"\n{'cause':70} {'stubs':>6} {'only cause':>11}")
+    for name, count, alone in blockers.ranked(found):
+        print(f"{name[:70]:70} {count:6} {alone:11}")
+    print(f"{len(found)} stubs in {len(units)} units; {sum(not s.errors for s in found)} compile with Irrlicht's body now")
+    return 0
 
 
 def _bench(args: argparse.Namespace) -> int:
