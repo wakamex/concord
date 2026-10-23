@@ -217,6 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_blockers = sub.add_parser("blockers", help="why each stubbed method of seeded units still traps, grouped by cause")
     p_blockers.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_blockers.add_argument("units", nargs="*", help="units to examine (default: every unit whose source has a stub)")
+    p_blockers.add_argument("--apply", action="store_true", help="restore compiling stub bodies in place; verify matching separately")
 
     p_clean = sub.add_parser("clean", help="remove concord's old work directories from the Harvest checkout")
     p_clean.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
@@ -551,13 +552,16 @@ def _blockers(args: argparse.Namespace) -> int:
         for path in (harvest.root / "src").rglob("*.cpp")
         if b"__builtin_trap();" in path.read_bytes()
     )
-    found = blockers.stubs(harvest, units)
+    found = blockers.stubs(harvest, units, apply=args.apply)
     for stub in found:
-        print(f"{stub.unit}  {stub.name}: {'; '.join(sorted(stub.causes)) or 'compiles now'}", flush=True)
+        status = "restored" if stub.applied else "; ".join(sorted(stub.causes)) or "compiles now"
+        print(f"{stub.unit}  {stub.name}: {status}", flush=True)
     print(f"\n{'cause':70} {'stubs':>6} {'only cause':>11}")
     for name, count, alone in blockers.ranked(found):
         print(f"{name[:70]:70} {count:6} {alone:11}")
     print(f"{len(found)} stubs in {len(units)} units; {sum(not s.errors for s in found)} compile with Irrlicht's body now")
+    if args.apply:
+        print(f"{sum(s.applied for s in found)} bodies restored; run symbol learning and whole-build scores before keeping them")
     return 0
 
 

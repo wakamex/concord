@@ -29,6 +29,7 @@ class Stub:
     unit: str
     name: str  # the method's declarator name, as Class::method
     errors: list[str] = field(default_factory=list)  # compiler messages inside the restored body
+    applied: bool = False
 
     @property
     def causes(self) -> set[str]:
@@ -37,7 +38,7 @@ class Stub:
 
 def _definitions(source: bytes) -> dict[str, Node]:
     tree = Parser(CPP).parse(source)
-    found, stack = {}, [tree.root_node]
+    groups, stack = {}, [tree.root_node]
     while stack:
         node = stack.pop()
         if node.type == "function_definition":
@@ -48,9 +49,14 @@ def _definitions(source: bytes) -> dict[str, Node]:
                 )
             name = declarator.child_by_field_name("declarator") if declarator is not None else None
             if name is not None:
-                found.setdefault("".join(name.text.decode().split()), node)
+                groups.setdefault("".join(name.text.decode().split()), []).append((node, declarator))
             continue
         stack.extend(node.children)
+    found = {}
+    for name, definitions in groups.items():
+        for node, declarator in definitions:
+            suffix = "" if len(definitions) == 1 else "".join(declarator.text.decode().split())[len(name):]
+            found[name + suffix] = node
     return found
 
 
@@ -104,8 +110,9 @@ def cause(message: str) -> str:
     return re.sub(r"'[^']*'", "X", message)[:80]
 
 
-def stubs(harvest: Harvest, units: list[str]) -> list[Stub]:
-    """Every stubbed method of the units, with the errors its Irrlicht body gives."""
+def stubs(harvest: Harvest, units: list[str], apply: bool = False) -> list[Stub]:
+    """Diagnose each restored body, optionally writing the compiling ones in
+    place after their combined source also compiles. No headers are changed."""
     root = harvest.root
     found = []
     for unit in units:
@@ -116,10 +123,39 @@ def stubs(harvest: Harvest, units: list[str]) -> list[Stub]:
             continue
         translation = qualify(root, translate(irrlicht.read_text(encoding="latin-1")), unit).encode()
         candidates = restored(current, translation)
+        if not candidates:
+            continue
         names = {f"s{n}": name for n, name in enumerate(candidates)}
         evaluations = harvest.evaluate(unit, {key: candidates[name] for key, name in names.items()})
+        accepted = []
         for key, name in names.items():
-            found.append(Stub(unit, name, errors_in(evaluations[key].error, unit, candidates[name], name)))
+            error = evaluations[key].error
+            messages = errors_in(error, unit, candidates[name], name) or ([error.strip()] if error else [])
+            stub = Stub(unit, name, messages)
+            found.append(stub)
+            if not error:
+                accepted.append(stub)
+        if apply and accepted:
+            definitions = _definitions(current)
+            edits = []
+            for stub in accepted:
+                node = definitions[stub.name]
+                replacement = _definitions(candidates[stub.name])[stub.name]
+                start = node.child_by_field_name("declarator").end_byte
+                stop = node.child_by_field_name("body").end_byte
+                replacement_start = replacement.child_by_field_name("declarator").end_byte
+                edits.append((start, stop, candidates[stub.name][replacement_start:replacement.end_byte]))
+            combined = current
+            for start, stop, body in sorted(edits, reverse=True):
+                combined = combined[:start] + body + combined[stop:]
+            verification = harvest.evaluate(unit, {"combined": combined})["combined"]
+            if verification.error:
+                raise RuntimeError(f"{unit}: combined restored bodies do not compile:\n{verification.error}")
+            if path.read_bytes() != current:
+                raise RuntimeError(f"{unit}: source changed while compiling restored bodies")
+            path.write_bytes(combined)
+            for stub in accepted:
+                stub.applied = True
     return found
 
 
