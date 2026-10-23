@@ -16,15 +16,18 @@ from concord.seed import (
     _color_helpers,
     _declare_members,
     _discard,
+    _in_code,
     _include_incomplete,
     _includes,
     _index,
+    _keep_port_stand_ins,
     _mac_path,
     _rodata_reference,
     _snapshot,
     _stub_failing,
     _tidy,
     _whole_class,
+    drop_forward_declared_includes,
     port_conflicts,
     port_unresolved,
     qualify,
@@ -94,6 +97,26 @@ class PortLink(unittest.TestCase):
             "    note:               .zig-cache/o/1/CWaterSurfaceSceneNode.o:(vtable for daisy::scene::CWaterSurfaceSceneNode)\n"
         )
         self.assertEqual(UNDEFINED.findall(output), [("daisy::scene::CMeshSceneNode::render()", "CWaterSurfaceSceneNode.cpp")])
+
+
+class Qualify(unittest.TestCase):
+    def test_comments_are_left_alone_and_strings_with_slashes_still_qualify(self):
+        text = '//! A camera.\nA* a; // A here\nconst char* u = "http://x"; A b;\n'
+        out = _in_code(r"\bA\b", "ox::core::A", text)
+        self.assertEqual(out, '//! A camera.\nox::core::A* a; // A here\nconst char* u = "http://x"; ox::core::A b;\n')
+
+    def test_an_include_of_a_forward_declared_type_goes(self):
+        text = '#include "ISceneNode.h"\n#include "ox/scene/SViewFrustrum.h"\n#include "ox/core/CMatrix4.h"\n\nstruct SViewFrustrum;\n'
+        self.assertEqual(drop_forward_declared_includes(text), '#include "ISceneNode.h"\n#include "ox/core/CMatrix4.h"\n\nstruct SViewFrustrum;\n')
+
+
+class PortStandIns(unittest.TestCase):
+    def test_a_header_translated_again_keeps_its_port_stand_in(self):
+        old = "namespace v {\n#ifdef HARVEST_PORT\nclass T : public I\n{\npublic:\n    T();\n};\n#else\nclass T : public I\n{\n    int a;\n};\n#endif\n}\n"
+        new = "namespace v {\nclass T : public I\n{\n    int a;\n    int b;\n};\n}\n"
+        out = _keep_port_stand_ins(old, new)
+        self.assertEqual(out, "namespace v {\n#ifdef HARVEST_PORT\nclass T : public I\n{\npublic:\n    T();\n};\n#else\nclass T : public I\n{\n    int a;\n    int b;\n};\n#endif\n}\n")
+        self.assertEqual(_keep_port_stand_ins(out, out), out)
 
 
 class Discard(unittest.TestCase):

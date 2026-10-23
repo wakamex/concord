@@ -109,7 +109,7 @@ def seed(
     helpers = _color_helpers(root, target.read_text())  # before qualify, which includes ColorPacking.h when a helper is called
     for written in result.written:
         path = root / "src" / written
-        path.write_text(qualify(root, path.read_text(), written))
+        path.write_text(drop_forward_declared_includes(qualify(root, path.read_text(), written)))
     result.written += helpers
     result.written += _rename_invented_structs(root, result.written)
     _register(root, unit, {})
@@ -391,15 +391,28 @@ def _namespace_text(text: str, name: str) -> str:
 
 
 def _in_code(pattern: str, replacement: str, text: str) -> str:
-    """re.sub outside preprocessor lines and string literals."""
+    """re.sub outside preprocessor lines, string literals and // comments."""
     lines = []
     for line in text.split("\n"):
         if not line.lstrip().startswith("#"):
-            parts = line.split('"')
+            code, mark, comment = line.partition("//")
+            if code.count('"') % 2:  # the // is inside a string
+                code, mark, comment = line, "", ""
+            parts = code.split('"')
             parts[::2] = [re.sub(pattern, replacement, part) for part in parts[::2]]
-            line = '"'.join(parts)
+            line = '"'.join(parts) + mark + comment
         lines.append(line)
     return "\n".join(lines)
+
+
+def drop_forward_declared_includes(text: str) -> str:
+    """The header without an include of an ox header whose type it also
+    forward-declares: an Irrlicht header forward-declares a type it uses only by
+    pointer or reference, and including the full definition there clashes with the
+    port's own definition of the type."""
+    for name in re.findall(r"^\s*(?:class|struct) (\w+);", text, re.MULTILINE):
+        text = re.sub(r'^#include "ox/\w+/' + name + r'\.h"\n', "", text, flags=re.MULTILINE)
+    return text
 
 
 def qualify(root: Path, text: str, own: str = "") -> str:
@@ -446,6 +459,8 @@ def qualify(root: Path, text: str, own: str = "") -> str:
         index = _index(root, root / "src" / "ox" / ns)
         for name in sorted(words & set(index.headers)):
             qualified = re.search(r"\box::" + ns + "::" + name + r"\b", text)
+            if re.search(r"^\s*(?:class|struct) " + name + r";", code, re.MULTILINE):
+                continue  # the text forward-declares it, so uses it only by pointer or reference
             if (ns in used or qualified or (inside and ns in opened)) and index.headers[name] != own and not _includes(text, index.headers[name]):
                 needed.append(f'#include "{index.headers[name]}"\n')
     top = _index(root, root / "src" / "ox", recursive=False)
@@ -942,7 +957,7 @@ def _complete_interfaces(root: Path, written: list[str], originals: dict[str, st
                 method = f"\n    virtual {ret} {member}({args.strip()}){suffix}\n    {{{inner}}}\n"
                 text = text[:close] + method + text[close:]
         if text != before:
-            text = qualify(root, text, inc)
+            text = drop_forward_declared_includes(qualify(root, text, inc))
             originals.setdefault(inc, before)
             path.write_text(text)
             changed = True
@@ -1058,6 +1073,27 @@ def _adapted_companion(root: Path, source: Path, name: str) -> Path | None:
     return found[0] if len(found) == 1 else None
 
 
+PORT_BLOCK = re.compile(r"^#ifdef HARVEST_PORT\n(class (\w+)\b.*?^\};)\n#else\n.*?^#endif\n?", re.MULTILINE | re.DOTALL)
+
+
+def _keep_port_stand_ins(old: str, new: str) -> str:
+    """The new translation of a header with each `#ifdef HARVEST_PORT` stand-in
+    class of the old text kept around the new text's class of that name: the
+    port's stub sources implement the stand-in's declarations, and translating the
+    header again must not take them away."""
+    for found in PORT_BLOCK.finditer(old):
+        stand_in, name = found[1], found[2]
+        if re.search(r"^#ifdef HARVEST_PORT\nclass " + name + r"\b", new, re.MULTILINE):
+            continue
+        start = re.search(r"^class " + re.escape(name) + r"\b[^;{]*\{", new, re.MULTILINE)
+        if start is None:
+            continue
+        close = _brace_end(new, start.end() - 1)
+        body = new[start.start() : close + 2]
+        new = new[: start.start()] + f"#ifdef HARVEST_PORT\n{stand_in}\n#else\n{body}\n#endif" + new[close + 2 :]
+    return new
+
+
 def _translation(root: Path, original: Path, relative: str, origin: str) -> str:
     """The Irrlicht header translated for its place under src/, with its provenance."""
     ox = relative.startswith("ox/")
@@ -1088,7 +1124,7 @@ def _headers(root: Path, source: Path, text: str, seen: set[str]) -> list[str]:
             relative = companion.relative_to(root / "src").as_posix()
             if relative not in seen:
                 seen.add(relative)
-                translated = _translation(root, _original(root, name), relative, name)
+                translated = _keep_port_stand_ins(companion.read_text(), _translation(root, _original(root, name), relative, name))
                 companion.write_text(translated)
                 written.append(relative)
                 written += _headers(root, companion, translated, seen)
