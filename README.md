@@ -214,6 +214,20 @@ The machine
 Speed
 - Profile before rewriting for speed. The slow Python was repeated work (re-parsing a symbol table, a container start per request) and was fixed in Python with identical output; a native rewrite waits until the profile says it is worth it.
 
+## Implementer comparison
+
+Implementation work is handed to implementer sessions, so which one gets a work order matters. Five implementers were given the same task once, in a single turn with no help: extend concord's translation so that nine stubbed methods across seven seeded daisy units (`CSceneManager`, `CXAnimationPlayer`, `C3DSMeshFileLoader`, `CCameraMayaSceneNode`, `CTestSceneNode`, `CBspTreeSceneNode`, `CWaterSurfaceSceneNode`) compile under Harvest's GCC 4.4 dialect (`-std=gnu++98`), with lint and tests passing. Each ran in its own worktree of concord.
+
+| Implementer | Units compiling, of 7 | Methods compiling, of 9 | Wall time | Tokens | Cost | Notes |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| [Devin](https://devin.ai/) with `swe-2-high` | 7 | 9 | 558 s | 9.79M | none on the subscription | the cleanest C++98 and concord idioms, reusing `ox/algo/CArrayFunctions.h` |
+| [Codex](https://openai.com/codex/) with `gpt-6.1-sol` | 7 | 9 | 490 s | 3.16M | $0.74 at API rates | 3.1 times fewer tokens; also fixed a curly-quote bug in `missing_members` |
+| [Cursor](https://cursor.com/) with `composer-2.5` | 5 | 4 | 383 s | 4.30M | | wrote C++11 lambdas, which GCC 4.4 rejects |
+| [Claude Code](https://www.anthropic.com/claude-code) with `claude-haiku-5-5` | 1 | 2 | 900 s, timed out | 11.59M | $0.67 at API rates | broke the include order of `SColor.h` for six units |
+| Codex with `gpt-6-luna` | 1 | 1 | 61 s | 0.71M | $0.01 at API rates | stopped after one translation rule |
+
+`swe-2-high` and `gpt-6.1-sol` are the implementers for open-ended work across several units, such as un-stubbing by shared blocker; `swe-2-high`'s changes were the ones applied, and re-seeding with them made 141 functions newly exact. `claude-haiku-5-5` suits only tightly specified mechanical steps, and the other two are not reliable for GCC 4.4 C++98 work. This is one task run once, so it guides the choice of implementer rather than ranking them.
+
 ## License
 
 concord is under the [MIT License](LICENSE). `results/harvest.jsonl` and the knowledge base quote short fragments of Harvest source as evidence. The source patches that `concord match` and `concord permute` save under `results/patches/` stay local and untracked, since Harvest carries no license that would allow redistributing them.
