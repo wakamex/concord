@@ -77,6 +77,15 @@ HEADERS = {
 def translate(source: str, namespace: str = "daisy") -> str:
     """The Irrlicht source with ox's types and headers, in daisy's namespace, or in
     ox's for one of Irrlicht's public types, which daisy kept there."""
+    # Daisy's particle buffers reserve capacity without changing their size.
+    # The target's reallocateBuffers calls vector::reserve and precedes the
+    # simulation step; changing the shared array header affects other units.
+    buffers = re.search(r"^void CParticleSystemSceneNode::reallocateBuffers\(\)\s*\{.*?^\}", source, re.MULTILINE | re.DOTALL)
+    step = "void CParticleSystemSceneNode::doParticleSystem("
+    if buffers and step in source:
+        body = buffers.group().replace(".set_used(", ".reserve(")
+        source = source[:buffers.start()] + source[buffers.end():]
+        source = source.replace(step, body + "\n\n" + step, 1)
     source = re.sub(r"\bnamespace irr\b", f"namespace {namespace}", source)
     source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui|ELL_\w+|" + "|".join(TYPEDEFS) + r")\b)", "", source)  # qualified again below
     source = re.sub(r"\birr::", "daisy::", source)

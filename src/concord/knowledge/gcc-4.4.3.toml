@@ -37,6 +37,7 @@ evidence = [
   { commit = "3708bf8", function = "harvest::game::CWorld", note = "unit definitions reordered to the build's order" },
   { commit = "e4b0712", function = "harvest::gui::CMainMenuScreen", note = "restored definition order" },
   { function = "std::__final_insertion_sort for CVideoNull::SSurface", note = "hv search at 69ea9eb: defining CVideoNull::setInputTexture earlier made this libstdc++ instance exact, so order also steers template code whose source is fixed" },
+  { function = "daisy::scene::CParticleSystemSceneNode::reallocateBuffers", note = "At target address 0x56d4b0, the 470-byte function matches when defined before doParticleSystem and its two Irrlicht set_used calls become reserve. The target calls vector::reserve at 0x5701e0 and 0x570760 and never changes the buffers' logical sizes. Seeding learns the previously unnamed function and the vertex reserve callee, giving 59/60 exact functions in the unit." },
 ]
 
 [[idiom]]

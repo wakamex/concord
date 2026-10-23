@@ -6,6 +6,20 @@ from concord.irrlicht import bare, translate
 
 
 class Translate(unittest.TestCase):
+    def test_particle_buffers_reserve_before_simulation(self):
+        source = (
+            "void CParticleSystemSceneNode::doParticleSystem(u32 time)\n{\n}\n\n"
+            "void CParticleSystemSceneNode::reallocateBuffers()\n{\n"
+            "    Vertices.set_used(Particles.size() * 4);\n"
+            "    Indices.set_used(Particles.size() * 6);\n}\n"
+        )
+        out = translate(source)
+        self.assertLess(out.index("::reallocateBuffers"), out.index("::doParticleSystem"))
+        self.assertIn("Vertices.reserve(Particles.size() * 4);", out)
+        self.assertIn("Indices.reserve(Particles.size() * 6);", out)
+        self.assertEqual(out.count("::reallocateBuffers"), 1)
+        self.assertIn("other.resize(3)", translate("other.set_used(3)"))
+
     def test_namespace_typedefs_types_and_headers(self):
         source = (
             '#include "IUnknown.h"\n#include "SColor.h"\nnamespace irr\n{\nnamespace video\n{\n'
