@@ -38,6 +38,7 @@ from concord.transforms import (
     Rewrite,
     _descendants,
     _rewrite,
+    address_arithmetic,
     compress_assignment,
     expand_assignment,
     find_function,
@@ -98,6 +99,7 @@ MUTATIONS = {
     "compress an assignment": (compress_assignment, True),
     "nest an && condition": (nest_condition, True),
     "merge nested ifs": (merge_conditions, True),
+    "recast an address sum": (address_arithmetic, True),
     "swap commutative operands": (commute, False),
     "split a declaration": (split_declaration, False),
 }

@@ -8,6 +8,7 @@ from tree_sitter import Parser
 from concord.transforms import (
     CPP,
     _negate,
+    address_arithmetic,
     comparisons,
     compress_assignment,
     expand_assignment,
@@ -279,6 +280,24 @@ class FlipNanSense(unittest.TestCase):
         self.assertEqual(len(rewrites), 2)
         self.assertIn(b"    if (t <= 4.0f) return 1;\n", rewrites[0])
         self.assertIn(b"    if (!(t > 2.0f)) return 2;\n", rewrites[1])
+
+
+@unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
+class AddressArithmetic(unittest.TestCase):
+    def test_address_sums_recast_between_byte_pointer_and_int(self):
+        source = (
+            b"float Board::f(char **v, int off)\n{\n"
+            b"    float *ptr = (float*)((char*)v[0] + off);\n"
+            b"    return *(float*)((int)v[1] - off) + *(float*)((unsigned char*)v[2] + off) + (char*)v[3][off];\n"
+            b"}\n"
+        )
+        rewrites = [r.source for r in address_arithmetic(source, find_function(source, "_ZN5Board1fEPPci"))]
+        self.assertEqual(len(rewrites), 5)  # the unparenthesized cast stays alone
+        self.assertIn(b"(float*)((int)v[0] + off)", rewrites[0])
+        self.assertIn(b"(float*)((long)v[0] + off)", rewrites[1])
+        self.assertIn(b"*(float*)((char*)v[1] - off)", rewrites[2])
+        self.assertIn(b"(float*)((int)v[2] + off)", rewrites[3])
+        self.assertIn(b"(float*)((long)v[2] + off)", rewrites[4])
 
 
 if __name__ == "__main__":

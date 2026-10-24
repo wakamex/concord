@@ -588,6 +588,49 @@ def merge_conditions(source: bytes, scope: Node) -> Iterator[Rewrite]:
             yield _rewrite("condition-nesting", Cause.BLOCK_ORDER, source, node, merged, "nested ifs as one && condition")
 
 
+BYTE_POINTER = re.compile(rb"^(unsigned\s+|signed\s+)?char\s*\*+$")
+INTEGER_CASTS = {
+    b"int", b"long", b"short", b"unsigned", b"unsigned int", b"unsigned long", b"unsigned short",
+    b"signed", b"signed int", b"size_t", b"ssize_t", b"intptr_t", b"uintptr_t", b"ptrdiff_t",
+}
+
+
+def _cast_type(node: Node) -> Node | None:
+    """A cast_expression's type_descriptor child, or None."""
+    if node.type != "cast_expression":
+        return None
+    return next((c for c in node.children if c.type == "type_descriptor"), None)
+
+
+def address_arithmetic(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per spelling of an address sum cast to another type:
+    `(T*)((char*)p + n)` as `(T*)((int)p + n)` and `(T*)((long)p + n)`, and an
+    integer cast back as `(T*)((char*)p + n)`. Pointer arithmetic folds a
+    constant into the memory operand's displacement; integer arithmetic keeps
+    the sum in a register, which is the `reg` against `reg + const` split the
+    diff reports as struct-layout."""
+    for node in _descendants(scope, "binary_expression"):
+        if node.child_by_field_name("operator").type not in ("+", "-"):
+            continue
+        parent, grandparent = node.parent, node.parent.parent if node.parent is not None else None
+        if parent is None or parent.type != "parenthesized_expression" or grandparent is None or grandparent.type != "cast_expression":
+            continue
+        for operand in (node.child_by_field_name("left"), node.child_by_field_name("right")):
+            descriptor = _cast_type(operand)
+            if descriptor is None:
+                continue
+            spelling = re.sub(rb"\s+", b" ", descriptor.text.strip())
+            for replacement in (b"int", b"long") if BYTE_POINTER.match(descriptor.text) else (b"char*",) if spelling in INTEGER_CASTS else ():
+                yield _rewrite(
+                    "address-arithmetic",
+                    Cause.STRUCT_LAYOUT,
+                    source,
+                    descriptor,
+                    replacement,
+                    f"({descriptor.text.decode()}) as ({replacement.decode()})",
+                )
+
+
 def _written(node: Node) -> bool:
     """Whether the expression is assigned, incremented or has its address taken,
     where a named copy would change what is written."""
@@ -619,7 +662,7 @@ def _ancestors(node: Node, stop: Node) -> list[Node]:
     return out
 
 
-TRANSFORMS = {Cause.OPERAND_ORDER: [swap_operands], Cause.BLOCK_ORDER: [swap_branches]}
+TRANSFORMS = {Cause.OPERAND_ORDER: [swap_operands], Cause.BLOCK_ORDER: [swap_branches], Cause.STRUCT_LAYOUT: [address_arithmetic]}
 # Every rewrite, for searches that do not pick rewrites by cause.
 def flip_nan_sense(source: bytes, scope: Node) -> Iterator[Rewrite]:
     """One rewrite per relational comparison in scope that changes how it treats
@@ -663,4 +706,5 @@ ALL = [
     nest_condition,
     merge_conditions,
     flip_nan_sense,
+    address_arithmetic,
 ]
