@@ -14,6 +14,7 @@ from concord import (
     bench,
     blockers,
     calls,
+    inlines,
     knowledge,
     layout,
     oracle,
@@ -249,6 +250,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
     p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
 
+    p_inlines = sub.add_parser(
+        "inlines", help="compare a unit's out-of-line inline and template copies with the target's"
+    )
+    p_inlines.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_inlines.add_argument("units", nargs="*", help="units to check (default: every unit hv match built)")
+    p_inlines.add_argument("--save", type=Path, help="write every unit's findings as JSON")
+
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_survey.add_argument(
@@ -287,6 +295,19 @@ def main(argv: list[str] | None = None) -> int:
         return _scores(parser, args)
     if args.command == "vtables":
         return _vtables(args)
+    if args.command == "inlines":
+        harvest = Harvest(args.harvest)
+        units = args.units or sorted(p.stem for p in harvest.reports.glob("*.json"))
+        reports = inlines.gather(harvest, units)
+        if args.save:
+            args.save.write_text(json.dumps(reports, indent=2) + "\n")
+        for result in reports:
+            lines = inlines.show(result)
+            findings = len(lines) - 1
+            print(lines[0] if findings else lines[0] + " — no differences")
+            for line in lines[1:]:
+                print(line)
+        return 0
     if args.command == "blockers":
         return _blockers(args)
     if args.command == "rename":
