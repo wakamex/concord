@@ -217,3 +217,14 @@ limits = "Both copies must already match target function extents, their addresse
 evidence = [
   { function = "daisy::scene::CSceneManager::addAnimatedMeshSceneNode and addParticleSystemSceneNode", note = "concord learn-calls --constructor-aliases corrects exchanged C1/C2 addresses for CAnimatedMeshSceneNode and CParticleSystemSceneNode; both callers become exact with no whole-build regression" },
 ]
+
+[[idiom]]
+id = "unique-caller-symbol-learning"
+cause = "reference"
+status = "confirmed"
+symptom = "a function matches except references, but the caller itself has no named target address and ordinary aligned-call learning ignores it"
+fix = "Locate the caller only when all its non-relocation bytes match exactly one target function extent of its compiled size. Learn the destinations of aligned direct calls from that extent, requiring agreement at every observed site, matching callee sizes, and unclaimed addresses. Record these addresses as aligned-unique-call evidence."
+limits = "Exclude ambiguous callers and unsupported relocation widths. Check learning separately against whole-build scores: naming a callee can move another unnamed function's inferred comparison address even when its emitted code is unchanged."
+evidence = [
+  { function = "daisy::scene::CBspTree", note = "eight retained address claims, four from uniquely located callers, make eleven additional functions exact, including planeFromPoly, deleteTree, createStats, destructors and constructors; three other proven addresses are rejected because they move the existing comparison at 0x5d0710 from 3.9518716 to zero" },
+]
