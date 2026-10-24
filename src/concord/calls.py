@@ -80,7 +80,7 @@ def aligned_calls(target: ObjectFunction, candidate: ObjectFunction, address: in
     return sites
 
 
-def proven(sites: list[CallSite], sizes: dict[str, set[int]], extents: dict[int, int], known: dict[str, int]) -> dict[str, tuple[int, str]]:
+def proven(sites: list[CallSite], sizes: dict[str, set[int]], extents: dict[int, int], known: dict[str, int], exact_callers: bool = False) -> dict[str, tuple[int, str]]:
     """Keep unanimous, size-checked, unclaimed addresses; reject competing new claims."""
     grouped = defaultdict(list)
     for site in sites:
@@ -90,10 +90,13 @@ def proven(sites: list[CallSite], sizes: dict[str, set[int]], extents: dict[int,
     claimed = set(known.values())
     found = {}
     for name, address in agreed.items():
-        if name in known or address in claimed or claims[address] != 1 or sizes.get(name) != {extents.get(address)}:
+        strong = exact_callers and any(s.proof in ("unique-caller", "exact-caller") for s in grouped[name])
+        if name in known or address in claimed or claims[address] != 1 or address not in extents:
+            continue
+        if sizes.get(name) != {extents[address]} and not strong:
             continue
         site = grouped[name][0]
-        basis = "aligned-unique-call" if any(s.proof == "unique-caller" for s in grouped[name]) else "aligned-call"
+        basis = "exact-caller" if strong else ("aligned-unique-call" if any(s.proof == "unique-caller" for s in grouped[name]) else "aligned-call")
         found[name] = (address, f"{basis}:{site.unit}:{site.caller}+{site.offset:#x}=>+{site.target_offset:#x}")
     return found
 
@@ -155,11 +158,15 @@ def object_sites(path: Path, target: bytes, base: int, extents: dict[int, int], 
             candidate = ObjectFunction(symbol.name, sections[index].name, start, code, frozenset(f - start for f in fields[index] if start <= f < start + size))
             original = ObjectFunction(symbol.name, ".text", address, target[address - base:address - base + extent], frozenset())
             found = aligned_calls(original, candidate, address, references, unit)
-            sites.extend(found if symbol.name in known else [replace(site, proof="unique-caller") for site in found])
+            proof = "named" if symbol.name in known else "unique-caller"
+            if (proof == "named" and not any(start <= f < start + size for f in unsupported[index])
+                    and unique_caller(code, {f - start for f in fields[index] if start <= f < start + size}, target, base, {address: extent}) == address):
+                proof = "exact-caller"
+            sites.extend(replace(site, proof=proof) for site in found)
     return sites, dict(sizes)
 
 
-def discover(root: Path, units: list[str]) -> tuple[list[CallSite], dict[str, tuple[int, str]]]:
+def discover(root: Path, units: list[str], overrides: dict[str, Path] | None = None, exact_callers: bool = False) -> tuple[list[CallSite], dict[str, tuple[int, str]]]:
     with (root / "config" / BUILD / "symbols.tsv").open() as stream:
         known = {row["symbol"]: int(row["address"], 16) for row in csv.DictReader(stream, delimiter="\t")}
     extents = dict(_extents(root))
@@ -176,15 +183,16 @@ def discover(root: Path, units: list[str]) -> tuple[list[CallSite], dict[str, tu
     allowed = set()
     for report in reports:
         data = json.loads(report.read_text())
-        if data.get("object_sha256") != hashlib.sha256(report.with_suffix(".o").read_bytes()).hexdigest():
+        obj = (overrides or {}).get(data["unit"], report.with_suffix(".o"))
+        if data["unit"] not in (overrides or {}) and data.get("object_sha256") != hashlib.sha256(obj.read_bytes()).hexdigest():
             raise ValueError(f"{report}: object differs from its match report; run hv match")
-        found, compiled = object_sites(report.with_suffix(".o"), target, base, extents, known, data["unit"])
+        found, compiled = object_sites(obj, target, base, extents, known, data["unit"])
         sites.extend(found)
         for name, values in compiled.items():
             sizes[name].update(values)
             if not selected or report.stem in selected:
                 allowed.add(name)
-    return sites, {name: row for name, row in proven(sites, dict(sizes), extents, known).items() if name in allowed}
+    return sites, {name: row for name, row in proven(sites, dict(sizes), extents, known, exact_callers=exact_callers).items() if name in allowed}
 
 
 def input_hashes(root: Path) -> dict[str, str]:

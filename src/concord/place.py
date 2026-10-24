@@ -136,6 +136,13 @@ def learn_object(harvest: Harvest, unit: str, obj: Path) -> dict:
     )
     if done.returncode not in (0, 1):
         raise RuntimeError(done.stdout + done.stderr)
+    # Internal functions may already resolve through inferred section positions,
+    # so hv's unknown-reference learner cannot name them. A fully matching
+    # caller still proves the call destination even when the callee is inexact.
+    from concord import calls
+
+    _, additional = calls.discover(root, [unit], overrides={unit: obj}, exact_callers=True)
+    calls.apply(root, additional)
     with table.open() as stream:
         rows = list(csv.DictReader(stream, delimiter="\t"))
     evidence = candidate_claims(before, rows, digest)

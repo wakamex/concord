@@ -38,6 +38,16 @@ class Learning(unittest.TestCase):
         self.assertEqual(learned["callee"][0], 0x400100)
         self.assertTrue(learned["callee"][1].startswith("aligned-call:d/A.cpp:caller+"))
 
+    def test_only_exact_callers_can_prove_a_different_size_callee(self):
+        site = CallSite("callee", 0x400100, "u.cpp", "caller", 1, 1, "exact-caller")
+        self.assertEqual(proven([site], {"callee": {2}}, {0x400100: 30}, {}), {})
+        learned = proven([site], {"callee": {2}}, {0x400100: 30}, {}, exact_callers=True)
+        self.assertTrue(learned["callee"][1].startswith("exact-caller:"))
+        self.assertEqual(proven([self.site()], {"callee": {2}}, {0x400100: 30}, {}, exact_callers=True), {})
+        self.assertEqual(proven([site, self.site(0x400200)], {"callee": {2}}, {0x400100: 30}, {}, exact_callers=True), {})
+        self.assertEqual(proven([site], {"callee": {2}}, {}, {}, exact_callers=True), {})
+        self.assertEqual(proven([site], {"callee": {2}}, {0x400100: 30}, {"other": 0x400100}, exact_callers=True), {})
+
     def test_disagreeing_sites_reject_the_symbol(self):
         self.assertEqual(proven([self.site(), self.site(0x400200)], {"callee": {3}}, {0x400100: 3, 0x400200: 3}, {}), {})
 
@@ -109,6 +119,19 @@ ret
             self.assertEqual({s.proof for s in inferred}, {"unique-caller"})
             self.assertTrue(proven(inferred, sizes, extents, {})["callee"][1].startswith("aligned-unique-call:"))
             self.assertEqual({s.address for s in inferred}, {symbols["callee"]})
+            # The linked target gives the callee a different body and extent,
+            # while keeping every non-relocation byte of the caller exact.
+            source.write_text(self.assembly.replace("xor %eax,%eax", "nop\nxor %eax,%eax"))
+            subprocess.run(["as", str(source), "-o", str(root / "larger.o")], check=True)
+            subprocess.run(["ld", "-e", "caller", "-Ttext=0x400000", str(root / "larger.o"), "-o", str(target)], check=True)
+            with target.open("rb") as stream:
+                elf = ELFFile(stream)
+                text = elf.get_section_by_name(".text").data()
+                larger_extents = {e["initial_location"]: e["address_range"] for e in elf.get_dwarf_info().EH_CFI_entries() if hasattr(e, "lsda_pointer")}
+            exact, _ = object_sites(obj, text, base, larger_extents, {"caller": symbols["caller"]}, "d/A.cpp")
+            self.assertEqual({s.proof for s in exact}, {"exact-caller"})
+            self.assertEqual(proven(exact, sizes, larger_extents, {}), {})
+            self.assertEqual(proven(exact, sizes, larger_extents, {}, exact_callers=True)["callee"][0], symbols["callee"])
 
 
 if __name__ == "__main__":
