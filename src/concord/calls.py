@@ -33,6 +33,7 @@ class CallSite:
     caller: str
     offset: int
     target_offset: int
+    proof: str = "named"
 
 
 def aligned_calls(target: ObjectFunction, candidate: ObjectFunction, address: int, references: dict[int, str], unit: str) -> list[CallSite]:
@@ -92,12 +93,32 @@ def proven(sites: list[CallSite], sizes: dict[str, set[int]], extents: dict[int,
         if name in known or address in claimed or claims[address] != 1 or sizes.get(name) != {extents.get(address)}:
             continue
         site = grouped[name][0]
-        found[name] = (address, f"aligned-call:{site.unit}:{site.caller}+{site.offset:#x}=>+{site.target_offset:#x}")
+        basis = "aligned-unique-call" if any(s.proof == "unique-caller" for s in grouped[name]) else "aligned-call"
+        found[name] = (address, f"{basis}:{site.unit}:{site.caller}+{site.offset:#x}=>+{site.target_offset:#x}")
     return found
 
 
+def unique_caller(code: bytes, fields: set[int], target: bytes, base: int, extents: dict[int, int]) -> int | None:
+    """An unnamed caller is usable only at a unique same-size target extent
+    whose every non-relocation byte is identical to the compiled function."""
+    if len(code) < 16 or not fields:
+        return None
+    masked = {i for start in fields for i in range(start, start + 4)}
+    matches = []
+    for address, size in extents.items():
+        offset = address - base
+        if size != len(code) or not 0 <= offset <= len(target) - size:
+            continue
+        original = target[offset:offset + size]
+        if all(i in masked or a == b for i, (a, b) in enumerate(zip(code, original, strict=True))):
+            matches.append(address)
+            if len(matches) > 1:
+                return None
+    return matches[0] if matches else None
+
+
 def object_sites(path: Path, target: bytes, base: int, extents: dict[int, int], known: dict[str, int], unit: str) -> tuple[list[CallSite], dict[str, set[int]]]:
-    """Read real object relocations and compare only callers with named target addresses."""
+    """Compare callers with named addresses or uniquely matching masked code."""
     sites, sizes = [], defaultdict(set)
     with path.open("rb") as stream:
         elf = ELFFile(stream)
@@ -105,12 +126,15 @@ def object_sites(path: Path, target: bytes, base: int, extents: dict[int, int], 
         symbols = list(elf.get_section_by_name(".symtab").iter_symbols())
         relocations = defaultdict(dict)
         fields = defaultdict(set)
+        unsupported = defaultdict(set)
         for section in sections:
             if section["sh_type"] != "SHT_RELA":
                 continue
             table = list(sections[section["sh_link"]].iter_symbols())
             for rel in section.iter_relocations():
                 fields[section["sh_info"]].add(rel["r_offset"])
+                if rel["r_info_type"] not in (2, 4, 10, 11):
+                    unsupported[section["sh_info"]].add(rel["r_offset"])
                 if rel["r_info_type"] in (2, 4) and rel["r_addend"] == -4:
                     relocations[section["sh_info"]][rel["r_offset"]] = table[rel["r_info_sym"]].name
         for symbol in symbols:
@@ -118,17 +142,20 @@ def object_sites(path: Path, target: bytes, base: int, extents: dict[int, int], 
             if symbol["st_info"]["type"] != "STT_FUNC" or not isinstance(index, int) or not size:
                 continue
             sizes[symbol.name].add(size)
+            code = sections[index].data()[start:start + size]
             address = known.get(symbol.name)
+            if address is None and not any(start <= f < start + size for f in unsupported[index]):
+                address = unique_caller(code, {f - start for f in fields[index] if start <= f < start + size}, target, base, extents)
             extent = extents.get(address)
             if address is None or extent is None or not 0 <= address - base <= len(target) - extent:
                 continue
-            code = sections[index].data()[start:start + size]
             references = {offset - start: name for offset, name in relocations[index].items() if start <= offset < start + size}
             if not references:
                 continue
             candidate = ObjectFunction(symbol.name, sections[index].name, start, code, frozenset(f - start for f in fields[index] if start <= f < start + size))
             original = ObjectFunction(symbol.name, ".text", address, target[address - base:address - base + extent], frozenset())
-            sites.extend(aligned_calls(original, candidate, address, references, unit))
+            found = aligned_calls(original, candidate, address, references, unit)
+            sites.extend(found if symbol.name in known else [replace(site, proof="unique-caller") for site in found])
     return sites, dict(sizes)
 
 

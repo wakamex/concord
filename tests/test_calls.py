@@ -8,7 +8,7 @@ from pathlib import Path
 
 from elftools.elf.elffile import ELFFile
 
-from concord.calls import CallSite, alias_claims, object_sites, proven
+from concord.calls import CallSite, alias_claims, object_sites, proven, unique_caller
 
 
 class Learning(unittest.TestCase):
@@ -23,6 +23,14 @@ class Learning(unittest.TestCase):
 
     def site(self, address=0x400100, offset=10, symbol="callee"):
         return CallSite(symbol, address, "d/A.cpp", "caller", offset, offset)
+
+    def test_unnamed_caller_needs_unique_full_code_and_size_match(self):
+        code = b"abcdefgh" + bytes(4) + b"ijklmnop"
+        target = code[:8] + b"CALL" + code[12:]
+        self.assertEqual(unique_caller(code, {8}, target, 0x400000, {0x400000: 20}), 0x400000)
+        self.assertIsNone(unique_caller(code, {8}, target + target, 0x400000, {0x400000: 20, 0x400014: 20}))
+        self.assertIsNone(unique_caller(code, {8}, b"x" + target[1:], 0x400000, {0x400000: 20}))
+        self.assertIsNone(unique_caller(code, {8}, target, 0x400000, {0x400000: 19}))
 
     def test_agreeing_sites_require_the_compiled_extent_size(self):
         sites = [self.site(), self.site(offset=30)]
@@ -93,6 +101,14 @@ ret
             self.assertEqual(learned["callee"][0], symbols["callee"])
             self.assertEqual(sizes["callee"], {3})
             self.assertEqual(object_sites(obj, data, base, extents, {}, "d/A.cpp")[0], [])
+            subprocess.run(["ld", "-e", "caller", "-Ttext=0x400000", str(obj), "-o", str(target)], check=True)
+            with target.open("rb") as stream:
+                text = ELFFile(stream).get_section_by_name(".text").data()
+            inferred, _ = object_sites(obj, text, base, extents, {}, "d/A.cpp")
+            self.assertEqual(len(inferred), 2)
+            self.assertEqual({s.proof for s in inferred}, {"unique-caller"})
+            self.assertTrue(proven(inferred, sizes, extents, {})["callee"][1].startswith("aligned-unique-call:"))
+            self.assertEqual({s.address for s in inferred}, {symbols["callee"]})
 
 
 if __name__ == "__main__":
