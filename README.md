@@ -144,36 +144,32 @@ concord is the deterministic half of matching: it verifies candidates with the t
 
 ### Finishing Harvest's platform layer
 
-`python -m hv.progress report`, with [banteg/harvest#37](https://github.com/banteg/harvest/pull/37) applied to Harvest `b4def65`, splits Harvest's Linux binary into four layers (plus 264 PLT thunks, all matched). The table below divides each layer's functions into those already exact, those in a recovered unit that do not match yet, and those in no recovered unit at all. Bytes are target code bytes; more exact is better.
+`python -m hv.progress report` splits Harvest's Linux binary into four layers (plus 264 PLT thunks, all matched). The table compares each layer's exact functions with [banteg/harvest#37](https://github.com/banteg/harvest/pull/37) applied and on the `seed/stub-merged` branch of [wakamex/harvest](https://github.com/wakamex/harvest), which adds the stub restorations, learned addresses and searched near misses below. Bytes are target code bytes; more exact is better. The layer totals are the branch's; #37's shares are of its own totals, which differ by a few functions because learned addresses split some extents.
 
-| Layer | Functions (bytes) | Exact functions (bytes, share of layer) | Inexact, in recovered units (bytes) | In no recovered unit (bytes) |
-| --- | ---: | ---: | ---: | ---: |
-| game | 1,452 (707,867) | 1,338 (426,703, 60.3%) | 107 (280,971) | 7 (193) |
-| engine | 1,611 (385,833) | 1,508 (277,732, 72.0%) | 98 (107,875) | 5 (226) |
-| toolkit | 558 (231,777) | 487 (147,269, 63.5%) | 69 (84,113) | 2 (395) |
-| platform | 1,619 (623,132) | 1,288 (365,119, 58.6%) | 167 (168,296) | 164 (89,717) |
+| Layer | Functions (bytes) | Exact with #37 (bytes, share of layer) | Exact on seed/stub-merged (bytes, share of layer) |
+| --- | ---: | ---: | ---: |
+| game | 1,452 (707,867) | 1,338 (426,703, 60.3%) | 1,338 (426,703, 60.3%) |
+| engine | 1,617 (386,347) | 1,508 (277,732, 72.0%) | 1,514 (278,189, 72.0%) |
+| toolkit | 558 (231,777) | 487 (147,269, 63.5%) | 488 (152,892, 66.0%) |
+| platform | 1,613 (622,618) | 1,288 (365,119, 58.6%) | 1,364 (412,545, 66.3%) |
 
-All 42 daisy units in the Mac debug map that have a file in `third_party/irrlicht-0.7/source/Irrlicht/` are seeded; the only two unrecovered daisy units without a `.cpp` file are the Winsock network device and its socket object (46 functions, 9.6 KB). The 164 functions in the last column of `platform` sit inside the address ranges of seeded units: unclaimed `.text.*` template instantiations and unnamed `.text` functions shifted behind the units' remaining stubs. When a stubbed method gets its real body, the template instantiations it calls are emitted and the functions after it move back to their target FDEs (`COctTreeTriangleSelector` went from 5/11 to 13/13 exact when `constructOctTree` was un-stubbed).
+Over the whole binary that is 63.58% of code bytes matched against #37's 60.90%, and a fuzzy score of 78.35% against 75.95%. Against #37's evidence, 83 functions are newly matched and 2,345 more data bytes match, with none lost. Ten functions score lower, each because the function compared at an address changed: stubs and misplaced functions whose recorded addresses learning moved, all at 16% or lower, and `CImage::CImage`, which keeps its 87.37% at the address its relocation evidence proves.
 
-Eight units still hold 33 out-of-line `__builtin_trap()` stubs (`CXFileReader` 10, `CAnimatedMeshSceneNode` 6, `CQ3LevelMesh` and `CTerrainSceneNode` 4 each, `CSceneManager` and `CSceneCollisionManager` 3 each, `CAnimatedMeshMD2` 2, `CBspTree` 1), and two headers hold one each (`CBspTree::BspPoly::operator==`, `CSceneManager::DefaultNodeEntry`'s constructor). `concord blockers` restores each stub's Irrlicht body into its unit as the unit now stands and compiles it: 21 of the 32 with an Irrlicht body compile as they are, because the translation has grown since they were stubbed, and the other 11 stop on one or two causes each:
+All 42 daisy units in the Mac debug map that have a file in `third_party/irrlicht-0.7/source/Irrlicht/` are seeded; the only two unrecovered daisy units without a `.cpp` file are the Winsock network device and its socket object (46 functions, 9.6 KB). When a stubbed method gets its real body, the template instantiations it calls are emitted and the functions after it move back to their target FDEs, so a restoration is judged against a baseline whose addresses were learned first: `concord place --object` learns them from the compiled candidate while the source stays unchanged, and without it a restoration can look like a loss because the old placement compared stubs at other functions' addresses.
 
-| Cause | Stubs it blocks |
-| --- | ---: |
-| `ox::algo` not included (`CTerrainSceneNode::createIndexBuffers`, `CXFileReader::parseDataObjectSkinWeights`) | 2 |
-| a cast from a pointer to a narrower integer (`CQ3LevelMesh::createCurvedSurface`, `Blend`) | 2 |
-| conversions between Irrlicht's and ox's types (`CTerrainSceneNode::getIdealHeightMap`, `CQ3LevelMesh::loadTextures`) | 2 |
-| `CQ3LevelMesh::loadTextures` also needs `RGB16`, `IFileSystem::existFile` and `IVideoDriver::addTexture` as daisy declares them | 1 |
-| `createSceneManager` constructs a class still abstract in daisy | 1 |
-| `ISceneManager::addDummyTransformationSceneNode` with daisy's signature (`CAnimatedMeshSceneNode::getMS3DJointNode`) | 1 |
-| the 9-argument `S3DVertex` constructor (`CBspTree::splitPoly`) | 1 |
-| `CTriangle3d::getIntersectionWithLine` (`CSceneCollisionManager::getCollisionPoint`) | 1 |
-| `CVector3d::setLength` (`CSceneCollisionManager::collideWithWorld`) | 1 |
+Three units still hold 9 out-of-line `__builtin_trap()` stubs, and two headers hold one each (`CBspTree::BspPoly::operator==`, `CSceneManager::DefaultNodeEntry`'s constructor). Eight of the nine compile with Irrlicht's body; each is kept stubbed because restoring it costs an existing match:
+
+| Stub | What restoring it costs |
+| --- | --- |
+| `CAnimatedMeshSceneNode::getMS3DJointNode` | four bytes of the unit's 224-byte `.gcc_except_table`, whatever the definition's position; it would add two exact functions |
+| seven `CXFileReader` parsers (`parseDataObjectMaterial`, `MeshMaterialList`, `SkinMeshHeader`, `SkinWeights`, `Mesh`, `Frame`, `parseDataObject`) | together, the `TArray<SXAnimationSet>` destructor drops to 99.92%, one scratch register in its epilogue; alone, each lowers `getNextTokenAsString`, `readHeadOfDataObject` or an inferred extent; a definition-order search plateaued |
+| `createSceneManager` | does not compile: it constructs a class still abstract in daisy |
 
 So the platform work is, in order:
 
-1. Re-seed the eight units with stubs, so the 21 bodies that compile now replace their stubs, and check each unit and the whole build; a compiling body is not yet a matching one.
-2. Fix the shared causes above, smallest first: the `ox::algo` include, the narrowing casts, and the three `ox` core members, each by translation at the call site where completing the shared header would shift other units' declaration counts. The abstract class and the changed `ISceneManager` and driver signatures are where class reconciliation from Harvest's reference data starts: build each class's header from Irrlicht's declaration aligned against `reference/1.18-mac-i386/functions.csv` (6,406 compiled methods with demangled signatures), `reference/1.18-mac-i386/vtables.csv` (354 virtual tables slot by slot) and the field offsets `layout` and `harvest-oracle`'s `accesses` read from the original's memory accesses.
-3. Diagnose the 20 inexact functions left in the units of banteg/harvest#37 with `phase`, `layout` and the emitted inline copies before more body search: definition-order moves and single rewrites did not make `CMeshSceneNode::render` exact, and the camera transforms and text-node destructors cannot be fixed by placement, since Harvest's matcher places a known function at its recorded address whatever the section placement says.
+1. Find the context the original gave the units where a shared callee stays out of line: in the daisy GUI units, `IGUIElement::removeChild` and `bringToFront` are inexact in all 23 units that emit them because the original calls a weak `std::list::_M_erase` copy that GCC 4.4's early inliner keeps only while another caller still needs it. The knowledge base records what has been ruled out.
+2. Name the compiler pass behind the remaining register-allocation and instruction-selection differences in large near-exact functions (Roadmap step 2), where body searches have stopped paying.
+3. Reconcile the abstract class behind `createSceneManager` from Harvest's reference data: build its header from Irrlicht's declaration aligned against `reference/1.18-mac-i386/functions.csv`, `reference/1.18-mac-i386/vtables.csv` and the field offsets `layout` reads from the original's memory accesses.
 
 ## Development
 
