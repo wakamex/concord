@@ -97,23 +97,29 @@ def listing_instructions(text: str, symbol: str, start: int, code: bytes) -> dic
 
 
 def histories(directory: Path, symbol: str, wanted: set[int]) -> dict[int, list[dict]]:
+    return histories_many(directory, {symbol: wanted})[symbol]
+
+
+def histories_many(directory: Path, wanted: dict[str, set[int]]) -> dict[str, dict[int, list[dict]]]:
     paths = sorted((p for p in directory.iterdir() if PASS.search(p.name)), key=lambda p: int(PASS.search(p.name)[1]))
-    history = {uid: [] for uid in wanted}
-    previous = {}
+    history = {symbol: {uid: [] for uid in ids} for symbol, ids in wanted.items()}
+    previous = {symbol: {} for symbol in wanted}
     for path in paths:
         number, name = PASS.search(path.name).groups()
         text = path.read_text(errors="replace")
-        rows = rtl_function(text, symbol)
-        common = rows.keys() & previous.keys()
-        before_order = [uid for uid in previous if uid in common]
-        after_order = [uid for uid in rows if uid in common]
-        moved = {a for a, b in zip(before_order, after_order, strict=True) if a != b}
-        for uid in wanted & rows.keys():
-            row = {**rows[uid], 'order_changed': uid in moved}
-            if history[uid] and row['pattern'] == history[uid][-1]['pattern'] and not row['order_changed']:
-                continue
-            history[uid].append({"pass": name, "pass_number": int(number), "dump": str(path), **row})
-        previous = rows
+        for symbol, ids in wanted.items():
+            rows = rtl_function(text, symbol)
+            common = rows.keys() & previous[symbol].keys()
+            before_order = [uid for uid in previous[symbol] if uid in common]
+            after_order = [uid for uid in rows if uid in common]
+            moved = {a for a, b in zip(before_order, after_order, strict=True) if a != b}
+            for uid in ids & rows.keys():
+                row = {**rows[uid], 'order_changed': uid in moved}
+                steps = history[symbol][uid]
+                if steps and row['pattern'] == steps[-1]['pattern'] and not row['order_changed']:
+                    continue
+                steps.append({"pass": name, "pass_number": int(number), "dump": str(path), **row})
+            previous[symbol] = rows
     return history
 
 
@@ -151,22 +157,39 @@ def source_construct(root: Path, location: dict | None) -> dict | None:
     return result
 
 
-def analyze(harvest: Harvest, unit: str, symbol: str, directory: Path, *, limit: int = 8, offsets: set[int] | None = None) -> dict:
-    canonical = read_function(harvest.objects / 'base' / f'{harvest.slug(unit)}.o', symbol)
-    traced = read_function(directory / 'trace.o', symbol)
-    if canonical.code != traced.code or canonical.relocations != traced.relocations:
-        raise ValueError('diagnostic flags changed this function; its dumps cannot explain the canonical compile')
+def analyze(harvest: Harvest, unit: str, symbol: str, directory: Path, *, limit: int | None = 8, offsets: set[int] | None = None) -> dict:
+    return analyze_many(harvest, unit, [symbol], directory, limit=limit, offsets=offsets)[0]
+
+
+def analyze_many(harvest: Harvest, unit: str, symbols: list[str], directory: Path, *, limit: int | None = None, offsets: set[int] | None = None) -> list[dict]:
+    contexts = {}
+    for symbol in symbols:
+        canonical = read_function(harvest.objects / 'base' / f'{harvest.slug(unit)}.o', symbol)
+        traced = read_function(directory / 'trace.o', symbol)
+        if canonical.code != traced.code or canonical.relocations != traced.relocations:
+            raise ValueError('diagnostic flags changed this function; its dumps cannot explain the canonical compile')
+        contexts[symbol] = (canonical, traced)
     metadata = json.loads((directory / 'metadata.json').read_text())
     verify_inputs(harvest.root, unit, metadata)
     for name, digest in metadata.get('artifacts', {}).items():
         path = directory / name
         if path.parent != directory or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise ValueError(f'dump artifact changed: {name}')
-    verdict = next(v for v in harvest.verdicts(unit) if v.symbol == symbol)
-    difference = harvest.diff(verdict)
-    mapping = listing_instructions((directory / 'listing.txt').read_text(errors='replace'), symbol, traced.start, traced.code)
-    selected = [f for f in difference.findings if f.cause != Cause.INLINING and (offsets is None or f.offset in offsets)][:limit]
-    history = histories(directory, symbol, {mapping[f.candidate]['uid'] for f in selected if f.candidate in mapping})
+    listing = (directory / 'listing.txt').read_text(errors='replace')
+    mappings, selections, wanted = {}, {}, {}
+    verdicts = {v.symbol: v for v in harvest.verdicts(unit)}
+    for symbol, (_, traced) in contexts.items():
+        difference = harvest.diff(verdicts[symbol])
+        mapping = listing_instructions(listing, symbol, traced.start, traced.code)
+        selected = [f for f in difference.findings if f.cause != Cause.INLINING and (offsets is None or f.offset in offsets)][:limit]
+        mappings[symbol], selections[symbol] = mapping, selected
+        wanted[symbol] = {mapping[f.candidate]['uid'] for f in selected if f.candidate in mapping}
+    history = histories_many(directory, wanted)
+    return [_report(harvest, unit, symbol, directory, contexts[symbol][0], metadata,
+                    mappings[symbol], selections[symbol], history[symbol]) for symbol in symbols]
+
+
+def _report(harvest, unit, symbol, directory, canonical, metadata, mapping, selected, history):
     findings = []
     for f in selected:
         row = {"cause": f.cause.value, "target_offset": f.offset, "candidate_offset": f.candidate,

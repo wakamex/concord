@@ -15,6 +15,7 @@ from concord import (
     blockers,
     calls,
     causal,
+    census,
     destructors,
     inlines,
     knowledge,
@@ -292,6 +293,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_causal.add_argument("--offset", type=lambda value: int(value, 0), action="append", help="trace this target byte offset (repeatable, accepts 0x)")
     p_causal.add_argument("--save", type=Path, help="write structured findings and compiler metadata")
 
+    p_census = sub.add_parser("causal-census", help="rank source constructs behind near-exact functions")
+    p_census.add_argument("--harvest", type=Path, required=True)
+    p_census.add_argument("--min-score", type=float, default=97)
+    p_census.add_argument("--maximum", type=int, help="analyze at most this many functions, largest first")
+    p_census.add_argument("--save", type=Path, required=True)
+
+    p_trial = sub.add_parser("causal-trial", help="measure header rewrites at a traced source line")
+    p_trial.add_argument("--harvest", type=Path, required=True)
+    p_trial.add_argument("--header", required=True, help="checkout-relative header path, including src/")
+    p_trial.add_argument("--line", type=int, required=True)
+    p_trial.add_argument("--unit", action="append", help="measure these including units first (default: every including unit)")
+    p_trial.add_argument("--save", type=Path, required=True)
+
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_survey.add_argument(
@@ -344,6 +358,20 @@ def main(argv: list[str] | None = None) -> int:
             print(lines[0] if findings else lines[0] + ": no differences")
             for line in lines[1:]:
                 print(line)
+        return 0
+    if args.command == "causal-trial":
+        report = census.counterfactual(Harvest(args.harvest), args.header, args.line, args.save, args.unit)
+        for row in report['candidates']:
+            gained = sum(len(u.get('gained_exact', [])) for u in row['units'])
+            lost = sum(len(u.get('lost_exact', [])) for u in row['units'])
+            worse = sum(len(u.get('worse', [])) for u in row['units'])
+            print(f"{row['description']}: {gained} newly exact copies, {lost} lost, {worse} lower scores")
+        return 0
+    if args.command == "causal-census":
+        report = census.run(Harvest(args.harvest), args.save, args.min_score, args.maximum)
+        for row in report['constructs'][:20]:
+            print(f"{row['function_count']:4} functions {row['function_bytes']:8} bytes {row['path']}:{row['line']} {row['text']}")
+        print(f"{report['analyzed_functions']}/{report['selected_functions']} functions analyzed; {len(report['failures'])} failures")
         return 0
     if args.command == "causal":
         harvest = Harvest(args.harvest)

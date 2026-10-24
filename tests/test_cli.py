@@ -10,6 +10,16 @@ from concord.cli import build_parser, main
 
 
 class CliTest(unittest.TestCase):
+    def test_causal_census_routes_selection_and_output(self):
+        from pathlib import Path
+        from unittest import mock
+
+        report = {'constructs': [], 'analyzed_functions': 0, 'selected_functions': 0, 'failures': []}
+        with mock.patch('concord.cli.Harvest') as harvest, mock.patch('concord.cli.census.run', return_value=report) as run:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['causal-census', '--harvest', '/root', '--maximum', '20', '--save', '/tmp/result.json']), 0)
+            run.assert_called_once_with(harvest.return_value, Path('/tmp/result.json'), 97, 20)
+
     def test_causal_reuses_dumps_and_saves_structured_findings(self):
         import json
         import tempfile
