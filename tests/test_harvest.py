@@ -5,8 +5,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
-from concord.harvest import BUILD, FunctionVerdict, Harvest
+from concord.harvest import BUILD, FunctionVerdict, Harvest, _stop_drivers
 from concord.model import Cause
 
 APPEND = "_ZN2ox4core7CStringIcE6appendERKS2_"
@@ -53,6 +54,17 @@ class UnknownReferences(unittest.TestCase):
         self.assertEqual(self.harvest.clean(3600), (1, 10))
         self.assertFalse(old.exists())
         self.assertTrue(new.exists())
+
+    def test_stop_forgets_driver_before_termination_finishes(self):
+        process = Mock()
+        process.poll.return_value = None
+        drivers = {self.root: process}
+        process.terminate.side_effect = lambda: self.assertEqual(drivers, {})
+        with patch('concord.harvest._drivers', drivers):
+            _stop_drivers()
+            _stop_drivers()
+        process.stdin.close.assert_called_once()
+        process.terminate.assert_called_once()
 
 
 if __name__ == "__main__":

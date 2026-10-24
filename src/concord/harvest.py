@@ -73,7 +73,9 @@ _drivers: dict[Path, subprocess.Popen] = {}  # one driver per checkout, for the 
 
 @atexit.register
 def _stop_drivers() -> None:
-    for process in _drivers.values():
+    processes = list(_drivers.values())
+    _drivers.clear()
+    for process in processes:
         if process.poll() is None:
             process.stdin.close()
             process.terminate()
