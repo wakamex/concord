@@ -228,3 +228,14 @@ limits = "Exclude ambiguous callers and unsupported relocation widths. Check lea
 evidence = [
   { function = "daisy::scene::CBspTree", note = "eight retained address claims, four from uniquely located callers, make eleven additional functions exact, including planeFromPoly, deleteTree, createStats, destructors and constructors; three other proven addresses are rejected because they move the existing comparison at 0x5d0710 from 3.9518716 to zero" },
 ]
+
+[[idiom]]
+id = "restored-bodies-destructor-context"
+cause = "inlining"
+status = "confirmed"
+symptom = "a seeded unit has oversized destructors and omits template copies while other methods remain trap stubs"
+fix = "Restore compiling ancestor bodies in place before changing shared destructor definitions. Measure the emitted destructor sizes and called template copies again, with proven function addresses learned on unchanged source before scoring the restoration."
+limits = "Restoring bodies can change inlining without a header change, but does not settle every destructor. CTerrainSceneNode D1/D2 remain 654 bytes against 345, and ITerrainSceneNode D0 remains 373 against 25. Declaration-only base destructors reduce some sizes but lose existing matches. A 128-candidate definition-order search with two restarts finds no further gain."
+evidence = [
+  { function = "daisy::scene::CTerrainSceneNode", note = "Restoring OnPreRender, createIndexBuffers, load and getIdealHeightMap makes the deleting destructor 661 bytes and exact, and ITerrainSceneNode D1 12 bytes and exact. Called vector template copies return. Whole-build scoring against the addressed unchanged-source baseline gives 19 newly matched functions, no worse functions, and 65 additional matched data bytes." },
+]
