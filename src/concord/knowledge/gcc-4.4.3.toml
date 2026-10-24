@@ -194,3 +194,25 @@ evidence = [
   { function = "ox::TArray<daisy::scene::CSceneManager::MeshEntry> destructor", note = "Two aligned calls in CSceneManager agree on 0x4c8770, whose target extent and compiled size are both 69 bytes." },
   { function = "ox::TArray<daisy::scene::CXFileReader::SXAnimationSet> destructor", note = "An aligned constructor call agrees on 0x599510, whose target extent and compiled size are both 168 bytes. Keeping these three destructor claims gains three exact functions with no function-score or data-byte losses." },
 ]
+
+[[idiom]]
+id = "translated-string-reference"
+cause = "reference"
+status = "confirmed"
+symptom = "a near-exact ancestor function refers to a merged string that the target does not contain"
+fix = "Preserve string literal tokens during translation. For an existing translated unit, restore corresponding ancestor literals only when compiling them makes the complete function exact and preserves the other functions. Place any separately unplaced called template sections before verifying the repair."
+limits = "An ancestor can have different diagnostics from the target. Literal correspondence is a candidate generator, and target byte equality is the acceptance rule. Whole-build scoring must also preserve all matched functions and data bytes."
+evidence = [
+  { function = "daisy::scene::CStaticMeshOBJ::loadFile", note = "concord place --restore-literals recovers the target diagnostic containing s32 file, previously translated to int file, and places vector<CVector2d<float>>::_M_insert_aux; the unit reaches 50/50 exact with no whole-build regression" },
+]
+
+[[idiom]]
+id = "identical-constructor-aliases"
+cause = "reference"
+status = "confirmed"
+symptom = "a caller differs only in a constructor destination even though the complete-object and base-object constructor bodies both match exactly"
+fix = "Check aligned direct calls against both constructor address claims. Exchange C1 and C2 claims when the compiled bodies and their relocation targets are identical and every observed call agrees with the exchange."
+limits = "Both copies must already match target function extents, their addresses must have no other claimant, and whole-build scores must stay unchanged or improve. Constructor bodies that differ are excluded."
+evidence = [
+  { function = "daisy::scene::CSceneManager::addAnimatedMeshSceneNode and addParticleSystemSceneNode", note = "concord learn-calls --constructor-aliases corrects exchanged C1/C2 addresses for CAnimatedMeshSceneNode and CParticleSystemSceneNode; both callers become exact with no whole-build regression" },
+]
