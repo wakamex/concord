@@ -2,9 +2,16 @@
 
 import unittest
 
-from concord.place import literal_candidate
+from concord.place import candidate_claims, literal_candidate
 
 SYMBOL = '_ZN1A1fEv'
+
+
+class CandidateClaims(unittest.TestCase):
+    def test_existing_claims_keep_evidence_and_new_claims_name_the_object(self):
+        rows = [{"symbol": "old", "evidence": "mac:unit"}, {"symbol": "new", "evidence": "reloc:unit:caller"}]
+        self.assertEqual(candidate_claims({"old"}, rows, "abc123"), {"new": "candidate-object:abc123:reloc:unit:caller"})
+        self.assertEqual(candidate_claims({"old", "new"}, rows, "abc123"), {})
 
 
 class Literals(unittest.TestCase):

@@ -10,6 +10,16 @@ from concord.cli import build_parser, main
 
 
 class CliTest(unittest.TestCase):
+    def test_destructors_reports_overlays_without_an_apply_flag(self):
+        from unittest import mock
+
+        report = {"variants": {"baseline": {"exact": 3, "worse": {}, "error": "", "destructor_sizes": {}}}}
+        with mock.patch("concord.cli.Harvest") as harvest, mock.patch("concord.cli.destructors.diagnose", return_value=report) as diagnose:
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(["destructors", "--harvest", "/tmp/root", "--unit", "a.cpp", "--header", "a.h", "--class", "A"]), 0)
+            diagnose.assert_called_once_with(harvest.return_value, "a.cpp", "a.h", "A")
+            self.assertIn("3 exact, 0 worse", output.getvalue())
+
     def test_explicit_permute_target_respects_skip_logged(self):
         import json
         import tempfile

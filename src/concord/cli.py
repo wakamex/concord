@@ -14,6 +14,7 @@ from concord import (
     bench,
     blockers,
     calls,
+    destructors,
     inlines,
     knowledge,
     layout,
@@ -242,6 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_place.add_argument("units", nargs="+", help="units to refresh")
     p_place.add_argument("--restore-literals", action="store_true", help="try ancestor string literals, keeping only exact target matches")
     p_place.add_argument("--save", type=Path, help="save placement results as JSON")
+    p_place.add_argument("--object", type=Path, help="learn addresses from one compiled candidate, then rebuild unchanged source")
 
     p_clean = sub.add_parser("clean", help="remove concord's old work directories from the Harvest checkout")
     p_clean.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
@@ -256,6 +258,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_inlines.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_inlines.add_argument("units", nargs="*", help="units to check (default: every unit hv match built)")
     p_inlines.add_argument("--save", type=Path, help="write every unit's findings as JSON")
+
+    p_destructors = sub.add_parser("destructors", help="compare destructor definition forms as read-only header overlays")
+    p_destructors.add_argument("--harvest", type=Path, required=True)
+    p_destructors.add_argument("--unit", required=True)
+    p_destructors.add_argument("--header", required=True)
+    p_destructors.add_argument("--class", dest="cls", required=True)
+    p_destructors.add_argument("--save", type=Path)
 
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
@@ -308,6 +317,17 @@ def main(argv: list[str] | None = None) -> int:
             for line in lines[1:]:
                 print(line)
         return 0
+    if args.command == "destructors":
+        report = destructors.diagnose(Harvest(args.harvest), args.unit, args.header, args.cls)
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        for name, row in report["variants"].items():
+            print(f"{name}: {row['exact']} exact, {len(row['worse'])} worse" + (f"; {row['error']}" if row["error"] else ""))
+            for symbol, size in row["destructor_sizes"].items():
+                before = report["variants"]["baseline"]["destructor_sizes"].get(symbol)
+                if size != before:
+                    print(f"  {symbol}: {before} -> {size} bytes")
+        return 0
     if args.command == "blockers":
         return _blockers(args)
     if args.command == "rename":
@@ -332,12 +352,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "place":
         harvest = Harvest(args.harvest)
-        placed = [place.place(harvest, unit, args.restore_literals) for unit in args.units]
+        if args.object and (len(args.units) != 1 or args.restore_literals):
+            parser.error("--object needs exactly one unit and cannot restore literals")
+        placed = ([place.learn_object(harvest, args.units[0], args.object)] if args.object
+                  else [place.place(harvest, unit, args.restore_literals) for unit in args.units])
         if args.save:
             args.save.write_text(json.dumps(placed, indent=2) + "\n")
         for row in placed:
             print(row["output"].splitlines()[0])
-            print(f"  {len(row['sections'])} called sections verified; {len(row['literals'])} literal repairs exact")
+            if args.object:
+                print(f"  {len(row['learned'])} addresses learned from candidate; source unchanged")
+            else:
+                print(f"  {len(row['sections'])} called sections verified; {len(row['literals'])} literal repairs exact")
         return 0
     if args.command == "bench":
         return _bench(args)

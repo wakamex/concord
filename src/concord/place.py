@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
 import json
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -107,3 +110,51 @@ def place(harvest: Harvest, unit: str, literals: bool = False) -> dict:
     repaired = restore_literals(harvest, unit) if literals else []
     output = _match(root, unit, learn=True)
     return {"unit": unit, "sections": sections, "literals": repaired, "output": output}
+
+
+def candidate_claims(before: set[str], rows: list[dict], digest: str) -> dict[str, str]:
+    """Evidence for new claims only; existing claims keep their provenance."""
+    return {row["symbol"]: f"candidate-object:{digest}:{row['evidence']}" for row in rows if row["symbol"] not in before}
+
+
+def learn_object(harvest: Harvest, unit: str, obj: Path) -> dict:
+    """Let Harvest learn addresses from a compiled candidate, then rebuild the
+    unchanged current source. This separates naming from a body restoration;
+    the named addresses still require target byte or aligned-reference proof.
+    """
+    root = harvest.root
+    path = root / "src" / unit
+    source = path.read_bytes()
+    table = root / "config" / BUILD / "symbols.tsv"
+    with table.open() as stream:
+        before = {row["symbol"] for row in csv.DictReader(stream, delimiter="\t")}
+    obj = obj.resolve()
+    digest = hashlib.sha256(obj.read_bytes()).hexdigest()
+    done = subprocess.run(
+        ["uv", "--no-config", "run", "--locked", "hv", "match", unit, "--object", str(obj), "--learn"],
+        cwd=root, capture_output=True, text=True, check=False,
+    )
+    if done.returncode not in (0, 1):
+        raise RuntimeError(done.stdout + done.stderr)
+    with table.open() as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+    evidence = candidate_claims(before, rows, digest)
+    if evidence:
+        # Use the owning project's symbol writer; do not rewrite TSV text.
+        script = """import json,sys
+from hv import symbols
+build=sys.argv[1]
+evidence=json.load(sys.stdin)
+rows=symbols.load(build)
+symbols.save(build,[symbols.Symbol(s.address,s.size,s.name,evidence.get(s.name,s.evidence)) for s in rows])
+"""
+        subprocess.run(["uv", "--no-config", "run", "--locked", "python", "-c", script, BUILD],
+                       cwd=root, input=json.dumps(evidence), text=True, check=True, capture_output=True)
+    if path.read_bytes() != source:
+        raise RuntimeError(f"{unit}: source changed during object learning")
+    output = _match(root, unit, learn=True)
+    if path.read_bytes() != source:
+        raise RuntimeError(f"{unit}: canonical matching changed source")
+    return {"unit": unit, "object_sha256": digest, "source_sha256": hashlib.sha256(source).hexdigest(),
+            "learned": {row["symbol"]: {**row, "evidence": evidence[row["symbol"]]} for row in rows if row["symbol"] in evidence},
+            "output": output}
