@@ -55,9 +55,20 @@ def rank(root: Path, reports: list[dict]) -> dict:
                 continue
             traced.add(site)
             path = source_path(root, source['path'])
-            key = (path, source['line'])
-            row = constructs.setdefault(key, {'path': path, 'line': source['line'], 'text': source.get('text', ''),
+            context = finding.get('context', {})
+            classification = context.get('classification', 'source')
+            original = {'path': path, 'line': source['line'], **context}
+            if classification == 'caller-context':
+                path = 'src/' + function['unit']
+                key = (path, function['symbol'])
+                line, text = 0, function['symbol']
+            else:
+                key = (path, source['line'])
+                line, text = source['line'], source.get('text', '')
+            row = constructs.setdefault(key, {'path': path, 'line': line, 'text': text, 'classification': classification, 'header_evidence': [],
                                                'functions': {}, 'sites': set(), 'passes': set(), 'causes': set()})
+            if context and original not in row['header_evidence']:
+                row['header_evidence'].append(original)
             row['functions'][address] = function
             row['sites'].add(site)
             row['causes'].add(finding['cause'])
@@ -72,7 +83,11 @@ def rank(root: Path, reports: list[dict]) -> dict:
                      'header': Path(row['path']).suffix in ('.h', '.hpp', '.tcc')})
     rows.sort(key=lambda r: (-r['function_count'], -r['function_bytes'], r['path'], r['line']))
     return {'schema': 'concord.causal-census.v1', 'selected_functions': len(selected),
-            'traced_sites': len(traced), 'unresolved_sites': len(unresolved - traced), 'constructs': rows}
+            'traced_sites': len(traced), 'unresolved_sites': len(unresolved - traced),
+            'constructs': [r for r in rows if r['classification'] != 'header-unverified'],
+            'caller_context': [r for r in rows if r['classification'] == 'caller-context'],
+            'header_candidates': [r for r in rows if r['classification'] == 'header-candidate'],
+            'unverified_headers': [r for r in rows if r['classification'] == 'header-unverified']}
 
 
 def groups(functions: list[dict]) -> dict[str, list[dict]]:
@@ -127,6 +142,19 @@ def run(harvest, save: Path, minimum: float = 97, maximum: int | None = None, re
         result = {**rank(harvest.root, reports), 'minimum_score': minimum, 'selected_functions': len(functions),
                   'analyzed_functions': len(reports), 'failures': failures, 'units': details}
         save.write_text(json.dumps(result, indent=2) + '\n')
+    from concord.copy_context import annotate, copy_index, header_symbols
+
+    owners = defaultdict(set)
+    paths = {source_path(harvest.root, f['source']['path']) for report in reports for f in report['findings']
+             if f.get('source') and Path(f['source']['path']).suffix in ('.h', '.hpp', '.tcc')}
+    for detail in details:
+        for key, names in header_symbols(harvest.root, Path(detail['dumps']) / 'trace.o', paths).items():
+            owners[key].update(names)
+    annotate(harvest.root, reports, owners, copy_index(harvest.reports))
+    for detail in details:
+        Path(detail['report']).write_text(json.dumps([r for r in reports if r['unit'] == detail['unit']], indent=2) + '\n')
+    result.update(rank(harvest.root, reports), selected_functions=len(functions))
+    save.write_text(json.dumps(result, indent=2) + '\n')
     return result
 
 
