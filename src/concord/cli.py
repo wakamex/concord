@@ -42,6 +42,7 @@ from concord.seed import (
     helper_taken,
     keep_port_linking,
     replace_in_port,
+    restore_vtable_overrides,
     seed,
 )
 from concord.unguard import definitions, irrlicht_definitions, unguard, without_guard
@@ -253,6 +254,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_vtables = sub.add_parser("vtables", help="compare every compiled vtable with the target's, slot by slot")
     p_vtables.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
 
+    p_overrides = sub.add_parser(
+        "overrides", help="declare and define the members a unit's Mac vtables prove its classes had"
+    )
+    p_overrides.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_overrides.add_argument("units", nargs="+", help="units to restore, as source paths or report slugs")
+    p_overrides.add_argument("--apply", action="store_true", help="write the verified declarations and definitions")
+
     p_inlines = sub.add_parser(
         "inlines", help="compare a unit's out-of-line inline and template copies with the target's"
     )
@@ -305,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
         return _scores(parser, args)
     if args.command == "vtables":
         return _vtables(args)
+    if args.command == "overrides":
+        return _overrides(args)
     if args.command == "inlines":
         harvest = Harvest(args.harvest)
         units = args.units or sorted(p.stem for p in harvest.reports.glob("*.json"))
@@ -314,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         for result in reports:
             lines = inlines.show(result)
             findings = len(lines) - 1
-            print(lines[0] if findings else lines[0] + " — no differences")
+            print(lines[0] if findings else lines[0] + ": no differences")
             for line in lines[1:]:
                 print(line)
         return 0
@@ -932,6 +942,14 @@ def _sweep(args: argparse.Namespace) -> int:
                 line += " (applied)"
         print(line, flush=True)
     print(f"{gained} functions gained across {len(units)} units")
+    return 0
+
+
+def _overrides(args: argparse.Namespace) -> int:
+    harvest = Harvest(args.harvest)
+    for unit in args.units:
+        for line in restore_vtable_overrides(harvest, unit, apply=args.apply):
+            print(f"{unit}: {line}")
     return 0
 
 

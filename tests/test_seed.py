@@ -985,3 +985,79 @@ def _index_cache_clear():
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VtableOverrides(unittest.TestCase):
+    """A class gets the member its Mac vtable credits to it that it does not declare."""
+
+    HEADER = """namespace daisy
+{
+namespace scene
+{
+	class CCameraMayaSceneNode : public CCameraSceneNode
+	{
+	public:
+
+		//! constructor
+		CCameraMayaSceneNode(ISceneNode* parent, ISceneManager* mgr, int id);
+
+		//! destructor
+		virtual ~CCameraMayaSceneNode();
+
+		//! onPostRender is called just after rendering the whole scene.
+		virtual void OnPostRender(unsigned int timeMs);
+
+	private:
+
+		void animate();
+		float currentZoom;
+	};
+
+} // end namespace
+} // end namespace
+"""
+    VTABLES = """vtable,index,value,target
+_ZTVN5daisy5scene20CCameraMayaSceneNodeE,2,0x1,_ZN5daisy5scene20CCameraMayaSceneNodeD1Ev
+_ZTVN5daisy5scene20CCameraMayaSceneNodeE,5,0x2,_ZN5daisy5scene20CCameraMayaSceneNode12OnPostRenderEj
+_ZTVN5daisy5scene20CCameraMayaSceneNodeE,29,0x3,_ZN5daisy5scene20CCameraMayaSceneNode11setPositionERKN2ox4core9CVector3dIfEE
+_ZTVN5daisy5scene20CCameraMayaSceneNodeE,30,0x4,_ZNK2ox5scene10ISceneNode19getAbsolutePositionEv
+"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / "reference" / "1.18-mac-i386").mkdir(parents=True)
+        (self.root / "reference" / "1.18-mac-i386" / "vtables.csv").write_text(self.VTABLES)
+        (self.root / "src" / "daisy" / "scene").mkdir(parents=True)
+        (self.root / "src" / "daisy" / "scene" / "CCameraMayaSceneNode.h").write_text(self.HEADER)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_vtable_member_the_class_lacks_is_missing(self):
+        from concord.seed import missing_vtable_overrides
+        found = missing_vtable_overrides(self.root, "daisy/scene/CCameraMayaSceneNode.h")
+        self.assertEqual(
+            found,
+            {"CCameraMayaSceneNode": {"setPosition": "_ZN5daisy5scene20CCameraMayaSceneNode11setPositionERKN2ox4core9CVector3dIfEE"}},
+        )
+        # declared members and a base's member are not missing
+        header = self.root / "src" / "daisy" / "scene" / "CCameraMayaSceneNode.h"
+        text = header.read_text().replace(
+            "virtual void OnPostRender(unsigned int timeMs);",
+            "virtual void OnPostRender(unsigned int timeMs);\n\t\tvirtual void setPosition(const ox::core::CVector3d<float>& newpos);",
+        )
+        header.write_text(text)
+        self.assertEqual(missing_vtable_overrides(self.root, "daisy/scene/CCameraMayaSceneNode.h"), {})
+
+    def test_the_declaration_is_inserted_after_the_last_virtual(self):
+        from concord.seed import _insert_declaration
+        out = _insert_declaration(
+            self.HEADER, "CCameraMayaSceneNode",
+            "//! sets the position of the node\n\t\tvirtual void setPosition(const ox::core::CVector3d<float>& newpos);",
+        )
+        self.assertIn(
+            "virtual void OnPostRender(unsigned int timeMs);\n\n\t\t//! sets the position of the node\n"
+            "\t\tvirtual void setPosition(const ox::core::CVector3d<float>& newpos);\n\n\tprivate:",
+            out,
+        )

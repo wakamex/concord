@@ -14,6 +14,7 @@ object's functions, preferring the run nearest the unit's placed inline copies.
 from __future__ import annotations
 
 import csv
+import json
 import os
 import re
 import subprocess
@@ -1029,7 +1030,7 @@ def _interface_header(root: Path, name: str) -> str | None:
 
 
 def _header_defined(root: Path, cls: str, member: str, relative: str) -> bool:
-    """Whether the Mac symbols record `cls::member` as compiled from `relative` —
+    """Whether the Mac symbols record `cls::member` as compiled from `relative`:
     an inline in the recovered header, as CSceneManager::removeAllMeshes was."""
     functions = root / "reference" / "1.18-mac-i386" / "functions.csv"
     if not functions.exists():
@@ -1511,6 +1512,183 @@ def _ios_init_object(root: Path, address: int) -> int | None:
         bss = ELFFile(stream).get_section_by_name(".bss")
         inside = bss is not None and bss["sh_addr"] <= value < bss["sh_addr"] + bss["sh_size"]
     return value if inside else None
+
+
+def _companion_header(root: Path, unit: str) -> str | None:
+    """The header a unit includes under its own name, as a path under src/."""
+    text = (root / "src" / unit).read_text()
+    found = re.search(r'^#include "([^"]*' + re.escape(Path(unit).stem) + r'\.h)"', text, re.MULTILINE)
+    if found is None:
+        return None
+    local = (Path(unit).parent / Path(found[1]).name).as_posix()
+    if (root / "src" / local).exists():
+        return local
+    hits = [p.relative_to(root / "src").as_posix() for p in (root / "src").rglob(Path(found[1]).name)]
+    return hits[0] if len(hits) == 1 else None
+
+
+def missing_vtable_overrides(root: Path, header: str) -> dict[str, dict[str, str]]:
+    """Members the Mac vtables credit to a class in `header` that the class does
+    not declare, as {class: {member: symbol}}. A vtable slot naming a member of
+    the class itself (`_ZN<class>len(member)` under the table's `_ZTVN<class>E`)
+    is a virtual the class overrode; `declare_missing_overrides` cannot see it,
+    since inheriting a non-pure virtual raises no compile error."""
+    path, rows = root / "src" / header, root / "reference" / "1.18-mac-i386" / "vtables.csv"
+    if not path.exists() or not rows.exists():
+        return {}
+    text = path.read_text()
+    with rows.open(newline="") as stream:
+        vtable_rows = list(csv.DictReader(stream))
+    missing = {}
+    for cls in re.finditer(r"class\s+(\w+)\s*:\s*[^{;]+\{", text):
+        name = cls[1]
+        body = text[cls.end() : _brace_end(text, cls.end() - 1)]
+        for row in vtable_rows:
+            vtable, symbol = row["vtable"], row["target"]
+            if not (vtable.startswith("_ZTVN") and vtable.endswith(f"{len(name)}{name}E")):
+                continue
+            owner = vtable[5:-1]  # inside _ZTVN...E, ending with the class's name
+            found = re.match("_ZN" + re.escape(owner) + r"(\d+)", symbol or "")
+            if found is None:
+                continue
+            member = symbol[found.end() : found.end() + int(found[1])]
+            if not re.search(r"\b" + re.escape(member) + r"\s*\(", body):
+                missing.setdefault(name, {})[member] = symbol
+    return missing
+
+
+def _member_declaration(translation: str, cls: str, member: str) -> str | None:
+    """The declaration for `cls::member` from a translated class body, with the
+    comment lines above it, or None when the translation does not declare it."""
+    start = re.search(r"class\s+" + re.escape(cls) + r"\s*:\s*[^{;]+\{", translation)
+    if start is None:
+        return None
+    body = translation[start.end() : _brace_end(translation, start.end() - 1)]
+    decl = re.search(
+        r"^[ \t]*virtual\s+[^;{}\n]*?\b" + re.escape(member) + r"\s*\([^;{}\n]*\)\s*(?:const\s*)?[;{][^}\n]*\}?[ \t]*$",
+        body,
+        re.MULTILINE,
+    )
+    if decl is None:
+        return None
+    at = decl.start()
+    while True:  # walk back over the comment lines directly above it
+        head = body[:at].rstrip("\n")
+        line = head[head.rfind("\n") + 1 :]
+        if not line.lstrip().startswith("//"):
+            break
+        at = head.rfind("\n") + 1
+    return body[at : decl.end()].strip("\n")
+
+
+def _member_definition(translation: bytes, cls: str, member: str) -> bytes | None:
+    """The `cls::member` function definition from a translated unit, with the
+    comment lines above it, or None."""
+    from concord.blockers import _definitions
+
+    for key, node in _definitions(translation).items():
+        if key.split("(")[0] != cls + "::" + member:
+            continue
+        start = node.start_byte
+        head = translation[:start]
+        while True:
+            line = head.rstrip(b"\n").rpartition(b"\n")[2]
+            if not line.strip().startswith(b"//"):
+                break
+            start -= len(line) + 1
+            head = translation[:start]
+        return translation[start : node.end_byte]
+    return None
+
+
+def _insert_declaration(text: str, cls: str, declaration: str) -> str | None:
+    """The header with `declaration` added after the class's last virtual
+    declaration, or at its end when it declares none."""
+    cls_m = re.search(r"class\s+" + re.escape(cls) + r"\s*:\s*[^{;]+\{", text)
+    if cls_m is None:
+        return None
+    end = _brace_end(text, cls_m.end() - 1)
+    body = text[cls_m.end() : end]
+    decls = list(re.finditer(r"^[ \t]*virtual\s+[^;{}\n]*;[ \t]*$", body, re.MULTILINE))
+    at = cls_m.end() + (decls[-1].end() if decls else len(body))
+    found = re.search(r"\n([ \t]+)virtual\b", body)
+    indent = found[1] if found else "\t\t"
+    block = "".join("\n" + indent + line.strip() for line in declaration.split("\n"))
+    return text[:at] + "\n" + block + text[at:]
+
+
+def _insert_definition(text: str, definition: bytes) -> bytes:
+    """The unit with `definition` appended before the closing namespaces."""
+    close = re.search(rb"\n\} // end namespace", text)
+    at = close.start() + 1 if close else len(text)
+    return text[:at] + definition.strip(b"\n") + b"\n\n" + text[at:]
+
+
+def restore_vtable_overrides(harvest: Harvest, unit: str, apply: bool = False) -> list[str]:
+    """Declare and define each member the Mac vtables credit to the unit's
+    companion class that its header lacks, taking the declaration and body from
+    the unit's Irrlicht translation. A candidate is kept only when it compiles,
+    the member matches its target exactly, and no still-emitted function scores
+    lower; an emitted copy the candidate no longer makes is reported, since the
+    whole-build score shows whether another unit's copy keeps its extent."""
+    root = harvest.root
+    unit = harvest.source(unit)
+    header = _companion_header(root, unit)
+    if header is None:
+        return []
+    missing = missing_vtable_overrides(root, header)
+    if not missing:
+        return []
+    htext = (root / "src" / header).read_text()
+    utext = (root / "src" / unit).read_bytes()
+    original_h = _original(root, Path(header).name)
+    original_u = _original(root, Path(unit).name)
+    if original_h is None or original_u is None:
+        return []
+    header_translation = translate(original_h.read_text(encoding="latin-1"))
+    raw = translate(original_u.read_text(encoding="latin-1"))
+    translation = qualify(root, name_helpers(raw, helper_taken(root, raw, unit)), unit).encode()
+    baseline = harvest.evaluate_overlays({"baseline": (unit, {})})["baseline"]
+    slug = harvest.slug(unit)
+    exact_elsewhere = {
+        row["symbol"]
+        for report in harvest.reports.glob("*.json")
+        if report.stem != slug
+        for section in json.loads(report.read_text())["sections"]
+        for row in section.get("functions", [])
+        if row.get("exact")
+    }
+    applied, notes = [], []
+    for cls, members in sorted(missing.items()):
+        for member, symbol in sorted(members.items()):
+            declaration = _member_declaration(header_translation, cls, member)
+            definition = _member_definition(translation, cls, member)
+            if declaration is None or definition is None:
+                notes.append(f"{cls}::{member}: the translation has no source for it")
+                continue
+            new_h = _insert_declaration(htext, cls, declaration)
+            new_u = _insert_definition(utext, definition)
+            if new_h is None:
+                continue
+            candidate = harvest.evaluate_overlays(
+                {"candidate": (unit, {"src/" + header: new_h.encode(), "src/" + unit: new_u})}
+            )["candidate"]
+            verdict = candidate.verdict(symbol)
+            emitted = {row["symbol"] for section in candidate.sections for row in section.get("functions", [])}
+            lost = sorted(
+                s for s in baseline.exact_functions() - candidate.exact_functions() - {symbol}
+                if s in emitted or s not in exact_elsewhere
+            )
+            worse = [s for s, f in baseline.fuzzy.items() if s != symbol and s in emitted and candidate.fuzzy.get(s, 0.0) < f]
+            if candidate.error or verdict is None or not verdict.row.get("exact") or lost or worse:
+                notes.append(f"{cls}::{member}: not kept (exact={bool(verdict and verdict.row.get('exact'))}, lost={lost[:3]}, worse={worse[:3]})")
+                continue
+            if apply:
+                (root / "src" / header).write_text(new_h)
+                (root / "src" / unit).write_bytes(new_u)
+                htext, utext = new_h, new_u
+            applied.append(f"{cls}::{member}")
+    return applied + notes
 
 
 def _place_called_sections(root: Path, unit: str) -> dict[str, int]:

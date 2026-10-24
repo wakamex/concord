@@ -66,7 +66,7 @@ INCLUDE = re.compile(rb'^#include [<"]([^>"]+)[>"][^\n]*\n', re.MULTILINE)
 def _missing_includes(current: bytes, irrlicht: bytes) -> bytes:
     """The #include lines of the qualified translation that the unit lacks, by file
     name: a relocated include (daisy/os.h for Irrlicht's os.h) satisfies it, so what
-    is added are the headers qualify picked for what the translated bodies call —
+    is added are the headers qualify picked for what the translated bodies call:
     ox/algo/CArrayFunctions.h for the ox::algo searches a restored body makes."""
     have = {line.group(1).rsplit(b"/", 1)[-1] for line in INCLUDE.finditer(current)}
     added = b""

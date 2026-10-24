@@ -153,6 +153,26 @@ def _translate(source: str, namespace: str) -> str:
         r"\1ISceneNode::setPosition(Pos);",
         source,
     )
+    # daisy's Maya camera overrides setPosition: the Mac vtable gives slot 29 of
+    # CCameraMayaSceneNode's table to CCameraMayaSceneNode::setPosition, where
+    # Irrlicht 0.7's class inherits ISceneNode's. The node reads the position as
+    # its distance from the target, so the override stores the length as the
+    # current zoom.
+    if re.search(r"class CCameraMayaSceneNode\s*:", source):
+        source = re.sub(
+            r"(\t\tvirtual void OnPostRender\(u32 timeMs\);\n)",
+            r"\1\n\t\t//! sets the position of the node; the maya camera reads it as its zoom\n"
+            r"\t\tvirtual void setPosition(const core::vector3df& newpos);\n",
+            source,
+        )
+    if "void CCameraMayaSceneNode::OnPostRender(" in source:
+        source = re.sub(
+            r"(CCameraMayaSceneNode::~CCameraMayaSceneNode\(\)\n\{\n\}\n)",
+            "\\1\n\n//! sets the position of the node\n"
+            "void CCameraMayaSceneNode::setPosition(const core::vector3df& newpos)\n"
+            "{\n\tcurrentZoom = newpos.getLength();\n}\n",
+            source,
+        )
     # Daisy's particle buffers reserve capacity without changing their size.
     # The target's reallocateBuffers calls vector::reserve and precedes the
     # simulation step; changing the shared array header affects other units.
