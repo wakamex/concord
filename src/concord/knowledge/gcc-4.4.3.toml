@@ -181,3 +181,16 @@ evidence = [
   { function = "daisy::video::CSpritePackage::removeAnimationState", note = "exact with 0, 31 and 62 extra declarations and at no other count up to 61; position of the declaration in the unit does not matter (start, middle or end of ox/core/CVector3d.h, or a free template after the class)" },
   { function = "daisy::video::CSpritePackage::addNewImage", note = "exact at every count except 5 and 30 modulo 31" },
 ]
+
+[[idiom]]
+id = "aligned-caller-symbol-learning"
+cause = "placement"
+status = "confirmed"
+symptom = "a template function or its callers stay inexact because the callee has no named target address, while its direct calls align inside inexact callers"
+fix = "Use concord learn-calls to collect target destinations from aligned direct calls in named callers. Require every aligned site to agree, every compiled copy to have the target extent's size, and no other symbol to claim the address. Save the result through Harvest's symbol writer with aligned-call evidence, then check whole-build scores before keeping it."
+limits = "A proven address can still lower scores elsewhere by changing the matcher's inferred layout. Naming CQ3LevelMesh's constructor at 0x570ef0 gained two exact constructor entries but cost two unnamed function scores; that claim was reverted. Compiled-size mismatches also prevent using this rule to pin the remaining Q3, terrain and scene-manager functions to their previously inferred comparison addresses."
+evidence = [
+  { function = "ox::TArray<ox::scene::ISceneNode*> destructor", note = "Eight aligned calls in CSceneManager agree on 0x4c7240, whose target extent and compiled size are both 18 bytes." },
+  { function = "ox::TArray<daisy::scene::CSceneManager::MeshEntry> destructor", note = "Two aligned calls in CSceneManager agree on 0x4c8770, whose target extent and compiled size are both 69 bytes." },
+  { function = "ox::TArray<daisy::scene::CXFileReader::SXAnimationSet> destructor", note = "An aligned constructor call agrees on 0x599510, whose target extent and compiled size are both 168 bytes. Keeping these three destructor claims gains three exact functions with no function-score or data-byte losses." },
+]
