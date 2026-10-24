@@ -35,6 +35,7 @@ import copy
 import json
 import multiprocessing
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -149,7 +150,8 @@ class Container:
 def compile_overlays(checkout: "Checkout", debug: bool, out: Path, items: dict[str, dict]) -> dict:
     """Compile every item in the kept container. Each lane copies the source roots
     once; each item first restores the files any earlier item of the lane
-    overlaid, then copies its own overlays in, then compiles its unit."""
+    overlaid, then copies its own overlays in, then compiles its unit. An item's
+    "flags" are extra compiler options, for measuring, never for the build."""
     compiler = checkout.compiler(debug)
     prefix = out.resolve().relative_to(compiler.out).as_posix()  # work files sit under the mounted root
     roots = {"src"} | {
@@ -163,7 +165,8 @@ def compile_overlays(checkout: "Checkout", debug: bool, out: Path, items: dict[s
         prepare += [
             f"cp {shlex.quote(compiler.container_path(Path(c)))} {shlex.quote(p)}" for p, c in item["overlays"].items()
         ]
-        command = shlex.join(compiler.compile_command(checkout.by_source[item["unit"]].path, f"{prefix}/{name}"))
+        variant = checkout.compiler(debug, tuple(item.get("flags", ())))
+        command = shlex.join(variant.compile_command(checkout.by_source[item["unit"]].path, f"{prefix}/{name}"))
         work[index % lanes].append(
             f"if {' && '.join(prepare) or 'true'}; then {command} 2> /out/{prefix}/{name}.err; "
             f"echo $? > /out/{prefix}/{name}.status; else echo 125 > /out/{prefix}/{name}.status; fi"
@@ -228,20 +231,27 @@ class Checkout:
 
     def __init__(self) -> None:
         self.stamp = None
-        self._compilers: dict[bool, toolchain.Compiler] = {}
+        self._compilers: dict[tuple[bool, tuple], toolchain.Compiler] = {}
         self._container: Container | None = None
 
-    def compiler(self, debug: bool = False) -> toolchain.Compiler:
+    def compiler(self, debug: bool = False, flags: tuple = ()) -> toolchain.Compiler:
         """The checkout's compiler over concord's work root, checked against the
-        pinned image once; with `debug`, a copy that adds -g."""
-        if False not in self._compilers:
+        pinned image once. `debug` adds -g and `flags` appends options for
+        measuring, such as --param name=value; only option flags that cannot
+        redirect inputs or outputs are allowed."""
+        if (False, ()) not in self._compilers:
             root = builds.ROOT / "build" / "concord"
-            self._compilers[False] = toolchain.Compiler(toolchain.load_flags(builds.canonical_build()), root)
-        if debug and True not in self._compilers:
-            plain = self._compilers[False]
-            self._compilers[True] = copy.copy(plain)
-            self._compilers[True].flags = {**plain.flags, "flags": [*plain.flags["flags"], "-g"]}
-        return self._compilers[debug]
+            self._compilers[False, ()] = toolchain.Compiler(toolchain.load_flags(builds.canonical_build()), root)
+        key = debug, flags
+        if key not in self._compilers:
+            for flag in flags:
+                if not re.fullmatch(r"(-f|-m|-O|-W|--?param)[^\s]*|[a-zA-Z0-9_-]+=[0-9]+", flag):
+                    raise ValueError(f"extra flags must be -f, -m, -O, -W or --param options: {flag}")
+            plain = self._compilers[False, ()]
+            variant = copy.copy(plain)
+            variant.flags = {**plain.flags, "flags": [*plain.flags["flags"], *(["-g"] if debug else []), *flags]}
+            self._compilers[key] = variant
+        return self._compilers[key]
 
     def container(self) -> Container:
         if self._container is None or self._container.process.poll() is not None:

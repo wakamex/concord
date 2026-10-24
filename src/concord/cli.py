@@ -173,6 +173,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_phase.add_argument("--phases", type=int, default=PHASES, help="extra declaration counts to try, from 0")
     p_phase.add_argument("--save", type=Path, help="write every function's exact phases to this JSON file")
 
+    p_limits = sub.add_parser(
+        "limits", help="compile the unchanged unit under lowered inliner limits and see what becomes exact"
+    )
+    p_limits.add_argument("units", nargs="*", help="units to scan (default: every unit hv match built)")
+    p_limits.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_limits.add_argument("--save", type=Path, help="write every function's exact settings to this JSON file")
+
     p_complete = sub.add_parser(
         "complete", help="add Irrlicht members to a partial ox core header, if the units including it are no worse"
     )
@@ -408,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
         return _unguard(args)
     if args.command == "phase":
         return _phase(args)
+    if args.command == "limits":
+        return _limits(args)
     parser.error(f"unknown command {args.command}")
 
 
@@ -850,6 +859,31 @@ def _phase(args: argparse.Namespace) -> int:
         if args.save:
             args.save.write_text(json.dumps({"phases": args.phases, "units": saved}, indent=1, sort_keys=True))
     print(f"{locked} locked functions (right body, wrong declaration count) and {witnesses} witnesses in {len(saved)} units")
+    return 0
+
+
+def _limits(args: argparse.Namespace) -> int:
+    from concord.limits import SETTINGS, scan
+
+    harvest = Harvest(args.harvest)
+    units = args.units or sorted(harvest.source(path.stem) for path in harvest.reports.glob("*.json"))
+    saved, throttled = {}, 0
+    for unit in units:
+        try:
+            result = scan(harvest, unit)
+        except (OSError, RuntimeError, KeyError) as error:
+            print(f"error      {unit}: {str(error).strip().splitlines()[-1]}")
+            continue
+        saved[result.unit] = {symbol: sorted(found) for symbol, found in result.exact_at.items()}
+        throttled += len(result.throttled)
+        counts = ", ".join(f"{name} {result.exact(name)}" for name in result.settings if name not in result.errors)
+        print(f"{result.unit}: exact {result.exact('baseline')}/{len(result.exact_at)} baseline ({counts})", flush=True)
+        names = subprocess.run(["c++filt"], input="\n".join(sorted(result.throttled)), capture_output=True, text=True, check=False)
+        for name, symbol in zip(names.stdout.splitlines(), sorted(result.throttled), strict=True):
+            print(f"  throttled exact at {','.join(sorted(result.throttled[symbol])):24} {name}")
+    if args.save:
+        args.save.write_text(json.dumps({"settings": SETTINGS, "units": saved}, indent=1, sort_keys=True))
+    print(f"{throttled} functions inexact as compiled but exact under lowered limits in {len(saved)} units")
     return 0
 
 

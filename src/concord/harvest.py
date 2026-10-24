@@ -178,22 +178,24 @@ class Harvest:
             )
         return evaluations
 
-    def evaluate_overlays(self, items: dict[str, tuple[str, dict[str, bytes]]]) -> dict[str, Evaluation]:
+    def evaluate_overlays(self, items: dict[str, tuple]) -> dict[str, Evaluation]:
         """Compile each item, a unit source path with repository files replaced
         (path under the checkout -> new bytes), in one batch, and compare it with
-        the target."""
+        the target. An item is (unit, overlays) or (unit, overlays, flags) where
+        flags are extra compiler options for measuring, such as --param values."""
         out = self.root / "build" / "concord" / "overlays" / uuid.uuid4().hex
         out.mkdir(parents=True)
         files: dict[bytes, Path] = {}
         request_items = {}
-        for name, (unit, overlays) in items.items():
+        for name, item in items.items():
+            unit, overlays = item[0], item[1]
             mapped = {}
             for path, text in overlays.items():
                 if text not in files:
                     files[text] = out / f"overlay{len(files)}{Path(path).suffix}"
                     files[text].write_bytes(text)
                 mapped[path] = str(files[text])
-            request_items[name] = {"unit": unit, "overlays": mapped}
+            request_items[name] = {"unit": unit, "overlays": mapped, "flags": list(item[2]) if len(item) > 2 else []}
         result = self._driver({"out": str(out), "items": request_items})
         return {
             name: Evaluation(
