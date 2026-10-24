@@ -1,0 +1,20 @@
+{
+  "compiler_version": "g++ (Ubuntu 4.4.3-4ubuntu5) 4.4.3",
+  "container_image_id": "108b5240b400ca2165345f10e2dbf66da04f55d0448c00509d9474f0adfffe17",
+  "package_manifest_sha256": "e379f2252a8cdda9e94b71c872e83c863e7e7961180fa62ea95e8f763fafaf5e",
+  "command": [
+    "g++",
+    "-O2",
+    "-g",
+    "-dp",
+    "-save-temps",
+    "-fdump-tree-all",
+    "-fdump-rtl-all",
+    "-Wa,-adhln",
+    "-c",
+    "probe.cpp",
+    "-o",
+    "probe.o"
+  ],
+  "description": "GCC dumps and assembler listing for the adjacent probe.cpp, compiled in the pinned offline Harvest toolchain. One trailing space in the IRA dump is removed; all compiler records are retained."
+}

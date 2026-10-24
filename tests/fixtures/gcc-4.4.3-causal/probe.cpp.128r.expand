@@ -1,0 +1,76 @@
+
+;; Function int f(int, int) (_Z1fii)
+
+
+;; Generating RTL for gimple basic block 2
+
+
+;;
+;; Full RTL generated for this function:
+;;
+(note 1 0 5 NOTE_INSN_DELETED)
+
+(note 5 1 2 2 [bb 2] NOTE_INSN_BASIC_BLOCK)
+
+(insn 2 5 3 2 probe.cpp:1 (set (reg/v:SI 59 [ a ])
+        (reg:SI 5 di [ a ])) -1 (nil))
+
+(insn 3 2 4 2 probe.cpp:1 (set (reg/v:SI 60 [ b ])
+        (reg:SI 4 si [ b ])) -1 (nil))
+
+(note 4 3 6 2 NOTE_INSN_FUNCTION_BEG)
+
+(note 6 4 7 3 [bb 3] NOTE_INSN_BASIC_BLOCK)
+
+(insn 7 6 8 3 probe.cpp:1 (parallel [
+            (set (reg:SI 62)
+                (plus:SI (reg/v:SI 60 [ b ])
+                    (const_int 5 [0x5])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 8 7 9 3 probe.cpp:1 (parallel [
+            (set (reg:SI 63)
+                (plus:SI (reg/v:SI 59 [ a ])
+                    (const_int 3 [0x3])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 9 8 10 3 probe.cpp:1 (parallel [
+            (set (reg:SI 61)
+                (mult:SI (reg:SI 62)
+                    (reg:SI 63)))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 10 9 11 3 probe.cpp:1 (set (reg:SI 58 [ <result> ])
+        (reg:SI 61)) -1 (nil))
+
+(jump_insn 11 10 12 3 probe.cpp:1 (set (pc)
+        (label_ref 13)) -1 (nil))
+
+(barrier 12 11 21)
+
+(note 21 12 15 4 [bb 4] NOTE_INSN_BASIC_BLOCK)
+
+(insn 15 21 16 4 probe.cpp:1 (clobber (reg/i:SI 0 ax)) -1 (nil))
+
+(insn 16 15 17 4 probe.cpp:1 (clobber (reg:SI 58 [ <result> ])) -1 (nil))
+
+(jump_insn 17 16 18 4 probe.cpp:1 (set (pc)
+        (label_ref 19)) -1 (nil))
+
+(barrier 18 17 13)
+
+(code_label 13 18 22 5 1 "" [1 uses])
+
+(note 22 13 14 5 [bb 5] NOTE_INSN_BASIC_BLOCK)
+
+(insn 14 22 19 5 probe.cpp:1 (set (reg/i:SI 0 ax)
+        (reg:SI 58 [ <result> ])) -1 (nil))
+
+(code_label 19 14 23 6 2 "" [1 uses])
+
+(note 23 19 20 6 [bb 6] NOTE_INSN_BASIC_BLOCK)
+
+(insn 20 23 0 6 probe.cpp:1 (use (reg/i:SI 0 ax)) -1 (nil))

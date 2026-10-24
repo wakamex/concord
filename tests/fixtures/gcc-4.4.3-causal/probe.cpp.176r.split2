@@ -1,0 +1,33 @@
+
+;; Function int f(int, int) (_Z1fii)
+
+scanning new insn with uid = 25.
+deleting insn with uid = 7.
+deleting insn with uid = 7.
+(note 1 0 5 NOTE_INSN_DELETED)
+
+(note 5 1 4 2 [bb 2] NOTE_INSN_BASIC_BLOCK)
+
+(note 4 5 25 2 NOTE_INSN_FUNCTION_BEG)
+
+(insn 25 4 8 2 probe.cpp:1 (set (reg:SI 0 ax [61])
+        (subreg:SI (plus:DI (reg:DI 4 si [orig:60 b ] [60])
+                (const_int 5 [0x5])) 0)) 271 {*lea_1_rex64} (nil))
+
+(insn 8 25 9 2 probe.cpp:1 (parallel [
+            (set (reg:SI 5 di [63])
+                (plus:SI (reg/v:SI 5 di [orig:59 a ] [59])
+                    (const_int 3 [0x3])))
+            (clobber (reg:CC 17 flags))
+        ]) 285 {*addsi_1} (nil))
+
+(insn 9 8 20 2 probe.cpp:1 (parallel [
+            (set (reg:SI 0 ax [61])
+                (mult:SI (reg:SI 0 ax [61])
+                    (reg:SI 5 di [63])))
+            (clobber (reg:CC 17 flags))
+        ]) 333 {*mulsi3_1} (nil))
+
+(insn 20 9 24 2 probe.cpp:1 (use (reg/i:SI 0 ax)) -1 (nil))
+
+(note 24 20 0 NOTE_INSN_DELETED)

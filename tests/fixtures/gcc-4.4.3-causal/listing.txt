@@ -1,0 +1,21 @@
+   1              		.file	"probe.cpp"
+   9              	.Ltext0:
+  10              		.p2align 4,,15
+  11              	.globl _Z1fii
+  13              	_Z1fii:
+  14              	.LFB0:
+  15              		.file 1 "probe.cpp"
+   1:probe.cpp     **** int f(int a,int b) { int x=a+3; int y=b+5; return x*y; }
+  16              		.loc 1 1 0
+  17              		.cfi_startproc
+  18              		.cfi_personality 0x3,__gxx_personality_v0
+  19              	.LVL0:
+  20              		.loc 1 1 0
+  21 0000 8D4605   		leal	5(%rsi), %eax	# 25	*lea_1_rex64	[length = 2]
+  22 0003 83C703   		addl	$3, %edi	# 8	*addsi_1/1	[length = 3]
+  23              	.LVL1:
+  24 0006 0FAFC7   		imull	%edi, %eax	# 9	*mulsi3_1/3	[length = 3]
+  25 0009 C3       		ret	# 28	return_internal	[length = 1]
+  26              		.cfi_endproc
+  27              	.LFE0:
+  29              	.Letext0:

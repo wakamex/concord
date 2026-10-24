@@ -1,0 +1,158 @@
+
+;; Function int f(int, int) (_Z1fii)
+
+starting the processing of deferred insns
+ending the processing of deferred insns
+df_analyze called
+df_worklist_dataflow_doublequeue:n_basic_blocks 3 n_edges 2 count 3 (    1)
+df_worklist_dataflow_doublequeue:n_basic_blocks 3 n_edges 2 count 4 (  1.3)
+Building IRA IR
+starting the processing of deferred insns
+ending the processing of deferred insns
+df_analyze called
+
+Pass 0 for finding allocno costs
+
+    a1 (r63,l0) best GENERAL_REGS, cover GENERAL_REGS
+    a0 (r61,l0) best AREG, cover GENERAL_REGS
+    a3 (r60,l0) best SIREG, cover GENERAL_REGS
+    a2 (r59,l0) best DIREG, cover GENERAL_REGS
+
+  a0(r61,l0) costs: AREG:-1000,-1000 DREG:0,0 CREG:0,0 BREG:0,0 SIREG:0,0 DIREG:0,0 AD_REGS:0,0 CLOBBERED_REGS:0,0 Q_REGS:0,0 NON_Q_REGS:0,0 LEGACY_REGS:0,0 GENERAL_REGS:0,0 SSE_FIRST_REG:52000,52000 SSE_REGS:52000,52000 MMX_REGS:52000,52000 MEM:13000
+  a1(r63,l0) costs: AREG:0,0 DREG:0,0 CREG:0,0 BREG:0,0 SIREG:0,0 DIREG:0,0 AD_REGS:0,0 CLOBBERED_REGS:0,0 Q_REGS:0,0 NON_Q_REGS:0,0 LEGACY_REGS:0,0 GENERAL_REGS:0,0 SSE_FIRST_REG:26000,26000 SSE_REGS:26000,26000 MMX_REGS:26000,26000 MEM:6000
+  a2(r59,l0) costs: AREG:0,0 DREG:0,0 CREG:0,0 BREG:0,0 SIREG:0,0 DIREG:-1000,-1000 AD_REGS:0,0 CLOBBERED_REGS:0,0 Q_REGS:0,0 NON_Q_REGS:0,0 LEGACY_REGS:0,0 GENERAL_REGS:0,0 SSE_FIRST_REG:26000,26000 SSE_REGS:26000,26000 MMX_REGS:26000,26000 MEM:7000
+  a3(r60,l0) costs: AREG:0,0 DREG:0,0 CREG:0,0 BREG:0,0 SIREG:-1000,-1000 DIREG:0,0 AD_REGS:0,0 CLOBBERED_REGS:0,0 Q_REGS:0,0 NON_Q_REGS:0,0 LEGACY_REGS:0,0 GENERAL_REGS:0,0 SSE_FIRST_REG:26000,26000 SSE_REGS:26000,26000 MMX_REGS:26000,26000 MEM:7000
+
+
+Pass 1 for finding allocno costs
+
+    r63: preferred GENERAL_REGS, alternative NO_REGS
+    r61: preferred AREG, alternative GENERAL_REGS
+    r60: preferred SIREG, alternative GENERAL_REGS
+    r59: preferred DIREG, alternative GENERAL_REGS
+
+  a0(r61,l0) costs: AREG:-1000,-1000 DREG:0,0 CREG:0,0 BREG:0,0 SIREG:0,0 DIREG:0,0 AD_REGS:0,0 CLOBBERED_REGS:0,0 Q_REGS:0,0 NON_Q_REGS:0,0 LEGACY_REGS:0,0 GENERAL_REGS:0,0 SSE_FIRST_REG:52000,52000 SSE_REGS:52000,52000 MMX_REGS:52000,52000 MEM:13000
+  a1(r63,l0) costs: AREG:0,0 DREG:0,0 CREG:0,0 BREG:0,0 SIREG:0,0 DIREG:0,0 AD_REGS:0,0 CLOBBERED_REGS:0,0 Q_REGS:0,0 NON_Q_REGS:0,0 LEGACY_REGS:0,0 GENERAL_REGS:0,0 SSE_FIRST_REG:26000,26000 SSE_REGS:26000,26000 MMX_REGS:26000,26000 MEM:6000
+  a2(r59,l0) costs: AREG:0,0 DREG:0,0 CREG:0,0 BREG:0,0 SIREG:0,0 DIREG:-1000,-1000 AD_REGS:0,0 CLOBBERED_REGS:0,0 Q_REGS:0,0 NON_Q_REGS:0,0 LEGACY_REGS:0,0 GENERAL_REGS:0,0 SSE_FIRST_REG:26000,26000 SSE_REGS:26000,26000 MMX_REGS:26000,26000 MEM:7000
+  a3(r60,l0) costs: AREG:0,0 DREG:0,0 CREG:0,0 BREG:0,0 SIREG:-1000,-1000 DIREG:0,0 AD_REGS:0,0 CLOBBERED_REGS:0,0 Q_REGS:0,0 NON_Q_REGS:0,0 LEGACY_REGS:0,0 GENERAL_REGS:0,0 SSE_FIRST_REG:26000,26000 SSE_REGS:26000,26000 MMX_REGS:26000,26000 MEM:7000
+
+   Insn 20(l0): point = 0
+   Insn 14(l0): point = 2
+   Insn 9(l0): point = 4
+   Insn 8(l0): point = 6
+   Insn 7(l0): point = 8
+   Insn 3(l0): point = 10
+   Insn 2(l0): point = 12
+ a0(r61): [3..8]
+ a1(r63): [5..6]
+ a2(r59): [7..12]
+ a3(r60): [9..10]
+Compressing live ranges: from 15 to 8 - 53%
+Ranges after the compression:
+ a0(r61): [0..4]
+ a1(r63): [1..2]
+ a2(r59): [3..7]
+ a3(r60): [5..6]
++++Allocating 32 bytes for conflict table (uncompressed size 32)
+;; a0(r61,l0) conflicts: a1(r63,l0) a2(r59,l0)
+;;     total conflict hard regs:
+;;     conflict hard regs:
+;; a1(r63,l0) conflicts: a0(r61,l0)
+;;     total conflict hard regs:
+;;     conflict hard regs:
+;; a2(r59,l0) conflicts: a0(r61,l0) a3(r60,l0)
+;;     total conflict hard regs: 4
+;;     conflict hard regs: 4
+;; a3(r60,l0) conflicts: a2(r59,l0)
+;;     total conflict hard regs:
+;;     conflict hard regs:
+
+  cp0:a0(r61)<->a3(r60)@125:shuffle
+  cp1:a1(r63)<->a2(r59)@125:shuffle
+  regions=1, blocks=3, points=8
+    allocnos=4, copies=2, conflicts=0, ranges=4
+
+**** Allocnos coloring:
+
+
+  Loop 0 (parent -1, header bb0, depth 0)
+    bbs: 2
+    all: 0r61 1r63 2r59 3r60
+    modified regnos: 59 60 61 63
+    border:
+    Pressure: GENERAL_REGS=2
+    Reg 59 of GENERAL_REGS has 1 regs less
+      Pushing a3(r60,l0)
+      Pushing a1(r63,l0)
+      Pushing a0(r61,l0)
+      Pushing a2(r59,l0)
+      Popping a2(r59,l0)  -- assign reg 5
+      Popping a0(r61,l0)  -- assign reg 0
+      Popping a1(r63,l0)  -- assign reg 5
+      Popping a3(r60,l0)  -- assign reg 4
+Disposition:
+    2:r59  l0     5    3:r60  l0     4    0:r61  l0     0    1:r63  l0     5
+New iteration of spill/restore move
++++Costs: overall -9000, reg -9000, mem 0, ld 0, st 0, move 0
++++       move loops 0, new jumps 0
+insn=2, live_throughout: 4, 7, dead_or_set: 5, 59
+insn=3, live_throughout: 7, 59, dead_or_set: 4, 60
+insn=7, live_throughout: 7, 59, dead_or_set: 60, 61
+insn=8, live_throughout: 7, 61, dead_or_set: 59, 63
+insn=9, live_throughout: 7, dead_or_set: 61, 63
+insn=14, live_throughout: 7, dead_or_set: 0, 61
+insn=20, live_throughout: 0, 7, dead_or_set:
+changing reg in insn 2
+changing reg in insn 8
+changing reg in insn 3
+changing reg in insn 7
+changing reg in insn 7
+changing reg in insn 9
+changing reg in insn 9
+changing reg in insn 14
+changing reg in insn 8
+changing reg in insn 9
+deleting insn with uid = 2.
+deleting insn with uid = 3.
+deleting insn with uid = 14.
+
+
+try_optimize_cfg iteration 1
+
+starting the processing of deferred insns
+ending the processing of deferred insns
+starting the processing of deferred insns
+ending the processing of deferred insns
+df_analyze called
+df_worklist_dataflow_doublequeue:n_basic_blocks 3 n_edges 2 count 3 (    1)
+df_worklist_dataflow_doublequeue:n_basic_blocks 3 n_edges 2 count 4 (  1.3)
+(note 1 0 5 NOTE_INSN_DELETED)
+
+(note 5 1 4 2 [bb 2] NOTE_INSN_BASIC_BLOCK)
+
+(note 4 5 7 2 NOTE_INSN_FUNCTION_BEG)
+
+(insn 7 4 8 2 probe.cpp:1 (parallel [
+            (set (reg:SI 0 ax [61])
+                (plus:SI (reg/v:SI 4 si [orig:60 b ] [60])
+                    (const_int 5 [0x5])))
+            (clobber (reg:CC 17 flags))
+        ]) 285 {*addsi_1} (nil))
+
+(insn 8 7 9 2 probe.cpp:1 (parallel [
+            (set (reg:SI 5 di [63])
+                (plus:SI (reg/v:SI 5 di [orig:59 a ] [59])
+                    (const_int 3 [0x3])))
+            (clobber (reg:CC 17 flags))
+        ]) 285 {*addsi_1} (nil))
+
+(insn 9 8 20 2 probe.cpp:1 (parallel [
+            (set (reg:SI 0 ax [61])
+                (mult:SI (reg:SI 0 ax [61])
+                    (reg:SI 5 di [63])))
+            (clobber (reg:CC 17 flags))
+        ]) 333 {*mulsi3_1} (nil))
+
+(insn 20 9 24 2 probe.cpp:1 (use (reg/i:SI 0 ax)) -1 (nil))
+
+(note 24 20 0 NOTE_INSN_DELETED)

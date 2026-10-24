@@ -10,6 +10,22 @@ from concord.cli import build_parser, main
 
 
 class CliTest(unittest.TestCase):
+    def test_causal_reuses_dumps_and_saves_structured_findings(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        report = {'schema': 'concord.causal.v1', 'unit': 'u.cpp', 'symbol': 'f', 'findings': []}
+        with tempfile.TemporaryDirectory() as tmp:
+            save = Path(tmp) / 'findings.json'
+            with mock.patch('concord.cli.Harvest') as harvest, mock.patch('concord.cli.causal.analyze', return_value=report) as analyze, mock.patch('concord.cli.causal.collect') as collect:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(['causal', '--harvest', tmp, '--unit', 'u.cpp', 'f', '--dumps', tmp, '--save', str(save)]), 0)
+                collect.assert_not_called()
+                analyze.assert_called_once_with(harvest.return_value, 'u.cpp', 'f', Path(tmp), limit=8, offsets=None)
+                self.assertEqual(json.loads(save.read_text()), report)
+
     def test_blockers_passes_selected_methods(self):
         from unittest import mock
 

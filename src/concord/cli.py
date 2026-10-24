@@ -14,6 +14,7 @@ from concord import (
     bench,
     blockers,
     calls,
+    causal,
     destructors,
     inlines,
     knowledge,
@@ -275,6 +276,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_destructors.add_argument("--class", dest="cls", required=True)
     p_destructors.add_argument("--save", type=Path)
 
+    p_causal = sub.add_parser("causal", help="trace differing instructions through pinned GCC dumps")
+    p_causal.add_argument("--harvest", type=Path, required=True)
+    p_causal.add_argument("--unit", required=True)
+    p_causal.add_argument("symbol")
+    p_causal.add_argument("--dumps", type=Path, help="reuse a dump directory previously collected for this unit")
+    p_causal.add_argument("--limit", type=int, default=8, help="maximum differing instructions to trace")
+    p_causal.add_argument("--offset", type=lambda value: int(value, 0), action="append", help="trace this target byte offset (repeatable, accepts 0x)")
+    p_causal.add_argument("--save", type=Path, help="write structured findings and compiler metadata")
+
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_survey.add_argument(
@@ -327,6 +337,15 @@ def main(argv: list[str] | None = None) -> int:
             print(lines[0] if findings else lines[0] + ": no differences")
             for line in lines[1:]:
                 print(line)
+        return 0
+    if args.command == "causal":
+        harvest = Harvest(args.harvest)
+        directory = args.dumps or causal.collect(harvest, args.unit)
+        report = causal.analyze(harvest, args.unit, args.symbol, directory, limit=args.limit,
+                                offsets=set(args.offset) if args.offset else None)
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        print('\n'.join(causal.show(report)))
         return 0
     if args.command == "destructors":
         report = destructors.diagnose(Harvest(args.harvest), args.unit, args.header, args.cls)
