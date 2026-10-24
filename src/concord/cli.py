@@ -13,6 +13,7 @@ from concord import (
     __version__,
     bench,
     blockers,
+    calls,
     knowledge,
     layout,
     oracle,
@@ -219,6 +220,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_blockers.add_argument("units", nargs="*", help="units to examine (default: every unit whose source has a stub)")
     p_blockers.add_argument("--apply", action="store_true", help="restore compiling stub bodies in place; verify matching separately")
 
+    p_calls = sub.add_parser("learn-calls", help="prove unknown callee addresses from aligned direct calls")
+    p_calls.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_calls.add_argument("units", nargs="*", help="units whose callees may be named (calls checked across every match report)")
+    p_calls.add_argument("--apply", action="store_true", help="save proven addresses using Harvest's symbol writer")
+    p_calls.add_argument("--save", type=Path, help="save all aligned call sites and accepted addresses as JSON")
+
     p_clean = sub.add_parser("clean", help="remove concord's old work directories from the Harvest checkout")
     p_clean.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_clean.add_argument("--older-than", type=float, default=24.0, metavar="HOURS", help="keep directories changed more recently")
@@ -266,6 +273,18 @@ def main(argv: list[str] | None = None) -> int:
         return _vtables(args)
     if args.command == "blockers":
         return _blockers(args)
+    if args.command == "learn-calls":
+        from dataclasses import asdict
+
+        sites, learned = calls.discover(args.harvest.resolve(), args.units)
+        if args.save:
+            args.save.write_text(json.dumps({"sites": [asdict(s) for s in sites], "learned": learned, "input_hashes": calls.input_hashes(args.harvest.resolve())}, indent=2) + "\n")
+        if args.apply:
+            calls.apply(args.harvest.resolve(), learned)
+        for name, (address, evidence) in sorted(learned.items()):
+            print(f"{address:#x} {name}  {evidence}")
+        print(f"{len(sites)} aligned call sites; {len(learned)} addresses {'saved' if args.apply else 'proven'}")
+        return 0
     if args.command == "clean":
         removed, freed = Harvest(args.harvest).clean(args.older_than * 3600)
         print(f"removed {removed} work directories, {freed / 1e9:.1f} GB")
