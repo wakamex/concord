@@ -19,8 +19,8 @@ from pathlib import Path
 from tree_sitter import Node, Parser
 
 from concord.harvest import Harvest
-from concord.irrlicht import translate
-from concord.seed import IRRLICHT, qualify
+from concord.irrlicht import helper_names, name_helpers, translate
+from concord.seed import IRRLICHT, helper_taken, qualify
 from concord.transforms import CPP
 
 
@@ -78,15 +78,18 @@ def _missing_includes(current: bytes, irrlicht: bytes) -> bytes:
     return added
 
 
-HELPER = re.compile(rb"^inline\b[^\n]*?\b_concord_\w+\s*\([^;{]*\)\s*\{.*?^\}", re.MULTILINE | re.DOTALL)
-
-
-def _missing_helpers(current: bytes, irrlicht: bytes) -> bytes:
-    """The file-local `_concord_` helpers translate wrote into the translation at
-    global scope for members a shared ox header cannot add (CTriangle3d's
-    getIntersectionWithLine), which a restored body also calls."""
+def _missing_helpers(current: bytes, irrlicht: bytes, names: set[str]) -> bytes:
+    """The file-local helpers translate wrote into the translation for members a
+    shared ox header cannot add (CTriangle3d's getIntersectionWithLine), which a
+    restored body also calls. `names` is the helpers' names in the translation."""
+    if not names:
+        return b""
+    helper = re.compile(
+        rb"^inline\b[^\n]*?\b(?:" + b"|".join(re.escape(name.encode()) for name in sorted(names)) + rb")\s*\([^;{]*\)\s*\{.*?^\}",
+        re.MULTILINE | re.DOTALL,
+    )
     return b"".join(
-        found.group(0) + b"\n\n" for found in HELPER.finditer(irrlicht) if found.group(0) not in current
+        found.group(0) + b"\n\n" for found in helper.finditer(irrlicht) if found.group(0) not in current
     )
 
 
@@ -103,14 +106,15 @@ def _with_includes(text: bytes, includes: bytes, helpers: bytes = b"") -> bytes:
     return text
 
 
-def restored(current: bytes, irrlicht: bytes) -> dict[str, bytes]:
+def restored(current: bytes, irrlicht: bytes, helpers: set[str] = frozenset()) -> dict[str, bytes]:
     """For each function of `current` whose body is a stub, the unit with that one
     body replaced by the body of the function of the same name in `irrlicht` (the
     qualified translation), plus the includes the translation has that the unit
-    lacks."""
+    lacks. `helpers` is the names of the file-local helpers the translation
+    defines; the ones the unit lacks are carried too."""
     ours, theirs = _definitions(current), _definitions(irrlicht)
     includes = _missing_includes(current, irrlicht)
-    helpers = _missing_helpers(current, irrlicht)
+    helper_text = _missing_helpers(current, irrlicht, helpers)
     out = {}
     for name, node in ours.items():
         body = node.child_by_field_name("body")
@@ -122,7 +126,7 @@ def restored(current: bytes, irrlicht: bytes) -> dict[str, bytes]:
         out[name] = _with_includes(
             current[:start] + irrlicht[original_start : original.end_byte] + current[body.end_byte :],
             includes,
-            helpers,
+            helper_text,
         )
     return out
 
@@ -172,8 +176,11 @@ def stubs(harvest: Harvest, units: list[str], apply: bool = False) -> list[Stub]
         current = path.read_bytes()
         if b"__builtin_trap();" not in current or not irrlicht.exists():
             continue
-        translation = qualify(root, translate(irrlicht.read_text(encoding="latin-1")), unit).encode()
-        candidates = restored(current, translation)
+        raw = translate(irrlicht.read_text(encoding="latin-1"))
+        taken = helper_taken(root, raw, unit)
+        helpers = set(helper_names(raw, taken).values())
+        translation = qualify(root, name_helpers(raw, taken), unit).encode()
+        candidates = restored(current, translation, helpers)
         if not candidates:
             continue
         names = {f"s{n}": name for n, name in enumerate(candidates)}
@@ -200,7 +207,9 @@ def stubs(harvest: Harvest, units: list[str], apply: bool = False) -> list[Stub]
             for start, stop, body in sorted(edits, reverse=True):
                 combined = combined[:start] + body + combined[stop:]
             combined = _with_includes(
-                combined, _missing_includes(current, translation), _missing_helpers(current, translation)
+                combined,
+                _missing_includes(current, translation),
+                _missing_helpers(current, translation, helpers),
             )
             verification = harvest.evaluate(unit, {"combined": combined})["combined"]
             if verification.error:

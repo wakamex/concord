@@ -62,7 +62,7 @@ class Blockers(unittest.TestCase):
             b"inline int _concord_helper(int n)\n{\n\treturn n;\n}\n"
             b"namespace daisy {\nvoid A::stubbed(int n)\n{\n    go();\n}\n}\n"
         )
-        [text] = restored(current, irrlicht).values()
+        [text] = restored(current, irrlicht, {"_concord_helper"}).values()
         self.assertIn(b'#include "daisy/os.h"\n#include "ox/algo/CArrayFunctions.h"', text)
         self.assertNotIn(b'#include "os.h"\n#', text)  # satisfied by the relocated daisy/os.h
         self.assertIn(b"inline int _concord_helper(int n)", text)

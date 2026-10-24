@@ -2,7 +2,7 @@
 
 import unittest
 
-from concord.irrlicht import bare, translate
+from concord.irrlicht import bare, helper_names, name_helpers, translate
 
 
 class Translate(unittest.TestCase):
@@ -364,6 +364,29 @@ class Literals(unittest.TestCase):
         self.assertIn("int n = 0;", out)
         self.assertIn('"Face with more than 40 face points found s32 file."', out)
         self.assertIn('const char* q = "a\\"s32";', out)
+
+
+class HelperNames(unittest.TestCase):
+    def test_markers_take_the_plain_names_a_person_would_write(self):
+        text = "inline int _concord_interpolate(int a, int b)\n{\n\treturn a + b;\n}\nint f() { return _concord_interpolate(1, 2); }\n"
+        self.assertEqual(helper_names(text, set()), {"_concord_interpolate": "interpolate"})
+        named = name_helpers(text, set())
+        self.assertIn("inline int interpolate(int a, int b)", named)
+        self.assertIn("return interpolate(1, 2);", named)
+        self.assertNotIn("_concord_", named)
+
+    def test_a_name_the_unit_or_a_header_uses_gets_a_number(self):
+        text = "int interpolate;\ninline int _concord_interpolate(int a, int b)\n{\n\treturn a + b;\n}\n"
+        self.assertEqual(helper_names(text, set()), {"_concord_interpolate": "interpolate2"})
+        taken = {"isOnSameSide"}
+        self.assertEqual(helper_names("int _concord_isOnSameSide();\n", taken), {"_concord_isOnSameSide": "isOnSameSide2"})
+
+    def test_names_in_comments_strings_and_member_accesses_do_not_block(self):
+        text = '// interpolate\nconst char* s = "isOnSameSide";\ntri.getIntersectionWithLine(a, b, c);\nint _concord_getIntersectionWithLine();\n'
+        self.assertEqual(helper_names(text, set()), {"_concord_getIntersectionWithLine": "getIntersectionWithLine"})
+
+    def test_an_unknown_marker_loses_its_prefix(self):
+        self.assertEqual(helper_names("int _concord_extra();\n", set()), {"_concord_extra": "extra"})
 
 
 if __name__ == "__main__":

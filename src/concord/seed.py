@@ -33,7 +33,7 @@ from concord.complete import (
     undeclared,
 )
 from concord.harvest import BUILD, Harvest
-from concord.irrlicht import HEADERS, bare, translate
+from concord.irrlicht import HEADERS, bare, code_words, name_helpers, translate
 from concord.transforms import CPP
 
 IRRLICHT = Path("third_party/irrlicht-0.7")
@@ -417,6 +417,21 @@ def drop_forward_declared_includes(text: str) -> str:
     return text
 
 
+def helper_taken(root: Path, text: str, own: str = "") -> set[str]:
+    """The names a file-local helper in `text` cannot take: every identifier of
+    the unit's own code, of the file it replaces (the on-disk `own`), and every
+    name the checkout's headers declare."""
+    taken = code_words(text)
+    path = root / "src" / own if own else None
+    if path is not None and path.exists():
+        taken |= code_words(path.read_text(errors="replace"))
+    indexes = [_index(root, root / "src" / "ox", recursive=False)]
+    indexes += [_index(root, root / "src" / kind / ns) for kind in ("ox", "daisy") for ns in NAMESPACES]
+    for index in indexes:
+        taken |= index.names | set(index.headers) | index.enumerators
+    return taken
+
+
 def qualify(root: Path, text: str, own: str = "") -> str:
     """Point Irrlicht names at Harvest's ox declarations. `video::SMaterial` names
     ox::video::SMaterial when Harvest declares it there and daisy does not; an
@@ -425,10 +440,14 @@ def qualify(root: Path, text: str, own: str = "") -> str:
     using-directive for its ox counterpart, so an unqualified base class such as
     ISceneNode resolves; and the header defining each ox type the text names is
     included, since Harvest's versions of Irrlicht headers often only
-    forward-declare them. None of this changes the generated code or the mangled
-    names of what the text defines. A file of ox itself (`own`, its path under
-    src/) needs no using-directive and does not include itself."""
+    forward-declare them. A `_concord_` helper marker takes the plain name a
+    person would write, numbered when the unit or a header already uses it. None
+    of this changes the generated code or the mangled names of what the text
+    defines. A file of ox itself (`own`, its path under src/) needs no
+    using-directive and does not include itself."""
     inside = own.startswith("ox/")
+    if "_concord_" in text:
+        text = name_helpers(text, helper_taken(root, text, own))
     used = set()
     opened = {ns for ns in NAMESPACES if re.search(r"^namespace " + ns + r"\s*\{", text, re.MULTILINE)}
     reachable = set()  # names visible unqualified: daisy's own and those of opened ox namespaces

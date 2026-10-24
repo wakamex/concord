@@ -24,6 +24,21 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(main(["permute", "--harvest", tmp, "--unit", "u.cpp", "symbol", "--budget", "128", "--skip-logged", "--results", str(log)]), 0)
             run.assert_not_called()
 
+    def test_rename_gives_helpers_plain_names(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            unit = root / "src" / "d" / "A.cpp"
+            unit.parent.mkdir(parents=True)
+            unit.write_text("inline int _concord_helper(int n)\n{\n\treturn n;\n}\nint f() { return _concord_helper(1); }\n")
+            self.assertEqual(main(["rename", "--harvest", tmp, "d/A.cpp"]), 0)
+            text = unit.read_text()
+            self.assertIn("inline int helper(int n)", text)
+            self.assertIn("return helper(1);", text)
+            self.assertNotIn("_concord_", text)
+
     def test_no_args_prints_help_and_succeeds(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):

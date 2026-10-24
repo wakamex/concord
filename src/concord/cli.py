@@ -25,6 +25,7 @@ from concord.complete import TYPES, absent, complete, settle, state
 from concord.diff import diff_code, read_function
 from concord.finish import finish
 from concord.harvest import BUILD, Harvest
+from concord.irrlicht import helper_names, name_helpers
 from concord.lines import editable, inline_chains
 from concord.model import Cause, DiffResult
 from concord.order import apply_order, search_order
@@ -36,6 +37,7 @@ from concord.search import _key, search
 from concord.seed import (
     _bring_includes,
     header,
+    helper_taken,
     keep_port_linking,
     replace_in_port,
     seed,
@@ -221,6 +223,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_blockers.add_argument("units", nargs="*", help="units to examine (default: every unit whose source has a stub)")
     p_blockers.add_argument("--apply", action="store_true", help="restore compiling stub bodies in place; verify matching separately")
 
+    p_rename = sub.add_parser(
+        "rename", help="give each file-local helper in a unit the plain name a person would write"
+    )
+    p_rename.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_rename.add_argument("units", nargs="+", help="units under src/, such as daisy/scene/CXAnimationPlayer.cpp")
+
     p_calls = sub.add_parser("learn-calls", help="prove unknown callee addresses from aligned direct calls")
     p_calls.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_calls.add_argument("units", nargs="*", help="units whose callees may be named (calls checked across every match report)")
@@ -281,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
         return _vtables(args)
     if args.command == "blockers":
         return _blockers(args)
+    if args.command == "rename":
+        return _rename(args)
     if args.command == "learn-calls":
         from dataclasses import asdict
 
@@ -582,6 +592,21 @@ def _member(symbol: str) -> str:
     """Class::member of a mangled member function."""
     name = subprocess.run(["c++filt", symbol], capture_output=True, text=True, check=False).stdout.split("(")[0]
     return "::".join(name.strip().split("::")[-2:])
+
+
+def _rename(args: argparse.Namespace) -> int:
+    root = args.harvest.resolve()
+    for unit in args.units:
+        path = root / "src" / unit
+        text = path.read_text()
+        taken = helper_taken(root, text, unit)
+        names = helper_names(text, taken)
+        if not names:
+            print(f"{unit}: nothing to rename")
+            continue
+        path.write_text(name_helpers(text, taken))
+        print(f"{unit}: " + ", ".join(f"{marker} -> {names[marker]}" for marker in sorted(names)))
+    return 0
 
 
 def _blockers(args: argparse.Namespace) -> int:

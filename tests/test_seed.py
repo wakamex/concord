@@ -28,6 +28,7 @@ from concord.seed import (
     _tidy,
     _whole_class,
     drop_forward_declared_includes,
+    helper_taken,
     port_conflicts,
     port_unresolved,
     qualify,
@@ -379,6 +380,39 @@ class WholeHeaderIncludes(unittest.TestCase):
                 "daisy/io/X.h",
             )
             self.assertIn('#include "ox/core/TArray.h"', text)
+
+
+class HelperNaming(unittest.TestCase):
+    def test_qualify_names_the_helpers_as_a_person_would(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = qualify(
+                Path(tmp),
+                "inline bool _concord_isOnSameSide(int a, int b)\n{\n\treturn a > b;\n}\n",
+                "daisy/scene/X.cpp",
+            )
+            self.assertIn("inline bool isOnSameSide(int a, int b)", text)
+            self.assertNotIn("_concord_", text)
+
+    def test_a_name_a_header_declares_gets_a_number(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src" / "ox" / "core").mkdir(parents=True)
+            (root / "src" / "ox" / "core" / "X.h").write_text("typedef int interpolate;\n")
+            seed_module._indexes.clear()
+            text = qualify(
+                root,
+                "inline int _concord_interpolate(int a, int b)\n{\n\treturn a + b;\n}\n",
+                "daisy/scene/X.cpp",
+            )
+            self.assertIn("inline int interpolate2(int a, int b)", text)
+
+    def test_the_replaced_files_own_names_are_taken(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            unit = root / "src" / "daisy" / "scene" / "X.cpp"
+            unit.parent.mkdir(parents=True)
+            unit.write_text("int isOnSameSide;\n")
+            self.assertIn("isOnSameSide", helper_taken(root, "int _concord_isOnSameSide();\n", "daisy/scene/X.cpp"))
 
 
 class CompanionHeaders(unittest.TestCase):

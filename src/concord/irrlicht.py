@@ -76,6 +76,46 @@ HEADERS = {
 
 LITERAL = re.compile(r'"(?:[^"\\\n]|\\.)*"')
 
+# The file-local helpers the call-site expansions emit stand under `_concord_`
+# markers until the unit's text is known: `qualify` gives each the plain name a
+# person would write, numbered when the unit or a header already uses it.
+HELPERS = {
+    "_concord_interpolate": "interpolate",
+    "_concord_isOnSameSide": "isOnSameSide",
+    "_concord_getIntersectionWithLine": "getIntersectionWithLine",
+}
+
+
+def code_words(text: str) -> set[str]:
+    """Identifiers in the code of `text`. Names in comments, string literals and
+    after . or -> cannot collide with a file-local helper."""
+    code = re.sub(r"//[^\n]*|/\*.*?\*/", "", text, flags=re.DOTALL)
+    code = LITERAL.sub("", code)
+    code = re.sub(r"(?:\.|->)\s*\w+", "", code)
+    return set(re.findall(r"\b\w+\b", code))
+
+
+def helper_names(text: str, taken: set[str]) -> dict[str, str]:
+    """The name each `_concord_` helper marker in the text takes: the plain name a
+    person would write, numbered while the unit or a header already uses it."""
+    own = code_words(text) - set(HELPERS)
+    names = {}
+    for marker in dict.fromkeys(re.findall(r"\b_concord_\w+\b", text)):
+        plain = HELPERS.get(marker, marker.removeprefix("_concord_"))
+        name, n = plain, 2
+        while name in taken or name in own:
+            name, n = f"{plain}{n}", n + 1
+        names[marker] = name
+        own.add(name)
+    return names
+
+
+def name_helpers(text: str, taken: set[str]) -> str:
+    """The text with each `_concord_` helper marker renamed per `helper_names`."""
+    for marker, name in helper_names(text, taken).items():
+        text = re.sub(r"\b" + marker + r"\b", name, text)
+    return text
+
 
 def _protect_literals(source: str) -> tuple[str, list[str]]:
     """The source with each string literal outside preprocessor lines replaced by
