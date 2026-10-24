@@ -3,7 +3,7 @@
 GCC emits an out-of-line copy of each ODR-used inline function, implicit
 constructor or destructor, and template instantiation as a weak symbol in a
 COMDAT `.text._Z...` section. Which copies a unit emits, and how big each is,
-is fixed by the definitions the unit's headers show it — so a difference from
+is fixed by the definitions the unit's headers show it, so a difference from
 the target's set means a header shows the unit a definition the original did
 not have, or hides one it had.
 
@@ -155,7 +155,7 @@ def analyze(
 ) -> dict:
     """One unit's emitted-copy comparison, as structured findings.
 
-    - `differs`: both sides emit a copy, of different sizes — the unit sees a
+    - `differs`: both sides emit a copy, of different sizes; the unit sees a
       different definition.
     - `unplaced`: copies we emit that the matcher could not place, by verdict:
       `expected` (the Mac map credits this unit), `elsewhere` (it credits only
@@ -163,7 +163,7 @@ def analyze(
       the unit's span, or the name is claimed), `surplus` (no trace anywhere:
       the original likely had no out-of-line copy).
     - `target-only`: extents in the unit's span no function of ours was placed
-      at — copies the original emitted that we have none of, including a
+      at: copies the original emitted that we have none of, including a
       possible home only when no unplaced copy of ours shares the size.
     - `mac-missing`: Mac rows for the unit we emit nothing for, restricted to
       names some unit in the build does emit (the rest are the Mac headers'
