@@ -10,6 +10,14 @@ from concord.cli import build_parser, main
 
 
 class CliTest(unittest.TestCase):
+    def test_blockers_passes_selected_methods(self):
+        from unittest import mock
+
+        with mock.patch('concord.cli.Harvest') as harvest, mock.patch('concord.cli.blockers.stubs', return_value=[]) as stubs:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['blockers', '--harvest', '/tmp/root', 'a.cpp', '--apply', '--only', 'A::f', '--only', 'A::g']), 0)
+            stubs.assert_called_once_with(harvest.return_value, ['a.cpp'], apply=True, only={'A::f', 'A::g'})
+
     def test_destructors_reports_overlays_without_an_apply_flag(self):
         from unittest import mock
 

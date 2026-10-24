@@ -95,7 +95,7 @@ class Apply(unittest.TestCase):
     current = declarations + CURRENT + b"void A::broken() { __builtin_trap(); }\n"
     original = declarations + IRRLICHT.replace(b"Items.set_used(n);", b"(void)n;") + b"void A::broken() { missing(); }\n"
 
-    def run_trial(self, apply=False, combined_error=False, outside_error=False, current=None, original=None):
+    def run_trial(self, apply=False, combined_error=False, outside_error=False, current=None, original=None, only=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path = root / "src" / "d" / "A.cpp"
@@ -126,7 +126,7 @@ class Apply(unittest.TestCase):
                         blockers.stubs(harvest, ["d/A.cpp"], apply=True)
                     self.assertEqual(path.read_bytes(), source)
                     return
-                found = blockers.stubs(harvest, ["d/A.cpp"], apply=apply)
+                found = blockers.stubs(harvest, ["d/A.cpp"], apply=apply, only=only)
             return found, path.read_bytes(), source
 
     def test_apply_changes_only_the_compiling_stub_body(self):
@@ -134,6 +134,18 @@ class Apply(unittest.TestCase):
         self.assertEqual({s.name for s in found if s.applied}, {"A::stubbed"})
         self.assertEqual(text, restored(source, self.original)["A::stubbed"])
         self.assertTrue(next(s for s in found if s.name == "A::broken").errors)
+
+    def test_selected_restore_leaves_other_compiling_stubs_untouched(self):
+        original = self.original.replace(b'missing();', b'(void)0;')
+        found, text, source = self.run_trial(apply=True, original=original, only={'A::broken'})
+        self.assertEqual([s.name for s in found], ['A::broken'])
+        self.assertTrue(found[0].applied)
+        self.assertEqual(text, restored(source, original)['A::broken'])
+
+    def test_empty_selection_changes_nothing(self):
+        found, text, source = self.run_trial(apply=True, only=set())
+        self.assertEqual(found, [])
+        self.assertEqual(text, source)
 
     def test_apply_adds_the_includes_a_restored_body_needs(self):
         current = b"class A { public: void stubbed(); };\nvoid A::stubbed() { __builtin_trap(); }\n"

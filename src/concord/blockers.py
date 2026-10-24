@@ -165,7 +165,7 @@ def cause(message: str) -> str:
     return re.sub(r"'[^']*'", "X", message)[:80]
 
 
-def stubs(harvest: Harvest, units: list[str], apply: bool = False) -> list[Stub]:
+def stubs(harvest: Harvest, units: list[str], apply: bool = False, only: set[str] | None = None) -> list[Stub]:
     """Diagnose each restored body, optionally writing the compiling ones in
     place after their combined source also compiles. No headers are changed."""
     root = harvest.root
@@ -181,6 +181,8 @@ def stubs(harvest: Harvest, units: list[str], apply: bool = False) -> list[Stub]
         helpers = set(helper_names(raw, taken).values())
         translation = qualify(root, name_helpers(raw, taken), unit).encode()
         candidates = restored(current, translation, helpers)
+        if only is not None:
+            candidates = {name: text for name, text in candidates.items() if name in only}
         if not candidates:
             continue
         names = {f"s{n}": name for n, name in enumerate(candidates)}

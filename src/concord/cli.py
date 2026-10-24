@@ -224,6 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_blockers.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_blockers.add_argument("units", nargs="*", help="units to examine (default: every unit whose source has a stub)")
     p_blockers.add_argument("--apply", action="store_true", help="restore compiling stub bodies in place; verify matching separately")
+    p_blockers.add_argument("--only", action="append", metavar="METHOD", help="examine only this declarator name, such as Class::method (repeatable)")
 
     p_rename = sub.add_parser(
         "rename", help="give each file-local helper in a unit the plain name a person would write"
@@ -663,7 +664,7 @@ def _blockers(args: argparse.Namespace) -> int:
         for path in (harvest.root / "src").rglob("*.cpp")
         if b"__builtin_trap();" in path.read_bytes()
     )
-    found = blockers.stubs(harvest, units, apply=args.apply)
+    found = blockers.stubs(harvest, units, apply=args.apply, only=set(args.only) if args.only else None)
     for stub in found:
         status = "restored" if stub.applied else "; ".join(sorted(stub.causes)) or "compiles now"
         print(f"{stub.unit}  {stub.name}: {status}", flush=True)
