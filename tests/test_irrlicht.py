@@ -240,6 +240,104 @@ class Translate(unittest.TestCase):
         self.assertNotIn("typedef", out)
 
 
+    def test_pointer_byte_arithmetic_moves_to_char_star_on_64_bit(self):
+        out = translate(
+            "float CQ3LevelMesh::Blend(float s[3], float t[3], tBSPVertex *v[9], int offset)\n"
+            "{\n\tptr = (f32 *)( (int)v[i*3+j] + offset );\n}\n"
+            "x = Blend(cs, ct, v, (int)&v[0]->vPosition[0] - (int)v[0]);\n"
+            "x = Blend(cs, ct, v, (int)v[0] - (int)&v[0]->vNormal[0]);\n"
+            "y = (int)a - (int)b;\n",
+            "daisy",
+        )
+        self.assertIn("ptr = (float*)((char*)v[i*3 + j] + offset);", out)
+        self.assertIn("(int)((char*)&v[0]->vPosition[0] - (char*)v[0])", out)
+        self.assertIn("(int)((char*)v[0] - (char*)&v[0]->vNormal[0])", out)
+        self.assertIn("(int)a - (int)b", out)  # two plain ints keep their arithmetic
+
+    def test_exist_file_searches_open_archives_as_irrlicht_did(self):
+        out = translate(
+            "if (FileSystem->existFile(s.c_str()))\n    go();\n"
+            "if (FileSystem->existFile(name.c_str(), false))\n    go();\n"
+            "FileSystem->existFile(path.c_str());\n",
+            "daisy",
+        )
+        self.assertIn("existFile(s.c_str(), true)", out)
+        self.assertIn("existFile(name.c_str(), false)", out)
+        self.assertIn("existFile(path.c_str(), true)", out)
+
+    def test_dummy_transformation_scene_node_gets_irrlicht_s_default_id(self):
+        out = translate(
+            "SceneManager->addDummyTransformationSceneNode(this);\nSceneManager->addDummyTransformationSceneNode(node, 3);\n",
+            "daisy",
+        )
+        self.assertIn("addDummyTransformationSceneNode(this, -1)", out)
+        self.assertIn("addDummyTransformationSceneNode(node, 3)", out)
+
+    def test_add_texture_with_a_dimension_size_gets_the_default_format(self):
+        out = translate(
+            "core::dimension2d<s32> lmapsize(128,128);\n"
+            "lig[t] = Driver->addTexture(lmapsize, lightmapname);\n"
+            "t = Driver->addTexture(core::dimension2d<s32>(64, 64), name);\n"
+            "u = Driver->addTexture(name, image);\n"
+            "v = driver->addTexture(name, image);\n",
+            "daisy",
+        )
+        self.assertIn("addTexture(lmapsize, lightmapname, video::ECF_A1R5G5B5)", out)
+        self.assertIn("addTexture(ox::core::CDimension2d<int>(64, 64), name, video::ECF_A1R5G5B5)", out)
+        self.assertIn("addTexture(name, image)", out)
+
+    def test_a_color_format_call_is_cast_back_to_the_enum(self):
+        out = translate(
+            "video::CImage* h = new video::CImage(heightmap->getColorFormat(), heightmap);\n"
+            "video::ECOLOR_FORMAT f = lig[t]->getColorFormat();\n",
+            "daisy",
+        )
+        self.assertIn("new video::CImage((ECOLOR_FORMAT)heightmap->getColorFormat(), heightmap)", out)
+        self.assertIn("video::ECOLOR_FORMAT f = (ECOLOR_FORMAT)lig[t]->getColorFormat();", out)
+        self.assertEqual(translate(out), out)
+
+    def test_the_four_argument_vertex_constructor_is_written_out(self):
+        out = translate(
+            "video::S3DVertex newVertex(intersection,\n\t\tpoly.vertices[currentIdx].Normal,\n\t\ttmpcolor,\n\t\ttcoords);\n"
+            "video::S3DVertex plain(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, color, 0.0f, 0.0f);\n",
+            "daisy",
+        )
+        self.assertIn(
+            "video::S3DVertex newVertex(intersection.X, intersection.Y, intersection.Z, "
+            "poly.vertices[currentIdx].Normal.X, poly.vertices[currentIdx].Normal.Y, poly.vertices[currentIdx].Normal.Z, "
+            "tmpcolor, tcoords.X, tcoords.Y)",
+            out,
+        )
+        self.assertIn("S3DVertex plain(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, color, 0.0f, 0.0f)", out)
+
+    def test_a_planes_limited_line_intersection_expands_the_between_test(self):
+        out = translate(
+            "if (plane.getIntersectionWithLimitedLine(pointA, pointB, intersection))\n    go();\n",
+            "daisy",
+        )
+        self.assertIn(
+            "(plane.getIntersectionWithLine(pointA, (pointB) - (pointA), intersection) && "
+            "(float)(intersection).getDistanceFromSQ(pointA) < (float)((pointB) - (pointA)).getLengthSQ() && "
+            "(float)(intersection).getDistanceFromSQ(pointB) < (float)((pointB) - (pointA)).getLengthSQ())",
+            out,
+        )
+
+    def test_set_length_is_normalize_and_scale(self):
+        out = translate("v.setLength((f32)(colData.nearestDistance - veryCloseDistance));\n", "daisy")
+        self.assertIn("{ v.normalize(); v *= ((float)(colData.nearestDistance - veryCloseDistance)); }", out)
+
+    def test_a_triangles_line_intersection_becomes_a_file_local_helper(self):
+        out = translate(
+            "#include \"x.h\"\nnamespace daisy {\nnamespace scene {\n"
+            "bool C::f()\n{\n\tif (Triangles[i].getIntersectionWithLine(ray.start, linevect, intersection))\n\t\treturn true;\n\treturn false;\n}\n}\n}\n",
+            "daisy",
+        )
+        self.assertIn("_concord_getIntersectionWithLine(Triangles[i], ray.start, linevect, intersection)", out)
+        self.assertIn("inline bool _concord_isOnSameSide(", out)
+        self.assertIn("inline bool _concord_getIntersectionWithLine(", out)
+        self.assertLess(out.index("_concord_isOnSameSide"), out.index("_concord_getIntersectionWithLine("))
+        self.assertLess(out.index("inline bool _concord_getIntersectionWithLine("), out.index("namespace daisy"))
+
     def test_camera_on_pre_render_updates_position_and_sets_projection_after_view_area(self):
         source = (
             "void CCameraSceneNode::OnPreRender()\n{\n"

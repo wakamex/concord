@@ -130,6 +130,8 @@ def seed(
         failed = set()
         if complete_types and _declare_members(root, output, originals):
             progressed = True
+        if complete_types and _declare_overrides(root, output, originals):
+            progressed = True
         for ox_type, member in sorted(missing):
             # one member at a time: one that calls an Irrlicht helper Harvest lacks
             # would break every unit including the header, and is left out
@@ -960,6 +962,143 @@ def _complete_interfaces(root: Path, written: list[str], originals: dict[str, st
             text = drop_forward_declared_includes(qualify(root, text, inc))
             originals.setdefault(inc, before)
             path.write_text(text)
+            changed = True
+    return changed
+
+
+def reconcile_forwards(root: Path, relative: str) -> bool:
+    """Move to namespace daisy a class an ox header forward-declares that the Mac
+    symbols record as daisy's: the provisional header guessed ox's scope, and a
+    virtual that really took daisy::SKeyMap cannot be overridden by a daisy class
+    declaring it (ox::scene::ISceneManager::addCameraSceneNodeFPS, which the map
+    shows CSceneManager overriding with daisy::SKeyMap*)."""
+    path = root / "src" / relative
+    functions = root / "reference" / "1.18-mac-i386" / "functions.csv"
+    if not path.exists() or not functions.exists():
+        return False
+    text = path.read_text()
+    symbols = functions.read_text()
+    changed = False
+    opening = re.search(r"^namespace ox\s*\{", text, re.MULTILINE)
+    if opening is None:
+        return False
+    # the forward declarations at ox's own scope, before it opens a nested namespace
+    head = re.split(r"^namespace \w+[^\n{]*\{", text[opening.end() :], maxsplit=1, flags=re.MULTILINE)[0]
+    for keyword, name in re.findall(r"^\s*(class|struct) (\w+);", head, re.MULTILINE):
+        if not re.search(r"(?<![\w:])daisy::" + name + r"\b", symbols):
+            continue
+        text = re.sub(r"^[ \t]*(?:" + keyword + r") " + name + r";[ \t]*\n", "", text, count=1, flags=re.MULTILINE)
+        text = _in_code(r"(?<![\w:.])" + name + r"\b", "daisy::" + name, text)
+        opening = re.search(r"^namespace ox\s*\{", text, re.MULTILINE)
+        text = text[: opening.start()] + "namespace daisy { " + keyword + " " + name + "; }\n\n" + text[opening.start() :]
+        changed = True
+    if changed:
+        path.write_text(text)
+    return changed
+
+
+PURE_VIRTUAL = re.compile(r"virtual\s+([\w:<> ,&*]+?)\s+(\w+)\s*\(([^()]*)\)\s*(const\s*)?=\s*0\s*;")
+
+
+def _interface_header(root: Path, name: str) -> str | None:
+    """The ox header defining `name`, found through the namespace indexes."""
+    for ns in NAMESPACES:
+        found = _index(root, root / "src" / "ox" / ns).headers.get(name)
+        if found:
+            return found
+    return None
+
+
+def _header_defined(root: Path, cls: str, member: str, relative: str) -> bool:
+    """Whether the Mac symbols record `cls::member` as compiled from `relative` —
+    an inline in the recovered header, as CSceneManager::removeAllMeshes was."""
+    functions = root / "reference" / "1.18-mac-i386" / "functions.csv"
+    if not functions.exists():
+        return False
+    scope = "::".join(relative.split("/")[:-1]) + "::" + cls + "::" + member + "("
+    with open(functions) as stream:
+        return any(row["marker"] == relative and row["name"].startswith(scope) for row in csv.DictReader(stream))
+
+
+def declare_missing_overrides(root: Path, relative: str) -> bool:
+    """Declare in a recovered class's header each pure virtual of a base interface
+    the class lacks, so it is concrete and can be allocated: CSceneManager had no
+    removeAllMeshes for the daisy-added ISceneManager pure virtual, so
+    createSceneManager's `new CSceneManager` could not compile. An override the
+    Mac map shows compiled out of this header is written inline."""
+    path = root / "src" / relative
+    text = path.read_text()
+    changed = False
+    for cls in re.finditer(r"class\s+(\w+)\s*:\s*([^{;]+)\{", text):
+        name, bases = cls[1], cls[2]
+        end = _brace_end(text, cls.end() - 1)
+        body = text[cls.end() : end]
+        missing = []
+        for clause in bases.split(","):
+            base = clause.strip().split()[-1].split("::")[-1]
+            header = _interface_header(root, base)
+            if header is None:
+                continue
+            for found in PURE_VIRTUAL.finditer((root / "src" / header).read_text()):
+                ret, member, args = found[1].strip(), found[2], found[3].strip()
+                if not re.search(r"\b" + re.escape(member) + r"\s*\(", body):
+                    missing.append((ret, member, args, found[4]))
+        if not missing:
+            continue
+        first = re.search(r"public:\n(?:[ \t]*\n)*([ \t]+)\S", body)
+        indent = first[1] if first else "    "
+        declarations = "".join(
+            indent + "virtual {} {}({}){}{}\n".format(
+                ret, member, args, " const" if const else "",
+                " {}" if _header_defined(root, name, member, relative) else ";",
+            )
+            for ret, member, args, const in missing
+        )
+        at = text.index("public:", cls.start()) + len("public:\n")
+        text = text[:at] + declarations + text[at:]
+        end += len(declarations)
+        changed = True
+    if changed:
+        path.write_text(text)
+    return changed
+
+
+ABSTRACT = re.compile(r"abstract class type '(?:class )?(?:[\w]+::)*(\w+)\b")
+
+
+def _declare_overrides(root: Path, output: str, originals: dict[str, str]) -> bool:
+    """Answer an 'abstract class' compile error by declaring the missing pure
+    virtuals in the class's header, after reconciling its base interfaces'
+    forward declarations against the recorded symbols (a parameter the
+    provisional ox header put in the wrong namespace keeps the existing method
+    from overriding). Each changed header's previous text is kept in originals
+    for settling."""
+    changed = False
+    for cls in set(ABSTRACT.findall(output)):
+        header = next(
+            (
+                h
+                for ns in NAMESPACES
+                if (h := _index(root, root / "src" / "daisy" / ns).headers.get(cls))
+            ),
+            None,
+        )
+        if header is None:
+            continue
+        before = (root / "src" / header).read_text()
+        head = re.search(r"class\s+" + re.escape(cls) + r"\s*:\s*([^{;]+)\{", before)
+        if head is None:
+            continue
+        for clause in head[1].split(","):
+            interface = _interface_header(root, clause.strip().split()[-1].split("::")[-1])
+            if interface is None or not (root / "src" / interface).exists():
+                continue
+            original = (root / "src" / interface).read_text()
+            if reconcile_forwards(root, interface):
+                originals.setdefault(interface, original)
+                changed = True
+        if declare_missing_overrides(root, header):
+            originals.setdefault(header, before)
             changed = True
     return changed
 

@@ -227,13 +227,102 @@ def _translate(source: str, namespace: str) -> str:
             group_match.group(1) + "\n\nbool C3DSMeshFileLoader::readMaterialChunk(",
             1,
         )
-    source = re.sub(r"(=\s*)((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))*\w+->getColorFormat\(\))", r"\1(ECOLOR_FORMAT)\2", source)  # ox's IImage returns int
+    source = re.sub(r"(?<![\w)])((?:\w+(?:\[[^\]\n]*\])?(?:\.|->))+)getColorFormat\(\)", r"(ECOLOR_FORMAT)\1getColorFormat()", source)  # ox's IImage returns int
     source = re.sub(r"(\bswitch\s*\()([^;\n]*?->getVertexType\(\)|vertexType)(\))", r"\1(int)\2\3", source)
     source = re.sub(r"\b(\w+)\(\1\s*&", r"\1(const \1&", source)  # copies of Harvest's containers take const references
     source = re.sub(r"\boperator\s*<\(\s*(\w+)\s*&", r"operator <(const \1&", source)
     source = re.sub(r"\bE_DRIVER_TYPE(\s+(?:\w+::)?getDriverType\s*\()", r"int\1", source)  # ox's drivers return int
     source = re.sub(r"\bECOLOR_FORMAT(\s+(?:\w+::)?getColorFormat\s*\()", r"int\1", source)
     source = re.sub(r"(?<!unsigned )\bint(\s+(?:\w+::)?get(?:Red|Green|Blue|Alpha)Mask\s*\()", r"unsigned int\1", source)
+    # 32-bit Irrlicht did byte arithmetic on int-cast pointers; on x86-64 the int
+    # truncates the pointer, so the cast moves to char* and the difference keeps
+    # the computation's meaning (CQ3LevelMesh::Blend, createCurvedSurface).
+    source = re.sub(
+        r"\(int\)\s*(&[^;()\n,]+?)\s*-\s*\(int\)\s*([^;()\n,]+?)(?=\s*\))",
+        r"(int)((char*)\1 - (char*)\2)",
+        source,
+    )
+    source = re.sub(
+        r"\(int\)\s*([^;()\n,]+?)\s*-\s*\(int\)\s*(&[^;()\n,]+?)(?=\s*\))",
+        r"(int)((char*)\1 - (char*)\2)",
+        source,
+    )
+    source = re.sub(
+        r"\(\s*([\w:<>]+(?:\s*<[^>]*>)?)\s*\*\s*\)\s*\(\s*\(int\)\s*([^()\n]+?)\s*\+\s*([^()\n]+?)\s*\)",
+        r"(\1*)((char*)\2 + \3)",
+        source,
+    )
+    # Irrlicht's existFile looked inside open archives too; daisy's signature
+    # takes that choice as an argument (CQ3LevelMesh::loadTextures).
+    source = re.sub(r"(\.|->)existFile\(((?:[^,()]|\([^()]*\))+?)\)", r"\1existFile(\2, true)", source)
+    # daisy kept the signature where Irrlicht defaulted an argument:
+    # addDummyTransformationSceneNode's id=-1 and addTexture's ECF_A1R5G5B5. The
+    # two-argument addTexture is told from (name, image) by its size argument, a
+    # declared dimension2d or a dimension2d literal.
+    source = re.sub(
+        r"(\.|->)addDummyTransformationSceneNode\(((?:[^,()]|\([^()]*\))*)\)",
+        lambda m: m[1] + "addDummyTransformationSceneNode(" + (m[2].strip() + ", -1" if m[2].strip() else "0, -1") + ")",
+        source,
+    )
+    sizes = set(
+        re.findall(r"(?:ox::core::CDimension2d|core::dimension2d|CDimension2d|dimension2d)\s*<[^>]*>\s*(?:const\s*)?[&*]?\s*(\w+)", source)
+    )
+    source = re.sub(
+        r"(\.|->)addTexture\(((?:ox::core::CDimension2d|core::dimension2d)<[^>]+>\s*\([^()]*\)|\w+)\s*,\s*((?:[^,()]|\([^()]*\))+?)\)",
+        lambda m: m[1] + "addTexture(" + m[2] + ", " + m[3] + ", video::ECF_A1R5G5B5)"
+        if "<" in m[2] or m[2] in sizes
+        else m[0],
+        source,
+    )
+    # Irrlicht's four-argument S3DVertex convenience constructor, written as the
+    # nine-argument one S3DVertexInline.h defines (CBspTree::splitPoly).
+    source = re.sub(
+        r"\bS3DVertex(\s+\w+)?\s*\(" + LEAF_ARG + r",\s*" + LEAF_ARG + r",\s*" + LEAF_ARG + r",\s*" + LEAF_ARG + r"\)",
+        lambda m: f"S3DVertex{m[1] or ''}({m[2]}.X, {m[2]}.Y, {m[2]}.Z, {m[3]}.X, {m[3]}.Y, {m[3]}.Z, {m[4]}, {m[5]}.X, {m[5]}.Y)",
+        source,
+    )
+    # CPlane3d::getIntersectionWithLimitedLine calls CVector3d::isBetweenPoints,
+    # which ox's CVector3d does not have; the plane-line half is expanded with the
+    # between-points test Irrlicht's isBetweenPoints wrote (CBspTree::splitPoly).
+    source = re.sub(
+        OBJECT + r"\.getIntersectionWithLimitedLine\(" + LEAF_ARG + r",\s*" + LEAF_ARG + r",\s*" + LEAF_ARG + r"\)",
+        r"(\1.getIntersectionWithLine(\2, (\3) - (\2), \4) && "
+        r"(float)(\4).getDistanceFromSQ(\2) < (float)((\3) - (\2)).getLengthSQ() && "
+        r"(float)(\4).getDistanceFromSQ(\3) < (float)((\3) - (\2)).getLengthSQ())",
+        source,
+    )
+    # vector3d::setLength is normalize + scale (CSceneCollisionManager::collideWithWorld).
+    source = re.sub(OBJECT + r"\.setLength\(([^;\n]+)\);", r"{ \1.normalize(); \1 *= (\2); }", source)
+    # CTriangle3d::getIntersectionWithLine, expanded to a file-local helper that
+    # writes Irrlicht's plane test and three isOnSameSide checks out, since adding
+    # the member to the shared CTriangle3d.h would shift DECL_UID elsewhere.
+    source = re.sub(
+        r"(\w+(?:\[[^\]\n]*\])(?:\.(?:\w+|\w+\[[^\]\n]*\]))*)\.getIntersectionWithLine\(" + LEAF_ARG + r",\s*" + LEAF_ARG + r",\s*" + LEAF_ARG + r"\)",
+        r"_concord_getIntersectionWithLine(\1, \2, \3, \4)",
+        source,
+    )
+    if "_concord_getIntersectionWithLine(" in source and "inline bool _concord_getIntersectionWithLine(" not in source:
+        helper = (
+            "inline bool _concord_isOnSameSide(const ox::core::CVector3d<float>& p1, const ox::core::CVector3d<float>& p2,\n"
+            "\t\tconst ox::core::CVector3d<float>& a, const ox::core::CVector3d<float>& b)\n"
+            "{\n\tox::core::CVector3d<float> bminusa = b - a;\n"
+            "\tox::core::CVector3d<float> cp1 = bminusa.crossProduct(p1 - a);\n"
+            "\tox::core::CVector3d<float> cp2 = bminusa.crossProduct(p2 - a);\n"
+            "\treturn (cp1.dotProduct(cp2) > 0.0f);\n}\n\n"
+            "inline bool _concord_getIntersectionWithLine(const ox::core::CTriangle3d<float>& triangle,\n"
+            "\t\tconst ox::core::CVector3d<float>& linePoint, const ox::core::CVector3d<float>& lineVect,\n"
+            "\t\tox::core::CVector3d<float>& outIntersection)\n"
+            "{\n\tox::core::CVector3d<float> normal = (triangle.pointB - triangle.pointA).crossProduct(triangle.pointC - triangle.pointA);\n"
+            "\tfloat t2 = normal.dotProduct(lineVect);\n\tif (t2 == 0.0f)\n\t\treturn false;\n"
+            "\tfloat d = triangle.pointA.dotProduct(normal);\n"
+            "\tfloat t = -(normal.dotProduct(linePoint) - d) / t2;\n"
+            "\toutIntersection = linePoint + (lineVect * t);\n"
+            "\treturn (_concord_isOnSameSide(outIntersection, triangle.pointA, triangle.pointB, triangle.pointC) &&\n"
+            "\t\t_concord_isOnSameSide(outIntersection, triangle.pointB, triangle.pointA, triangle.pointC) &&\n"
+            "\t\t_concord_isOnSameSide(outIntersection, triangle.pointC, triangle.pointA, triangle.pointB));\n}\n\n"
+        )
+        at = re.search(r"^namespace ", source, re.MULTILINE)
+        source = (source[: at.start()] + helper + source[at.start() :]) if at else helper + source
     for name, replacement in HEADERS.items():
         source = source.replace(f'#include "{name}"', f'#include "{replacement}"')
     source = re.sub(r"^(?!#include)(.*?)(?<![\w:/])IUnknown\b", r"\1ox::IUnknown", source, flags=re.MULTILINE)
@@ -262,6 +351,7 @@ def _translate(source: str, namespace: str) -> str:
 # free ox::algo helpers daisy calls on those containers' iterators.
 OBJECT = r"((?:\(\*\w+\)|\w+)(?:\[[^\]\n]*\])?(?:(?:\.|->)\w+(?:\[[^\]\n]*\])?)*)"
 ARG = r"((?:\([^()]*\)|[^()])*?)"  # one argument, allowing one level of parentheses
+LEAF_ARG = r"((?:\([^()]*\)|[^(),])*?)"  # one argument of several: commas end it at the top level
 CONTAINER_CALLS = [
     (OBJECT + r"\.const_pointer\(\)", r"&\1[0]"),
     (OBJECT + r"\.pointer\(\)\[", r"\1["),  # an element, not a pointer to the array's first element

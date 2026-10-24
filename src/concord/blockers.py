@@ -60,10 +60,57 @@ def _definitions(source: bytes) -> dict[str, Node]:
     return found
 
 
+INCLUDE = re.compile(rb'^#include [<"]([^>"]+)[>"][^\n]*\n', re.MULTILINE)
+
+
+def _missing_includes(current: bytes, irrlicht: bytes) -> bytes:
+    """The #include lines of the qualified translation that the unit lacks, by file
+    name: a relocated include (daisy/os.h for Irrlicht's os.h) satisfies it, so what
+    is added are the headers qualify picked for what the translated bodies call —
+    ox/algo/CArrayFunctions.h for the ox::algo searches a restored body makes."""
+    have = {line.group(1).rsplit(b"/", 1)[-1] for line in INCLUDE.finditer(current)}
+    added = b""
+    for line in INCLUDE.finditer(irrlicht):
+        name = line.group(1).rsplit(b"/", 1)[-1]
+        if name not in have:
+            added += line.group(0)
+            have.add(name)
+    return added
+
+
+HELPER = re.compile(rb"^inline\b[^\n]*?\b_concord_\w+\s*\([^;{]*\)\s*\{.*?^\}", re.MULTILINE | re.DOTALL)
+
+
+def _missing_helpers(current: bytes, irrlicht: bytes) -> bytes:
+    """The file-local `_concord_` helpers translate wrote into the translation at
+    global scope for members a shared ox header cannot add (CTriangle3d's
+    getIntersectionWithLine), which a restored body also calls."""
+    return b"".join(
+        found.group(0) + b"\n\n" for found in HELPER.finditer(irrlicht) if found.group(0) not in current
+    )
+
+
+def _with_includes(text: bytes, includes: bytes, helpers: bytes = b"") -> bytes:
+    """The unit with `includes` added after its first #include line and the
+    `helpers` (file-local inline functions) placed at global scope before its
+    first namespace opens."""
+    if includes:
+        first = INCLUDE.search(text)
+        text = text[: first.end()] + includes + text[first.end() :] if first else includes + text
+    if helpers:
+        opening = re.search(rb"^namespace ", text, re.MULTILINE)
+        text = text[: opening.start()] + helpers + text[opening.start() :] if opening else text + helpers
+    return text
+
+
 def restored(current: bytes, irrlicht: bytes) -> dict[str, bytes]:
     """For each function of `current` whose body is a stub, the unit with that one
-    body replaced by the body of the function of the same name in `irrlicht`."""
+    body replaced by the body of the function of the same name in `irrlicht` (the
+    qualified translation), plus the includes the translation has that the unit
+    lacks."""
     ours, theirs = _definitions(current), _definitions(irrlicht)
+    includes = _missing_includes(current, irrlicht)
+    helpers = _missing_helpers(current, irrlicht)
     out = {}
     for name, node in ours.items():
         body = node.child_by_field_name("body")
@@ -72,7 +119,11 @@ def restored(current: bytes, irrlicht: bytes) -> dict[str, bytes]:
             continue
         start = node.child_by_field_name("declarator").end_byte
         original_start = original.child_by_field_name("declarator").end_byte
-        out[name] = current[:start] + irrlicht[original_start : original.end_byte] + current[body.end_byte :]
+        out[name] = _with_includes(
+            current[:start] + irrlicht[original_start : original.end_byte] + current[body.end_byte :],
+            includes,
+            helpers,
+        )
     return out
 
 

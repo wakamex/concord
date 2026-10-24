@@ -52,6 +52,22 @@ class Blockers(unittest.TestCase):
         self.assertTrue(any(b"useFloat(n)" in text for text in candidates.values()))
         self.assertTrue(all(text.count(b"__builtin_trap();") == 1 for text in candidates.values()))
 
+    def test_the_restored_unit_carries_the_translations_new_includes_and_helpers(self):
+        current = (
+            b'#include "daisy/os.h"\n'
+            b"namespace daisy {\nvoid A::stubbed(int n)\n{\n    __builtin_trap();\n}\n}\n"
+        )
+        irrlicht = (
+            b'#include "os.h"\n#include "ox/algo/CArrayFunctions.h"\n'
+            b"inline int _concord_helper(int n)\n{\n\treturn n;\n}\n"
+            b"namespace daisy {\nvoid A::stubbed(int n)\n{\n    go();\n}\n}\n"
+        )
+        [text] = restored(current, irrlicht).values()
+        self.assertIn(b'#include "daisy/os.h"\n#include "ox/algo/CArrayFunctions.h"', text)
+        self.assertNotIn(b'#include "os.h"\n#', text)  # satisfied by the relocated daisy/os.h
+        self.assertIn(b"inline int _concord_helper(int n)", text)
+        self.assertLess(text.index(b"_concord_helper"), text.index(b"namespace daisy"))
+
     def test_errors_are_kept_only_inside_the_method(self):
         text = restored(CURRENT, IRRLICHT)["A::stubbed"]
         output = "src/d/A.cpp:3: error: other\nsrc/d/A.cpp:8: error: 'class ox::TArray<int>' has no member named 'set_used'\nsrc/d/B.h:8: error: elsewhere\n"

@@ -250,6 +250,61 @@ int CLoaderPSD::uses(int x)
             self.assertEqual((result.exact, result.functions), (2, 2))
 
 
+class InterfaceReconcile(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / "reference" / "1.18-mac-i386").mkdir(parents=True)
+        (self.root / "src" / "ox" / "scene").mkdir(parents=True)
+        (self.root / "src" / "daisy" / "scene").mkdir(parents=True)
+        seed_module._indexes.clear()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_an_ox_forward_declared_type_the_symbols_locate_in_daisy_is_moved(self):
+        (self.root / "reference" / "1.18-mac-i386" / "functions.csv").write_text(
+            "address,size,unit,marker,symbol,name\n"
+            "0x1,10,daisy/scene/CSceneManager.cpp,daisy/scene/CSceneManager.cpp,_Z1x,"
+            '"daisy::scene::CSceneManager::addCameraSceneNodeFPS(ox::scene::ISceneNode*, float, float, int, daisy::SKeyMap*, int)"\n'
+        )
+        header = self.root / "src" / "ox" / "scene" / "ISceneManager.h"
+        header.write_text(
+            "namespace ox {\nstruct SKeyMap;\nstruct SOther;\nnamespace scene {\n"
+            "class ISceneManager\n{\npublic:\n    virtual void add(SKeyMap* k) = 0;\n};\n}\n}\n"
+        )
+        self.assertTrue(seed_module.reconcile_forwards(self.root, "ox/scene/ISceneManager.h"))
+        text = header.read_text()
+        self.assertIn("namespace daisy { struct SKeyMap; }\n\nnamespace ox {", text)
+        self.assertIn("virtual void add(daisy::SKeyMap* k) = 0;", text)
+        self.assertIn("struct SOther;", text)
+        self.assertNotIn("struct SKeyMap;\n", text.split("namespace ox")[1])
+        self.assertFalse(seed_module.reconcile_forwards(self.root, "ox/scene/ISceneManager.h"))
+
+    def test_a_class_gets_the_pure_virtual_overrides_it_lacks(self):
+        (self.root / "src" / "ox" / "scene" / "ISceneManager.h").write_text(
+            "namespace ox {\nnamespace scene {\nclass ISceneManager\n{\npublic:\n"
+            "    virtual void clear() = 0;\n    virtual void removeAllMeshes() = 0;\n    virtual int count(int n) const = 0;\n};\n}\n}\n"
+        )
+        (self.root / "reference" / "1.18-mac-i386" / "functions.csv").write_text(
+            "address,size,unit,marker,symbol,name\n"
+            "0x1,10,daisy/scene/CSceneManager.cpp,daisy/scene/CSceneManager.h,_Z1x,"
+            '"daisy::scene::CSceneManager::removeAllMeshes()"\n'
+        )
+        header = self.root / "src" / "daisy" / "scene" / "CSceneManager.h"
+        header.write_text(
+            "namespace daisy\n{\nnamespace scene\n{\n"
+            "\tclass CSceneManager : public ISceneManager, ISceneNode\n\t{\n\tpublic:\n"
+            "\t\tvirtual void clear();\n\t};\n}\n}\n"
+        )
+        self.assertTrue(seed_module.declare_missing_overrides(self.root, "daisy/scene/CSceneManager.h"))
+        text = header.read_text()
+        self.assertIn("public:\n\t\tvirtual void removeAllMeshes() {}\n", text)  # the map shows it inline in this header
+        self.assertIn("\t\tvirtual int count(int n) const;\n", text)
+        self.assertIn("\t\tvirtual void clear();\n", text)
+        self.assertFalse(seed_module.declare_missing_overrides(self.root, "daisy/scene/CSceneManager.h"))
+
+
 class DeclareMembers(unittest.TestCase):
     """A provisional daisy class header gets the member declarations its unit needs,
     copied from Irrlicht's class, and keeps its placeholder that sets the size."""
