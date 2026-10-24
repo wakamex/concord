@@ -78,6 +78,7 @@ before = "if (mutate) { /* mutate */ } else { /* copy */ }"
 after = "if (!copyMine) { /* mutate */ } else { /* copy */ }"
 evidence = [
   { commit = "9edc1d4", function = "harvest::entity::CShuttleEntity::resetAllAiByMe", note = "combined with other changes in the same commit" },
+  { function = "daisy::gui::CGUIEditBox::draw", note = "concord permute at harvest d2d0bfb swaps the Animations[EEBA_BACKGROUND] branches at line 572; 32 compiled candidates make the 5,623-byte target exact, with no whole-build regression, although diff reported only alignment or relocation differences" },
   { function = "daisy::gui::CGUIListBox::draw", note = "concord permute at harvest 4bc99eb: `if (!DrawBack) { children } else IGUIElement::draw();` as `if (DrawBack) IGUIElement::draw(); else { children }` made it exact (98.45); the diff had attributed its mismatch to other causes, so only a search over every transform tried it" },
   { function = "harvest::settings::CSystemConfig constructors", note = "concord permute at harvest 4bc99eb: setting the default resolution in the then-branch, `if (attributeExists(h) != true || !attributeExists(v)) setScreenRes(resolution); else { ... }`, made C1 and C2 exact (98.14)" },
 ]
