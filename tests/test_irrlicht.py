@@ -258,5 +258,15 @@ class Translate(unittest.TestCase):
         self.assertIn("recalculateViewArea();\n\t\tdriver->setTransform(video::ETS_PROJECTION, Projection);\n\n\t\tSceneManager->registerNodeForRendering", out)
 
 
+class Literals(unittest.TestCase):
+    def test_string_literals_keep_irrlicht_type_names_and_includes_still_translate(self):
+        source = '#include "SColor.h"\nvoid f() { s32 n = 0; log("Face with more than 40 face points found s32 file.", ELL_WARNING); const c8* q = "a\\"s32"; }\n'
+        out = translate(source)
+        self.assertIn('#include "ox/video/SColor.h"', out)
+        self.assertIn("int n = 0;", out)
+        self.assertIn('"Face with more than 40 face points found s32 file."', out)
+        self.assertIn('const char* q = "a\\"s32";', out)
+
+
 if __name__ == "__main__":
     unittest.main()

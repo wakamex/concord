@@ -74,9 +74,32 @@ HEADERS = {
 }
 
 
+LITERAL = re.compile(r'"(?:[^"\\\n]|\\.)*"')
+
+
+def _protect_literals(source: str) -> tuple[str, list[str]]:
+    """The source with each string literal outside preprocessor lines replaced by
+    a placeholder, and the literals: renaming `s32` to `int` must not reach the
+    text of a message the original binary still holds ("found s32 file")."""
+    literals: list[str] = []
+
+    def keep(match: re.Match) -> str:
+        literals.append(match.group())
+        return f"__concord_literal_{len(literals) - 1}__"
+
+    lines = [line if line.lstrip().startswith("#") else LITERAL.sub(keep, line) for line in source.split("\n")]
+    return "\n".join(lines), literals
+
+
 def translate(source: str, namespace: str = "daisy") -> str:
     """The Irrlicht source with ox's types and headers, in daisy's namespace, or in
-    ox's for one of Irrlicht's public types, which daisy kept there."""
+    ox's for one of Irrlicht's public types, which daisy kept there. String
+    literals are left as they are."""
+    source, literals = _protect_literals(source)
+    return re.sub(r"__concord_literal_(\d+)__", lambda m: literals[int(m[1])], _translate(source, namespace))
+
+
+def _translate(source: str, namespace: str) -> str:
     # GCC emits the destructor variants' exception tables in the target's
     # order when the mesh destructor precedes its constructor.
     destructor = re.search(r"(?://! destructor\n)?CMeshSceneNode::~CMeshSceneNode\(\)\s*\{.*?^\}", source, re.MULTILINE | re.DOTALL)
