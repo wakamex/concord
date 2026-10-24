@@ -95,16 +95,18 @@ class Apply(unittest.TestCase):
     current = declarations + CURRENT + b"void A::broken() { __builtin_trap(); }\n"
     original = declarations + IRRLICHT.replace(b"Items.set_used(n);", b"(void)n;") + b"void A::broken() { missing(); }\n"
 
-    def run_trial(self, apply=False, combined_error=False, outside_error=False):
+    def run_trial(self, apply=False, combined_error=False, outside_error=False, current=None, original=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path = root / "src" / "d" / "A.cpp"
             path.parent.mkdir(parents=True)
-            source = self.current.replace(b"return 1;", b"return missing;", 1) if outside_error else self.current
+            source = current if current is not None else self.current
+            if outside_error:
+                source = source.replace(b"return 1;", b"return missing;", 1)
             path.write_bytes(source)
             ancestor = root / IRRLICHT_DIRECTORY / "source" / "Irrlicht" / "A.cpp"
             ancestor.parent.mkdir(parents=True)
-            ancestor.write_bytes(self.original)
+            ancestor.write_bytes(original if original is not None else self.original)
 
             def evaluate(unit, candidates):
                 self.assertEqual(unit, "d/A.cpp")
@@ -132,6 +134,14 @@ class Apply(unittest.TestCase):
         self.assertEqual({s.name for s in found if s.applied}, {"A::stubbed"})
         self.assertEqual(text, restored(source, self.original)["A::stubbed"])
         self.assertTrue(next(s for s in found if s.name == "A::broken").errors)
+
+    def test_apply_adds_the_includes_a_restored_body_needs(self):
+        current = b"class A { public: void stubbed(); };\nvoid A::stubbed() { __builtin_trap(); }\n"
+        original = b'#include <vector>\nclass A { public: void stubbed(); };\nvoid A::stubbed() { std::vector<int> v; (void)v; }\n'
+        found, text, source = self.run_trial(apply=True, current=current, original=original)
+        self.assertEqual({s.name for s in found if s.applied}, {"A::stubbed"})
+        self.assertEqual(text, restored(source, original)["A::stubbed"])
+        self.assertIn(b"#include <vector>", text)
 
     def test_diagnosis_does_not_write(self):
         found, text, source = self.run_trial()

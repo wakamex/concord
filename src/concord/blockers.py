@@ -199,6 +199,9 @@ def stubs(harvest: Harvest, units: list[str], apply: bool = False) -> list[Stub]
             combined = current
             for start, stop, body in sorted(edits, reverse=True):
                 combined = combined[:start] + body + combined[stop:]
+            combined = _with_includes(
+                combined, _missing_includes(current, translation), _missing_helpers(current, translation)
+            )
             verification = harvest.evaluate(unit, {"combined": combined})["combined"]
             if verification.error:
                 raise RuntimeError(f"{unit}: combined restored bodies do not compile:\n{verification.error}")
