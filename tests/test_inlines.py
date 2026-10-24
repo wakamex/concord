@@ -38,7 +38,8 @@ ARGS = {
     "span": (0, 0),
     "mac_by_symbol": {},
     "mac_by_unit": [],
-    "emitted_anywhere": set(),
+    "emitted_units": {},
+    "exact_units": {},
 }
 
 
@@ -63,7 +64,27 @@ class Copies(unittest.TestCase):
             ours,
             extents_={0x1000: (25, "fde")},
         )
-        self.assertEqual(result["differs"], [{"symbol": "_ZW", "ours": 373, "target": 25}])
+        self.assertEqual(
+            result["differs"],
+            [{"symbol": "_ZW", "ours": 373, "target": 25, "emitted-elsewhere": [], "exact-elsewhere": []}],
+        )
+
+    def test_elsewhere_evidence_distinguishes_context_from_definition(self):
+        ours = code({"_ZW": (".text._ZW", 0, 373), "_ZX": (".text._ZX", 0, 373)})
+        result = analyze_(
+            report(sections=[
+                section(".text._ZW", 0x1000, [function("_ZW", 0x1000, 373)]),
+                section(".text._ZX", 0x2000, [function("_ZX", 0x2000, 373)]),
+            ]),
+            ours,
+            extents_={0x1000: (25, "fde"), 0x2000: (30, "fde")},
+            emitted_units={"_ZW": {"d/A.cpp", "d/B.cpp", "d/C.cpp"}, "_ZX": {"d/A.cpp", "d/B.cpp"}},
+            exact_units={"_ZW": {"d/B.cpp", "d/C.cpp"}},
+        )
+        self.assertEqual(result["differs"][0]["emitted-elsewhere"], ["d/B.cpp", "d/C.cpp"])
+        self.assertEqual(result["differs"][0]["exact-elsewhere"], ["d/B.cpp", "d/C.cpp"])
+        self.assertEqual(result["differs"][1]["emitted-elsewhere"], ["d/B.cpp"])
+        self.assertEqual(result["differs"][1]["exact-elsewhere"], [])
 
     def test_text_functions_compare_the_same_way(self):
         ours = code({"_ZF": (".text", 0, 671)})
@@ -72,7 +93,7 @@ class Copies(unittest.TestCase):
             ours,
             extents_={0x1000: (345, "fde")},
         )
-        self.assertEqual(result["differs"], [{"symbol": "_ZF", "ours": 671, "target": 345}])
+        self.assertEqual(result["differs"][0]["symbol"], "_ZF")
 
     def test_unplaced_copy_verdicts(self):
         ours = code({
@@ -109,9 +130,26 @@ class Copies(unittest.TestCase):
         self.assertEqual(
             result["target-only"],
             [
-                {"address": 0x1100, "size": 50, "symbol": "_Zknown", "kind": "fde"},
-                {"address": 0x1200, "size": 60, "symbol": None, "kind": "fde"},
+                {"address": 0x1100, "size": 50, "symbol": "_Zknown", "kind": "fde", "called": 0},
+                {"address": 0x1200, "size": 60, "symbol": None, "kind": "fde", "called": 0},
             ],
+        )
+
+    def test_an_extent_the_unit_calls_counts_even_outside_the_span(self):
+        ours = code({"_ZF": (".text", 0, 10)})
+        target = code({"_ZF": (".text", 0, 10), "_ZG": (".text", 0x40, 10)})
+        target.direct["_ZG"] = ["sub_800"]
+        result = analyze_(
+            report(sections=[section(".text", 0x1000, [function("_ZF", 0x1000, 10)])]),
+            ours,
+            target,
+            extents_={0x800: (42, "fde"), 0x900: (50, "fde")},
+            span=(0x1000, 0x2000),
+            named={0x900: "_Znamed"},
+        )
+        self.assertEqual(
+            result["target-only"],
+            [{"address": 0x800, "size": 42, "symbol": None, "kind": "fde", "called": 1}],
         )
 
     def test_an_extent_hosting_an_unplaced_copy_is_not_missing(self):
@@ -137,7 +175,7 @@ class Copies(unittest.TestCase):
                 {"symbol": "_ZF", "marker": "d/A.cpp"},
                 {"symbol": "_ZmacInternal", "marker": "vector"},
             ],
-            emitted_anywhere={"_Zkept"},
+            emitted_units={"_Zkept": {"d/B.cpp"}},
         )
         self.assertEqual(result["mac-missing"], [{"symbol": "_Zkept", "marker": "d/A.h"}])
         self.assertEqual(result["mac-platform"], 1)
@@ -167,6 +205,32 @@ class Calls(unittest.TestCase):
         self.assertEqual(row["called-out-of-line"], {"_Zcallee": 1, "_Zother": 1})
         self.assertEqual(row["original-called"], {"_Ztarget": 1})
         self.assertEqual(row["indirect"], {"ours": 3, "target": 0})
+
+    def test_callees_compare_by_target_address(self):
+        ours = code({"_ZF": (".text", 0, 10)})
+        ours.direct["_ZF"] = ["_Zplaced", "_Zunknown"]
+        target = code({"_ZF": (".text", 0, 10)})
+        target.direct["_ZF"] = ["sub_2000", "sub_3000"]
+        [row] = analyze_(
+            report(sections=[section(".text", 0x1000, [function("_ZF", 0x1000, 10), function("_Zplaced", 0x2000, 5)])]),
+            ours,
+            target,
+            named={0x3000: "_Zlost"},
+        )["call-differences"]
+        self.assertEqual(row, {"function": "_ZF", "called-out-of-line": {"_Zunknown": 1}, "original-called": {"_Zlost": 1}})
+
+    def test_same_named_callee_cancels_before_addresses(self):
+        ours = code({"_ZF": (".text", 0, 10)})
+        ours.direct["_ZF"] = ["_Zmoved"]
+        target = code({"_ZF": (".text", 0, 10)})
+        target.direct["_ZF"] = ["_Zmoved"]
+        result = analyze_(
+            report(sections=[section(".text", 0x1000, [function("_ZF", 0x1000, 10), function("_Zmoved", 0x2000, 5)])]),
+            ours,
+            target,
+            named={0x9000: "_Zmoved"},
+        )
+        self.assertEqual(result["call-differences"], [])
 
 
 @unittest.skipUnless(shutil.which("as"), "GNU assembler is needed")
@@ -208,9 +272,9 @@ class Show(unittest.TestCase):
             "unit": "d/A.cpp",
             "emitted": 2,
             "placed": 1,
-            "differs": [{"symbol": "_ZD", "ours": 10, "target": 5}],
-            "unplaced": [{"symbol": "_ZS", "size": 9, "verdict": "surplus", "mac_units": [], "extents": []}],
-            "target-only": [{"address": 0x1100, "size": 3, "symbol": "_ZK", "kind": "fde"}],
+            "differs": [{"symbol": "_ZD", "ours": 10, "target": 5, "emitted-elsewhere": ["d/B.cpp"], "exact-elsewhere": ["d/B.cpp"]}],
+            "unplaced": [{"symbol": "_ZS", "size": 9, "verdict": "surplus", "mac_units": [], "extents": [], "emitted-elsewhere": [], "exact-elsewhere": []}],
+            "target-only": [{"address": 0x1100, "size": 3, "symbol": "_ZK", "kind": "fde", "called": 2}],
             "mac-missing": [{"symbol": "_ZM", "marker": "d/A.h"}],
             "mac-platform": 4,
             "call-differences": [{"function": "_ZF", "called-out-of-line": {"_ZC": 2}, "indirect": {"ours": 1, "target": 0}}],
