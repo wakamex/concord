@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +17,18 @@ CODE = bytes.fromhex('8d460583c7030fafc7c3')
 
 
 class CompilerDecisions(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('as'), 'GNU assembler is needed')
+    def test_long_labels_are_recovered_from_real_assembler_line_numbers(self):
+        symbol = '_Z' + 'f' * 180
+        assembly = f'.text\n.globl {symbol}\n.type {symbol}, @function\n{symbol}:\nret # 12 return_internal\n.size {symbol}, .-{symbol}\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'long.s'
+            source.write_text(assembly)
+            done = subprocess.run(['as', '--64', '-aln', str(source), '-o', str(Path(tmp) / 'long.o')], capture_output=True, text=True, check=True)
+        listing = causal.complete_listing(done.stdout, assembly)
+        records = causal.listing_instructions(listing, symbol, 0, b'\xc3')
+        self.assertEqual(records[0]['uid'], 12)
+
     def test_ira_assigns_real_registers_to_the_expression(self):
         history = causal.histories(FIXTURE, '_Z1fii', {8})[8]
         decision = causal.decision(history, Cause.REGISTER_ALLOCATION)

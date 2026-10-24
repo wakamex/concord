@@ -18,7 +18,7 @@ class CliTest(unittest.TestCase):
         with mock.patch('concord.cli.Harvest') as harvest, mock.patch('concord.cli.census.run', return_value=report) as run:
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(main(['causal-census', '--harvest', '/root', '--maximum', '20', '--save', '/tmp/result.json']), 0)
-            run.assert_called_once_with(harvest.return_value, Path('/tmp/result.json'), 97, 20)
+            run.assert_called_once_with(harvest.return_value, Path('/tmp/result.json'), 97, 20, None)
 
     def test_causal_reuses_dumps_and_saves_structured_findings(self):
         import json

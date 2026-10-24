@@ -82,10 +82,11 @@ def groups(functions: list[dict]) -> dict[str, list[dict]]:
     return dict(units)
 
 
-def run(harvest, save: Path, minimum: float = 97, maximum: int | None = None) -> dict:
+def run(harvest, save: Path, minimum: float = 97, maximum: int | None = None, reuse: Path | None = None) -> dict:
     from concord import causal, scores
 
     functions = select(scores.report(harvest.root), minimum)
+    cached = {u['unit']: Path(u['dumps']) for u in json.loads(reuse.read_text())['units']} if reuse else {}
     if maximum is not None:
         functions = functions[:maximum]
     directory = save.parent / (save.stem + '-units')
@@ -98,7 +99,13 @@ def run(harvest, save: Path, minimum: float = 97, maximum: int | None = None) ->
     for number, (unit, selected) in enumerate(by_unit.items(), 1):
         print(f'{number}/{len(by_unit)} {unit}: {len(selected)} functions', flush=True)
         try:
-            dumps = causal.collect(harvest, unit)
+            dumps = cached.get(unit)
+            if dumps:
+                try:
+                    causal.verify_inputs(harvest.root, unit, json.loads((dumps / 'metadata.json').read_text()))
+                except (OSError, ValueError):
+                    dumps = None
+            dumps = dumps or causal.collect(harvest, unit)
             try:
                 unit_reports = causal.analyze_many(harvest, unit, [f['symbol'] for f in selected], dumps)
             except (ValueError, KeyError, StopIteration):

@@ -96,6 +96,22 @@ def listing_instructions(text: str, symbol: str, start: int, code: bytes) -> dic
     return records
 
 
+def complete_listing(listing: str, assembly: str) -> str:
+    """Restore full assembler lines using the listing's input line numbers.
+
+    Old assemblers truncate long symbols in listings. Their listing line
+    numbers still identify the original, complete compiler assembly lines.
+    """
+    source = assembly.splitlines()
+    lines = []
+    for line in listing.splitlines():
+        match = re.match(r'^(\s*(\d+)\s+[^\t]*)\t', line)
+        if match and 0 < int(match[2]) <= len(source):
+            line = match[1] + '\t' + source[int(match[2]) - 1]
+        lines.append(line)
+    return '\n'.join(lines)
+
+
 def histories(directory: Path, symbol: str, wanted: set[int]) -> dict[int, list[dict]]:
     return histories_many(directory, {symbol: wanted})[symbol]
 
@@ -176,6 +192,8 @@ def analyze_many(harvest: Harvest, unit: str, symbols: list[str], directory: Pat
         if path.parent != directory or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise ValueError(f'dump artifact changed: {name}')
     listing = (directory / 'listing.txt').read_text(errors='replace')
+    if (directory / 'trace.s').is_file():
+        listing = complete_listing(listing, (directory / 'trace.s').read_text(errors='replace'))
     mappings, selections, wanted = {}, {}, {}
     verdicts = {v.symbol: v for v in harvest.verdicts(unit)}
     for symbol, (_, traced) in contexts.items():

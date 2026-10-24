@@ -297,6 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_census.add_argument("--harvest", type=Path, required=True)
     p_census.add_argument("--min-score", type=float, default=97)
     p_census.add_argument("--maximum", type=int, help="analyze at most this many functions, largest first")
+    p_census.add_argument("--reuse", type=Path, help="reuse validated dump directories from an earlier census")
     p_census.add_argument("--save", type=Path, required=True)
 
     p_trial = sub.add_parser("causal-trial", help="measure header rewrites at a traced source line")
@@ -368,7 +369,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{row['description']}: {gained} newly exact copies, {lost} lost, {worse} lower scores")
         return 0
     if args.command == "causal-census":
-        report = census.run(Harvest(args.harvest), args.save, args.min_score, args.maximum)
+        report = census.run(Harvest(args.harvest), args.save, args.min_score, args.maximum, args.reuse)
         for row in report['constructs'][:20]:
             print(f"{row['function_count']:4} functions {row['function_bytes']:8} bytes {row['path']}:{row['line']} {row['text']}")
         print(f"{report['analyzed_functions']}/{report['selected_functions']} functions analyzed; {len(report['failures'])} failures")
