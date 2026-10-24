@@ -11,6 +11,8 @@ also the proof that the two spellings mean the same: GCC folds `!(a < b)` into
 
 from __future__ import annotations
 
+import re
+
 from concord.diff import read_function
 from concord.harvest import Evaluation, Harvest
 from concord.temporaries import rename, variable_types
@@ -24,11 +26,37 @@ def finish(harvest: Harvest, unit: str, symbol: str, source: bytes, original: by
     reference = harvest.evaluate(unit, {"search": source})["search"]
     if reference.error:
         return None
+    formatted = indentation(source, symbol)
+    if formatted != source and _same(harvest.evaluate(unit, {"indent": formatted})["indent"], reference, symbol):
+        source = formatted
     if b"concordTmp" in source:
         source = _temporaries(harvest, unit, symbol, source, reference)
         if source is None:
             return None
     return _comparisons(harvest, unit, symbol, source, original, reference)
+
+
+def indentation(source: bytes, symbol: str) -> bytes:
+    """Normalize mixed tab indentation inside a function at four-column stops.
+    Literal contents and lines continued with a backslash retain their bytes."""
+    scope = find_function(source, symbol)
+    literals = [(n.start_byte, n.end_byte) for n in _descendants(scope, "string_literal")]
+    edits = []
+    for match in re.finditer(rb"(?m)^[ \t]+(?=\S)", source):
+        start, end = match.span()
+        if not scope.start_byte <= start < scope.end_byte or b"\t" not in match[0]:
+            continue
+        if any(a <= start < b for a, b in literals):
+            continue
+        if start and source[:start].rstrip(b"\r\n").endswith(b"\\"):
+            continue
+        width = len(match[0].expandtabs(4))
+        prefix = b"\t" * (width // 4) + b" " * (width % 4)
+        if prefix != match[0]:
+            edits.append((start, end, prefix))
+    for start, end, prefix in reversed(edits):
+        source = source[:start] + prefix + source[end:]
+    return source
 
 
 def _same(evaluation: Evaluation, reference: Evaluation, symbol: str) -> bool:

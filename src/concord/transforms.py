@@ -542,7 +542,7 @@ def nest_condition(source: bytes, scope: Node) -> Iterator[Rewrite]:
         if indent.strip():
             continue  # the if shares its line with other code
         left, right = inner.child_by_field_name("left"), inner.child_by_field_name("right")
-        step = b"    "
+        step = b"\t" if b"\t" in indent else b"    "
         # the body's own lines move one level in; its first line follows the condition
         between = source[clause.end_byte : body.start_byte]
         inner_body = between + _reindent(body.text, step) if b"\n" in between else b" " + _reindent(body.text, step)
@@ -579,9 +579,12 @@ def merge_conditions(source: bytes, scope: Node) -> Iterator[Rewrite]:
             # the inner if's body, one level out, after the same gap the inner if had
             inner_if = held[0]
             gap = source[inner_if.child_by_field_name("condition").end_byte : inner_if.child_by_field_name("consequence").start_byte]
-            body = inner_if.child_by_field_name("consequence").text.replace(b"\n    ", b"\n")
-            gap = gap.replace(b"\n    ", b"\n", 1) if b"\n" in gap else b" "
-            merged = b"if (" + halves[0] + b" && " + halves[1].replace(b"\n    ", b"\n") + b")" + gap + body
+            indent = source[_line_start(source, node.start_byte) : node.start_byte]
+            step = b"\t" if b"\t" in indent else b"    "
+            prefix = b"\n" + step
+            body = inner_if.child_by_field_name("consequence").text.replace(prefix, b"\n")
+            gap = gap.replace(prefix, b"\n", 1) if b"\n" in gap else b" "
+            merged = b"if (" + halves[0] + b" && " + halves[1].replace(prefix, b"\n") + b")" + gap + body
             yield _rewrite("condition-nesting", Cause.BLOCK_ORDER, source, node, merged, "nested ifs as one && condition")
 
 

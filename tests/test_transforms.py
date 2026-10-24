@@ -265,6 +265,7 @@ class FlipNanSense(unittest.TestCase):
 
     def test_nesting_then_merging_gives_back_the_source(self):
         for source in (
+            b"void f()\n{\n\tif (a && b)\n\t{\n\t\tg();\n\t}\n}\n",
             b"void f()\n{\n    if (a && b > 1.0f)\n    {\n        float x = g();\n        y = x;\n    }\n}\n",
             b"void f()\n{\n    if (p && q(1,\n            2))\n        return;\n}\n",
         ):
