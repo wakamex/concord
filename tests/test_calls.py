@@ -8,10 +8,19 @@ from pathlib import Path
 
 from elftools.elf.elffile import ELFFile
 
-from concord.calls import CallSite, object_sites, proven
+from concord.calls import CallSite, alias_claims, object_sites, proven
 
 
 class Learning(unittest.TestCase):
+    def test_constructor_aliases_need_identical_bodies_and_agreeing_calls(self):
+        sites = [self.site(0x400200, symbol="C1"), self.site(0x400100, symbol="C2")]
+        known = {"C1": 0x400100, "C2": 0x400200}
+        identical = {("C1", "C2")}
+        self.assertEqual({n: row[0] for n, row in alias_claims(sites, known, identical).items()}, {"C1": 0x400200, "C2": 0x400100})
+        self.assertEqual(alias_claims(sites, known, set()), {})
+        self.assertEqual(alias_claims(sites + [self.site(0x400100, symbol="C1")], known, identical), {})
+        self.assertEqual(alias_claims(sites, {**known, "other": 0x400100}, identical), {})
+
     def site(self, address=0x400100, offset=10, symbol="callee"):
         return CallSite(symbol, address, "d/A.cpp", "caller", offset, offset)
 

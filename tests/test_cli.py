@@ -10,6 +10,20 @@ from concord.cli import build_parser, main
 
 
 class CliTest(unittest.TestCase):
+    def test_explicit_permute_target_respects_skip_logged(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "runs.jsonl"
+            log.write_text(json.dumps({"command": "permute", "unit": "u.cpp", "symbol": "symbol", "budget": 128, "batch": 32, "depth": 3, "seed": 0}) + "\n")
+            with mock.patch("concord.cli.Harvest", return_value=SimpleNamespace(source=lambda unit: unit)), mock.patch("concord.cli._permute_one") as run:
+                self.assertEqual(main(["permute", "--harvest", tmp, "--unit", "u.cpp", "symbol", "--budget", "128", "--skip-logged", "--results", str(log)]), 0)
+            run.assert_not_called()
+
     def test_no_args_prints_help_and_succeeds(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):

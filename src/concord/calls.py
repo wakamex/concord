@@ -183,3 +183,82 @@ if any(name in known or row[0] in known.values() for name, row in learned.items(
 add_learned(build, learned, extents.load_target(build))
 """
     subprocess.run(["uv", "--no-config", "run", "--locked", "python", "-c", script, BUILD], cwd=root, input=json.dumps(learned), text=True, check=True, capture_output=True)
+
+
+def alias_claims(sites: list[CallSite], known: dict[str, int], identical: set[tuple[str, str]]) -> dict[str, tuple[int, str]]:
+    """Swap constructor aliases only when compiled bodies are proven identical
+    and all observed calls agree with the swapped binding."""
+    grouped = defaultdict(list)
+    for site in sites:
+        grouped[site.symbol].append(site)
+    found = {}
+    for first, second in sorted(identical):
+        if first not in known or second not in known or known[first] == known[second]:
+            continue
+        old = {known[first], known[second]}
+        if any(name not in (first, second) and address in old for name, address in known.items()):
+            continue
+        desired = {first: known[second], second: known[first]}
+        observed = [s for name in desired for s in grouped[name]]
+        if not observed or any(s.address != desired[s.symbol] for s in observed):
+            continue
+        witness = observed[0]
+        for name, address in desired.items():
+            found[name] = (address, f"aligned-alias:{witness.unit}:{witness.caller}+{witness.offset:#x}:previous={known[name]:#x}")
+    return found
+
+
+def constructor_aliases(root: Path, sites: list[CallSite]) -> dict[str, tuple[int, str]]:
+    """Recognize exact complete/base constructor copies with identical code and
+    identical relocation targets before considering an exchange of their names."""
+    from concord.diff import read_function
+    from concord.transforms import demangle
+
+    with (root / "config" / BUILD / "symbols.tsv").open() as stream:
+        known = {row["symbol"]: int(row["address"], 16) for row in csv.DictReader(stream, delimiter="\t")}
+    identical = set()
+    for report in (root / "build" / "match" / BUILD).glob("*.json"):
+        data = json.loads(report.read_text())
+        exact = {f["symbol"] for s in data["sections"] for f in s.get("functions", []) if f["exact"] and f.get("extent") == "fde"}
+        for first in exact:
+            if "C1E" not in first:
+                continue
+            second = first.replace("C1E", "C2E", 1)
+            if second not in exact or demangle(first) != demangle(second):
+                continue
+            obj = report.with_suffix(".o")
+            a, b = read_function(obj, first), read_function(obj, second)
+            if a.code != b.code or a.relocations != b.relocations:
+                continue
+            with obj.open("rb") as stream:
+                elf = ELFFile(stream)
+                refs = []
+                for section in elf.iter_sections():
+                    if section["sh_type"] != "SHT_RELA" or elf.get_section(section["sh_info"]).name != a.section:
+                        continue
+                    table = elf.get_section(section["sh_link"])
+                    refs.extend((r["r_offset"], r["r_info_type"], r["r_addend"], table.get_symbol(r["r_info_sym"]).name) for r in section.iter_relocations())
+                def signature(function, references=refs):
+                    return [(offset - function.start, kind, addend, name) for offset, kind, addend, name in references if function.start <= offset < function.start + len(function.code)]
+                if signature(a) == signature(b):
+                    identical.add((first, second))
+    return alias_claims(sites, known, identical)
+
+
+def apply_aliases(root: Path, learned: dict[str, tuple[int, str]]) -> None:
+    """Replace a bijection of existing alias claims through Harvest's symbol API."""
+    if not learned:
+        return
+    script = """import json, sys
+from hv import symbols
+build = sys.argv[1]
+learned = json.load(sys.stdin)
+rows = symbols.load(build)
+known = symbols.by_name(rows)
+if any(name not in known for name in learned) or {known[name] for name in learned} != {row[0] for row in learned.values()}:
+    raise ValueError('constructor claims changed during verification')
+if any(s.name not in learned and s.address in {row[0] for row in learned.values()} for s in rows):
+    raise ValueError('another symbol claims a constructor address')
+symbols.save(build, [symbols.Symbol(learned[s.name][0], s.size, s.name, learned[s.name][1]) if s.name in learned else s for s in rows])
+"""
+    subprocess.run(["uv", "--no-config", "run", "--locked", "python", "-c", script, BUILD], cwd=root, input=json.dumps(learned), text=True, check=True, capture_output=True)

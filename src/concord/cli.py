@@ -17,6 +17,7 @@ from concord import (
     knowledge,
     layout,
     oracle,
+    place,
     results,
     scores,
 )
@@ -225,6 +226,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_calls.add_argument("units", nargs="*", help="units whose callees may be named (calls checked across every match report)")
     p_calls.add_argument("--apply", action="store_true", help="save proven addresses using Harvest's symbol writer")
     p_calls.add_argument("--save", type=Path, help="save all aligned call sites and accepted addresses as JSON")
+    p_calls.add_argument("--constructor-aliases", action="store_true", help="instead reconcile named constructor copies whose exact code and relocations are identical")
+
+    p_place = sub.add_parser("place", help="learn references and place called templates without re-seeding source")
+    p_place.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_place.add_argument("units", nargs="+", help="units to refresh")
+    p_place.add_argument("--restore-literals", action="store_true", help="try ancestor string literals, keeping only exact target matches")
+    p_place.add_argument("--save", type=Path, help="save placement results as JSON")
 
     p_clean = sub.add_parser("clean", help="remove concord's old work directories from the Harvest checkout")
     p_clean.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
@@ -277,10 +285,12 @@ def main(argv: list[str] | None = None) -> int:
         from dataclasses import asdict
 
         sites, learned = calls.discover(args.harvest.resolve(), args.units)
+        if args.constructor_aliases:
+            learned = calls.constructor_aliases(args.harvest.resolve(), sites)
         if args.save:
             args.save.write_text(json.dumps({"sites": [asdict(s) for s in sites], "learned": learned, "input_hashes": calls.input_hashes(args.harvest.resolve())}, indent=2) + "\n")
         if args.apply:
-            calls.apply(args.harvest.resolve(), learned)
+            (calls.apply_aliases if args.constructor_aliases else calls.apply)(args.harvest.resolve(), learned)
         for name, (address, evidence) in sorted(learned.items()):
             print(f"{address:#x} {name}  {evidence}")
         print(f"{len(sites)} aligned call sites; {len(learned)} addresses {'saved' if args.apply else 'proven'}")
@@ -288,6 +298,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "clean":
         removed, freed = Harvest(args.harvest).clean(args.older_than * 3600)
         print(f"removed {removed} work directories, {freed / 1e9:.1f} GB")
+        return 0
+    if args.command == "place":
+        harvest = Harvest(args.harvest)
+        placed = [place.place(harvest, unit, args.restore_literals) for unit in args.units]
+        if args.save:
+            args.save.write_text(json.dumps(placed, indent=2) + "\n")
+        for row in placed:
+            print(row["output"].splitlines()[0])
+            print(f"  {len(row['sections'])} called sections verified; {len(row['literals'])} literal repairs exact")
         return 0
     if args.command == "bench":
         return _bench(args)
@@ -387,15 +406,16 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     harvest = Harvest(args.harvest)
     if args.near_miss is not None:
         targets = [(unit, symbol) for unit, symbol, _ in near_misses(harvest, args.near_miss)]
-        if args.skip_logged:
-            settings = {k: getattr(args, k) for k in ("budget", "batch", "depth", "seed")}
-            done = results.searched(results.load(args.results), "permute", settings)
-            targets = [t for t in targets if t not in done]
-        print(f"{len(targets)} functions score at least {args.near_miss}")
     elif args.unit and args.function:
         targets = [(harvest.source(args.unit), args.function)]
     else:
         parser.error("pass --unit and a function, or --near-miss")
+    if args.skip_logged:
+        settings = {k: getattr(args, k) for k in ("budget", "batch", "depth", "seed")}
+        done = results.searched(results.load(args.results), "permute", settings)
+        targets = [t for t in targets if t not in done]
+    if args.near_miss is not None:
+        print(f"{len(targets)} functions score at least {args.near_miss}")
     exact = 0
     for unit, symbol in targets:
         print(f"=== {unit} {symbol}")
