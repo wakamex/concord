@@ -263,3 +263,14 @@ limits = "A source line can belong to several template specializations. Preserve
 evidence = [
   { commit = "e0b3763", function = "ox::core::CString", note = "The census attributes 34 functions to copy-assignment line 119, 16 to operator< line 186 and 12 to pointer-assignment line 159. The char constructor is exact in 16/16 emitting units, pointer assignment in 6/6, destructors in 43/43 and 32/32, wchar copy assignment in 6/6 and char copy assignment in 3/7. Mirrored copy-loop comparisons change no scores; while-loop forms lose matches or lower scores. Header line counts alone identify where code was inlined, not the cause of the difference." },
 ]
+
+[[idiom]]
+id = "address-arithmetic"
+cause = "struct-layout"
+status = "hypothesis"
+symptom = "a memory read lands at reg + const where the target reads reg, or the reverse"
+fix = "Spell the address sum the other way: (T*)((char*)p + n) as (T*)((int)p + n) or (T*)((long)p + n), and the integer spellings back as (T*)((char*)p + n). Pointer arithmetic folds a constant into the memory operand's displacement; integer arithmetic keeps the sum in a register."
+limits = "CQ3LevelMesh::createCurvedSurface needs more than the cast spelling: the target dereferences each vertex pointer at offset zero for every blended field, so its Blend helper or pointer array has a different shape entirely."
+evidence = [
+  { function = "daisy::scene::CQ3LevelMesh::createCurvedSurface", note = "36 struct-layout findings at 97.63% (harvest e0b3763); 160 candidates including every address-arithmetic rewrite gave no improvement" },
+]
