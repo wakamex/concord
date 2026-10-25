@@ -1015,22 +1015,13 @@ def _complete_interfaces(root: Path, written: list[str], originals: dict[str, st
     return changed
 
 
-def reconcile_forwards(root: Path, relative: str) -> bool:
-    """Move to namespace daisy a class an ox header forward-declares that the Mac
-    symbols record as daisy's: the provisional header guessed ox's scope, and a
-    virtual that really took daisy::SKeyMap cannot be overridden by a daisy class
-    declaring it (ox::scene::ISceneManager::addCameraSceneNodeFPS, which the map
-    shows CSceneManager overriding with daisy::SKeyMap*)."""
-    path = root / "src" / relative
-    functions = root / "reference" / "1.18-mac-i386" / "functions.csv"
-    if not path.exists() or not functions.exists():
-        return False
-    text = path.read_text()
-    symbols = functions.read_text()
-    changed = False
+def reconciled_forwards(text: str, symbols: str) -> str:
+    """Resolve root ox forward declarations from the recorded daisy symbols.
+    Keep the old name as a port-only alias for existing port implementations.
+    """
     opening = re.search(r"^namespace ox\s*\{", text, re.MULTILINE)
     if opening is None:
-        return False
+        return text
     # the forward declarations at ox's own scope, before it opens a nested namespace
     head = re.split(r"^namespace \w+[^\n{]*\{", text[opening.end() :], maxsplit=1, flags=re.MULTILINE)[0]
     for keyword, name in re.findall(r"^\s*(class|struct) (\w+);", head, re.MULTILINE):
@@ -1040,10 +1031,22 @@ def reconcile_forwards(root: Path, relative: str) -> bool:
         text = _in_code(r"(?<![\w:.])" + name + r"\b", "daisy::" + name, text)
         opening = re.search(r"^namespace ox\s*\{", text, re.MULTILINE)
         text = text[: opening.start()] + "namespace daisy { " + keyword + " " + name + "; }\n\n" + text[opening.start() :]
-        changed = True
-    if changed:
+        opening = re.search(r"^namespace ox\s*\{", text, re.MULTILINE)
+        text = text[:opening.end()] + "\n#ifdef HARVEST_PORT\nusing daisy::" + name + ";\n#endif\n" + text[opening.end():]
+    return text
+
+
+def reconcile_forwards(root: Path, relative: str) -> bool:
+    """Resolve provisional forward declarations using the Mac symbol names."""
+    path = root / "src" / relative
+    functions = root / "reference" / "1.18-mac-i386" / "functions.csv"
+    if not path.exists() or not functions.exists():
+        return False
+    before = path.read_text()
+    text = reconciled_forwards(before, functions.read_text())
+    if text != before:
         path.write_text(text)
-    return changed
+    return text != before
 
 
 PURE_VIRTUAL = re.compile(r"virtual\s+([\w:<> ,&*]+?)\s+(\w+)\s*\(([^()]*)\)\s*(const\s*)?=\s*0\s*;")
@@ -1653,6 +1656,41 @@ def _insert_definition(text: str, definition: bytes) -> bytes:
     return text[:at] + definition.strip(b"\n") + b"\n\n" + text[at:]
 
 
+def adapt_cache_iteration(definition: bytes, header: str, *, indexed: bool = False) -> bytes | None:
+    """Translate a port map-value loop to its declared array-entry equivalent.
+    Require one pointer member of the same value type; ambiguous layouts stay
+    unsupported. The loop order, drop calls and clear call remain source-derived.
+    """
+    text = definition.decode()
+    loops = list(re.finditer(r"std::map<std::string,\s*([\w:]+\s*\*)>::iterator\s+(\w+)\s*=\s*(\w+)\.begin\(\)", text))
+    if len(loops) > 1:
+        return None
+    for loop in loops:
+        value, iterator, container = loop.groups()
+        array = re.search(r"ox::TArray<(\w+)>\s+" + re.escape(container) + r"\s*;", header)
+        if array is None:
+            return None
+        entry = re.search(r"struct\s+" + re.escape(array[1]) + r"\s*\{", header)
+        if entry is None:
+            return None
+        body = header[entry.end():_brace_end(header, entry.end() - 1)]
+        value_name = value.replace('*', '').strip().split('::')[-1]
+        members = re.findall(r"(?:[\w]+::)*" + re.escape(value_name) + r"\s*\*\s*(\w+)\s*;", body)
+        if len(members) != 1:
+            return None
+        if indexed:
+            tail = re.match(r";\s*" + re.escape(iterator) + r"\s*!=\s*" + re.escape(container) + r"\.end\(\);\s*\+\+" + re.escape(iterator), text[loop.end():])
+            if tail is None:
+                return None
+            text = text[:loop.start()] + f"int {iterator} = 0; {iterator} < (int){container}.size(); ++{iterator}" + text[loop.end() + tail.end():]
+            value_access = f"{container}[{iterator}].{members[0]}"
+        else:
+            text = text[:loop.start()] + f"ox::TArray<{array[1]}>::iterator {iterator} = {container}.begin()" + text[loop.end():]
+            value_access = iterator + "->" + members[0]
+        text = re.sub(r"\b" + re.escape(iterator) + r"->second\b", value_access, text)
+    return text.encode()
+
+
 def restore_vtable_overrides(harvest: Harvest, unit: str, apply: bool = False) -> list[str]:
     """Declare and define each member the Mac vtables credit to the unit's
     companion class that its header lacks, taking the declaration and body from
@@ -1693,15 +1731,30 @@ def restore_vtable_overrides(harvest: Harvest, unit: str, apply: bool = False) -
             declaration = _member_declaration(header_translation, cls, member)
             definition = _member_definition(translation, cls, member)
             if declaration is None or definition is None:
+                port = root / "port" / "src" / unit.removeprefix("daisy/")
+                port_h = port.with_suffix('.h')
+                if port.exists() and port_h.exists():
+                    declaration = _member_declaration(translate(port_h.read_text()), cls, member)
+                    body = _member_definition(translate(port.read_text()).encode(), cls, member)
+                    definition = adapt_cache_iteration(body, htext, indexed=True) if body else None
+            if declaration is None or definition is None:
                 notes.append(f"{cls}::{member}: the translation has no source for it")
                 continue
             new_h = _insert_declaration(htext, cls, declaration)
             new_u = _insert_definition(utext, definition)
             if new_h is None:
                 continue
-            candidate = harvest.evaluate_overlays(
-                {"candidate": (unit, {"src/" + header: new_h.encode(), "src/" + unit: new_u})}
-            )["candidate"]
+            overlays = {"src/" + header: new_h.encode(), "src/" + unit: new_u}
+            symbols = (root / "reference/1.18-mac-i386/functions.csv").read_text()
+            bases = re.search(r"class\s+" + re.escape(cls) + r"\s*:\s*([^{;]+)\{", htext)
+            for clause in bases[1].split(',') if bases else []:
+                interface = _interface_header(root, clause.strip().split()[-1].split('::')[-1])
+                if interface:
+                    before = (root / 'src' / interface).read_text()
+                    after = reconciled_forwards(before, symbols)
+                    if after != before:
+                        overlays['src/' + interface] = after.encode()
+            candidate = harvest.evaluate_overlays({"candidate": (unit, overlays)})["candidate"]
             verdict = candidate.verdict(symbol)
             emitted = {row["symbol"] for section in candidate.sections for row in section.get("functions", [])}
             lost = sorted(
@@ -1713,8 +1766,8 @@ def restore_vtable_overrides(harvest: Harvest, unit: str, apply: bool = False) -
                 notes.append(f"{cls}::{member}: not kept (exact={bool(verdict and verdict.row.get('exact'))}, lost={lost[:3]}, worse={worse[:3]})")
                 continue
             if apply:
-                (root / "src" / header).write_text(new_h)
-                (root / "src" / unit).write_bytes(new_u)
+                for relative, text in overlays.items():
+                    (root / relative).write_bytes(text)
                 htext, utext = new_h, new_u
             applied.append(f"{cls}::{member}")
     return applied + notes

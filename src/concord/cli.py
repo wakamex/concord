@@ -262,6 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_refresh = sub.add_parser("refresh", help="refresh selected seeded method bodies from current Irrlicht translation")
     p_refresh.add_argument('--harvest', type=Path, required=True)
     p_refresh.add_argument('--unit', required=True)
+    p_refresh.add_argument('--header', help="refresh inline bodies in this header, compiling --unit")
     p_refresh.add_argument('methods', nargs='+', help="declarator names such as Class::method")
     p_refresh.add_argument('--companion-first', action='store_true', help="place the companion header before generated quoted includes")
     p_refresh.add_argument('--apply', action='store_true', help="write compiling refreshed bodies; gate matches separately")
@@ -305,6 +306,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_inlines.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_inlines.add_argument("units", nargs="*", help="units to check (default: every unit hv match built)")
+    p_inlines.add_argument("--semantic", action="store_true", help="list Irrlicht-backed functions beyond the CString/fast_atof inline-copy budget")
     p_inlines.add_argument("--save", type=Path, help="write every unit's findings as JSON")
 
     p_destructors = sub.add_parser("destructors", help="compare destructor definition forms as read-only header overlays")
@@ -380,7 +382,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name}: {row['error'] or str(row['exact']) + ' exact functions'}; exception table {[s.get('exact') for s in data]}")
         return int(any(row['error'] for row in report['variants'].values()))
     if args.command == "refresh":
-        found = blockers.stubs(Harvest(args.harvest), [args.unit], apply=args.apply, only=set(args.methods), refresh=True, companion_first=args.companion_first)
+        if args.header:
+            found = blockers.refresh_header(Harvest(args.harvest), args.unit, args.header, set(args.methods), apply=args.apply)
+        else:
+            found = blockers.stubs(Harvest(args.harvest), [args.unit], apply=args.apply, only=set(args.methods), refresh=True, companion_first=args.companion_first)
         for row in found:
             print(f"{row.name}: {'refreshed' if row.applied else '; '.join(row.errors) or 'compiles'}")
         missing = set(args.methods) - {row.name for row in found}
@@ -415,10 +420,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "inlines":
         harvest = Harvest(args.harvest)
         units = args.units or sorted(p.stem for p in harvest.reports.glob("*.json"))
+        if args.semantic:
+            units = [u for u in units if (harvest.root / 'third_party/irrlicht-0.7/source/Irrlicht' / Path(harvest.source(u)).name).exists()]
         reports = inlines.gather(harvest, units)
         if args.save:
             args.save.write_text(json.dumps(reports, indent=2) + "\n")
         for result in reports:
+            if args.semantic:
+                for row in result['semantic-candidates']:
+                    print(f"{result['unit']}: {row['symbol']} size {row['ours_size']}/{row['target_size']}, inline budget {row['inline_copy_budget']}, other calls {row['other_direct_call_delta']:+d}, indirect {row['indirect_call_delta']:+d}")
+                continue
             lines = inlines.show(result)
             findings = len(lines) - 1
             print(lines[0] if findings else lines[0] + ": no differences")

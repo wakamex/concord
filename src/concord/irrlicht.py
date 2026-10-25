@@ -329,6 +329,10 @@ def _translate(source: str, namespace: str) -> str:
         lambda match: re.sub(r"^[ \t]*(?:// update absolute position\n[ \t]*)?updateAbsolutePosition\(\);\n", "", match[0], flags=re.MULTILINE),
         source, flags=re.MULTILINE | re.DOTALL,
     )
+    # Render-list sorting retains the low int bits of a texture pointer. Cast
+    # through the target's pointer-width long before narrowing on amd64.
+    source = re.sub(r"\(int\)\(n->getMaterial\(0\)\.Texture1\)",
+                    "(int)(long)(n->getMaterial(0).Texture1)", source)
     # Irrlicht's existFile looked inside open archives too; daisy's signature
     # takes that choice as an argument (CQ3LevelMesh::loadTextures).
     source = re.sub(r"(\.|->)existFile\(((?:[^,()]|\([^()]*\))+?)\)", r"\1existFile(\2, true)", source)

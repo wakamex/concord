@@ -286,3 +286,26 @@ class Show(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which('as'), 'GNU assembler required')
+class SemanticScreen(unittest.TestCase):
+    def test_real_objects_separate_size_changes_from_helper_call_budget(self):
+        from concord.inlines import semantic_candidates
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            helper = '_ZN2ox4core7CStringIcE3fooEv'
+            prefix = f'.text\n.global {helper}\n.type caller,@function\ncaller:\n'
+            suffix = f'ret\n.size caller,.-caller\n.type {helper},@function\n{helper}:\n.rept 18\nnop\n.endr\nret\n.size {helper},.-{helper}\n'
+            codes = {}
+            for name, body in [('target', ''), ('extra', '.rept 16\nnop\n.endr\n'), ('inline', f'call {helper}\n')]:
+                source = root / (name + '.s')
+                obj = source.with_suffix('.o')
+                source.write_text(prefix + body + suffix)
+                subprocess.run(['as', str(source), '-o', str(obj)], check=True)
+                codes[name] = read_code(obj)
+            rep = report(sections=[section('.text', 0x1000, [function('caller', 0x1000, 17)])])
+            rows = semantic_candidates(rep, codes['extra'], codes['target'])
+            self.assertEqual(rows[0]['size_delta'], 16)
+            self.assertEqual(rows[0]['inline_copy_budget'], 0)
+            self.assertEqual(semantic_candidates(rep, codes['inline'], codes['target']), [])

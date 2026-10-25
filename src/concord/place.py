@@ -141,8 +141,7 @@ def learn_object(harvest: Harvest, unit: str, obj: Path) -> dict:
     # caller still proves the call destination even when the callee is inexact.
     from concord import calls
 
-    _, additional = calls.discover(root, [unit], overrides={unit: obj}, exact_callers=True)
-    calls.apply(root, additional)
+    calls.learn_chain(root, unit, obj)
     with table.open() as stream:
         rows = list(csv.DictReader(stream, delimiter="\t"))
     evidence = candidate_claims(before, rows, digest)

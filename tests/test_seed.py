@@ -280,6 +280,7 @@ class InterfaceReconcile(unittest.TestCase):
         self.assertIn("namespace daisy { struct SKeyMap; }\n\nnamespace ox {", text)
         self.assertIn("virtual void add(daisy::SKeyMap* k) = 0;", text)
         self.assertIn("struct SOther;", text)
+        self.assertIn("#ifdef HARVEST_PORT\nusing daisy::SKeyMap;\n#endif", text)
         self.assertNotIn("struct SKeyMap;\n", text.split("namespace ox")[1])
         self.assertFalse(seed_module.reconcile_forwards(self.root, "ox/scene/ISceneManager.h"))
 
@@ -1071,3 +1072,32 @@ _ZTVN5daisy5scene20CCameraMayaSceneNodeE,30,0x4,_ZNK2ox5scene10ISceneNode19getAb
             "\t\tvirtual void setPosition(const ox::core::CVector3d<float>& newpos);\n\n\tprivate:",
             out,
         )
+
+
+class CacheIteration(unittest.TestCase):
+    def test_port_map_iteration_uses_the_matching_entry_value(self):
+        header = "struct Entry { int Name; IAnimatedMesh* Mesh; }; ox::TArray<Entry> Meshes;"
+        body = b"void A::clear() { for (std::map<std::string, ox::scene::IAnimatedMesh*>::iterator it = Meshes.begin(); it != Meshes.end(); ++it) it->second->drop(); Meshes.clear(); }"
+        result = seed_module.adapt_cache_iteration(body, header)
+        self.assertIn(b"ox::TArray<Entry>::iterator it = Meshes.begin()", result)
+        self.assertIn(b"it->Mesh->drop(); Meshes.clear();", result)
+        self.assertIsNone(seed_module.adapt_cache_iteration(body, header.replace('IAnimatedMesh* Mesh;', 'IAnimatedMesh* Mesh; IAnimatedMesh* Other;')))
+        self.assertIsNone(seed_module.adapt_cache_iteration(body, header.replace('IAnimatedMesh*', 'Wrong*')))
+
+    @unittest.skipUnless(shutil.which('g++'), 'g++ required')
+    def test_adapted_port_loop_drops_every_mesh_and_clears_storage(self):
+        header = 'struct Entry { Mesh* MeshValue; }; ox::TArray<Entry> Meshes;'
+        body = b'void clearMeshes() { for (std::map<std::string, Mesh*>::iterator it = Meshes.begin(); it != Meshes.end(); ++it) it->second->drop(); Meshes.clear(); }'
+        adapted = seed_module.adapt_cache_iteration(body, header)
+        prefix = b'#include <vector>\n#include <map>\n#include <string>\nint drops; struct Mesh { void drop() { ++drops; } }; namespace ox { template<class T> struct TArray: std::vector<T> {}; }\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, declarations, definition, setup in [
+                ('map', b'std::map<std::string, Mesh*> Meshes;', body, b'Meshes["a"] = &m; Meshes["b"] = &m;'),
+                ('array', header.encode(), adapted, b'Entry e; e.MeshValue = &m; Meshes.push_back(e); Meshes.push_back(e);'),
+                ('indexed', header.encode(), seed_module.adapt_cache_iteration(body, header, indexed=True), b'Entry e; e.MeshValue = &m; Meshes.push_back(e); Meshes.push_back(e);'),
+            ]:
+                source = prefix + declarations + definition + b'int main() { Mesh m; ' + setup + b' clearMeshes(); return drops != 2 || !Meshes.empty(); }'
+                binary = Path(tmp) / name
+                result = subprocess.run(['g++', '-std=c++98', '-x', 'c++', '-', '-o', str(binary)], input=source, capture_output=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertEqual(subprocess.run([str(binary)], check=False).returncode, 0)

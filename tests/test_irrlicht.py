@@ -269,6 +269,10 @@ class Translate(unittest.TestCase):
         self.assertIn("renderChildren();", animated)
         self.assertIn("updateAbsolutePosition();", camera)
 
+    def test_texture_sort_key_narrows_through_pointer_width(self):
+        self.assertIn("(int)(long)(n->getMaterial(0).Texture1)",
+                      translate("textureValue = (s32)(n->getMaterial(0).Texture1);"))
+
     def test_q3_temporary_texture_arrays_keep_the_targets_reserve_calls(self):
         source = "void CQ3LevelMesh::loadTextures()\n{\ntex.set_used(NumTextures+1);\nlig.set_used(NumLightMaps+1);\nother.set_used(n);\nFileSystem->existFile(s.c_str());\n}\n"
         out = translate(source)

@@ -184,3 +184,42 @@ class Apply(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RefreshHeader(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('g++'), 'g++ required')
+    def test_inline_constructor_overlay_is_compiled_before_writing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / 'src/d/A.h'
+            path.parent.mkdir(parents=True)
+            current = b'struct A { A(int n) { __builtin_trap(); } int value; };\n'
+            path.write_bytes(current)
+            ancestor = root / IRRLICHT_DIRECTORY / 'source/Irrlicht/A.h'
+            ancestor.parent.mkdir(parents=True)
+            ancestor.write_bytes(b'struct A { A(int n) { value = n; } int value; };\n')
+
+            def evaluate(rows):
+                unit, overlay = rows['header']
+                self.assertEqual(unit, 'd/A.cpp')
+                text = overlay['src/d/A.h'] + b'int main() { A a(7); return a.value != 7; }'
+                binary = root / 'test'
+                result = subprocess.run(['g++', '-std=c++98', '-x', 'c++', '-', '-o', str(binary)], input=text, capture_output=True, check=False)
+                if result.returncode == 0:
+                    self.assertEqual(subprocess.run([str(binary)], check=False).returncode, 0)
+                return {'header': Evaluation('header', unit, error=result.stderr.decode() if result.returncode else '')}
+
+            harvest = SimpleNamespace(root=root, evaluate_overlays=evaluate)
+            with mock.patch.object(blockers, 'qualify', side_effect=lambda root, text, unit: text):
+                row, = blockers.refresh_header(harvest, 'd/A.cpp', 'd/A.h', {'A'}, apply=False)
+                self.assertFalse(row.errors)
+                self.assertEqual(path.read_bytes(), current)
+                row, = blockers.refresh_header(harvest, 'd/A.cpp', 'd/A.h', {'A'}, apply=True)
+                self.assertTrue(row.applied)
+                self.assertIn(b'value = n;', path.read_bytes())
+                accepted = path.read_bytes()
+                ancestor.write_bytes(b'struct A { A(int n) { missing(n); } int value; };\n')
+                row, = blockers.refresh_header(harvest, 'd/A.cpp', 'd/A.h', {'A'}, apply=True)
+                self.assertTrue(row.errors)
+                self.assertFalse(row.applied)
+                self.assertEqual(path.read_bytes(), accepted)

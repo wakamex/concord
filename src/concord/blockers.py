@@ -237,3 +237,36 @@ def ranked(found: list[Stub]) -> list[tuple[str, int, int]]:
     alone = Counter(next(iter(stub.causes)) for stub in found if len(stub.causes) == 1)
     return sorted(((c, n, alone[c]) for c, n in every.items()), key=lambda row: (-row[1], -row[2], row[0]))
 
+
+
+def refresh_header(harvest: Harvest, unit: str, header: str, methods: set[str], apply: bool = False) -> list[Stub]:
+    """Restore selected inline bodies from the ancestor, compiling the including
+    unit with a header overlay before writing. Whole-build scoring is separate.
+    """
+    if not methods:
+        raise ValueError("refresh requires explicit method names")
+    root = harvest.root
+    path = root / "src" / header
+    original = root / IRRLICHT / "source" / "Irrlicht" / Path(header).name
+    if not original.exists():
+        original = root / IRRLICHT / "include" / Path(header).name
+    current = path.read_bytes()
+    translation = qualify(root, translate(original.read_text(encoding="latin-1")), header).encode()
+    combined = current
+    found = []
+    for name in sorted(methods):
+        candidate = restored(combined, translation, stubs_only=False).get(name)
+        if candidate is None:
+            continue
+        evaluation = harvest.evaluate_overlays({"header": (unit, {"src/" + header: candidate})})["header"]
+        row = Stub(unit, name, [evaluation.error] if evaluation.error else [])
+        found.append(row)
+        if not evaluation.error:
+            combined = candidate
+    if apply and combined != current:
+        if path.read_bytes() != current:
+            raise RuntimeError(f"{header}: source changed while compiling inline bodies")
+        path.write_bytes(combined)
+        for row in found:
+            row.applied = not row.errors
+    return found

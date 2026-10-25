@@ -90,6 +90,39 @@ ret
 .size callee,.-callee
 '''
 
+    def test_learning_revisits_a_newly_named_inexact_caller(self):
+        from unittest import mock
+
+        from concord import calls
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            assembly = self.assembly.replace('caller, callee', 'caller, callee, leaf').replace('xor %eax,%eax\nret', 'push %rbx\nmov %rdi,%rbx\ncall leaf\nadd $5,%eax\nmov %rbx,%rdi\npop %rbx\nret')
+            assembly += '.type leaf,@function\nleaf:\n.cfi_startproc\nxor %eax,%eax\nret\n.cfi_endproc\n.size leaf,.-leaf\n'
+            source = root / 'a.s'
+            source.write_text(assembly)
+            obj = root / 'a.o'
+            subprocess.run(['as', str(source), '-o', str(obj)], check=True)
+            source.write_text(assembly.replace('add $1', 'add $2').replace('add $5', 'add $6'))
+            subprocess.run(['as', str(source), '-o', str(root / 'target.o')], check=True)
+            subprocess.run(['ld', '-e', 'caller', '-Ttext=0x400000', str(root / 'target.o'), '-o', str(root / 'target')], check=True)
+            with (root / 'target').open('rb') as stream:
+                elf = ELFFile(stream)
+                data = elf.get_section_by_name('.text').data()
+                extents = {e['initial_location']: e['address_range'] for e in elf.get_dwarf_info().EH_CFI_entries() if hasattr(e, 'lsda_pointer')}
+                symbols = {s.name: s['st_value'] for s in elf.get_section_by_name('.symtab').iter_symbols()}
+            known = {'caller': symbols['caller']}
+
+            def discover(*args, **kwargs):
+                sites, sizes = object_sites(obj, data, 0x400000, extents, known, 'u.cpp')
+                return sites, proven(sites, sizes, extents, known, exact_callers=True)
+
+            def apply(root, rows):
+                known.update({name: value[0] for name, value in rows.items()})
+
+            with mock.patch.object(calls, 'discover', side_effect=discover), mock.patch.object(calls, 'apply', side_effect=apply):
+                learned = calls.learn_chain(root, 'u.cpp', obj)
+            self.assertEqual({name: row[0] for name, row in learned.items()}, {name: symbols[name] for name in ('callee', 'leaf')})
+
     def test_inexact_caller_uses_linked_call_destinations_and_real_extents(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

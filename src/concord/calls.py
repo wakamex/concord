@@ -195,6 +195,21 @@ def discover(root: Path, units: list[str], overrides: dict[str, Path] | None = N
     return sites, {name: row for name, row in proven(sites, dict(sizes), extents, known, exact_callers=exact_callers).items() if name in allowed}
 
 
+def learn_chain(root: Path, unit: str, obj: Path) -> dict[str, tuple[int, str]]:
+    """Learn until newly named callers expose no further callee addresses.
+    Every round uses the same object and the existing proof and clash checks.
+    """
+    learned = {}
+    while True:
+        _, additional = discover(root, [unit], overrides={unit: obj}, exact_callers=True)
+        if not additional:
+            return learned
+        if learned.keys() & additional.keys():
+            raise RuntimeError("call learning repeated an already applied claim")
+        apply(root, additional)
+        learned.update(additional)
+
+
 def input_hashes(root: Path) -> dict[str, str]:
     """Record the image, symbol claims, extents and object/report inputs for an audit."""
     files = [root / "orig" / BUILD / "Harvest", *(root / "config" / BUILD).glob("*.tsv")]

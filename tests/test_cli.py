@@ -69,6 +69,15 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(main(['refresh', '--harvest', '/root', '--unit', 'u.cpp', 'A::f', '--apply']), 0)
             run.assert_called_once_with(harvest.return_value, ['u.cpp'], apply=True, only={'A::f'}, refresh=True, companion_first=False)
 
+    def test_refresh_header_compiles_the_selected_including_unit(self):
+        from unittest import mock
+
+        from concord.blockers import Stub
+        with mock.patch('concord.cli.Harvest') as harvest, mock.patch('concord.cli.blockers.refresh_header', return_value=[Stub('u.cpp', 'A')]) as run:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['refresh', '--harvest', '/root', '--unit', 'u.cpp', '--header', 'A.h', 'A', '--apply']), 0)
+            run.assert_called_once_with(harvest.return_value, 'u.cpp', 'A.h', {'A'}, apply=True)
+
     def test_blockers_passes_selected_methods(self):
         from unittest import mock
 
