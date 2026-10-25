@@ -11,7 +11,9 @@ that merge into one show up as a run that disappeared and a new, larger one.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -30,7 +32,9 @@ def report(checkout: Path, capture: bool = False, ref: str | None = None) -> dic
             output = Path(tmp) / "report.json"
             command = "capture" if capture and ref is None else "report"
             done = subprocess.run(
-                ["uv", "--no-config", "run", "--locked", "python", "-m", "hv.progress", command, "--output", str(output)],
+                ["uv", "--no-config", "run", "--locked", "python",
+                 *([str(Path(__file__).with_name("scores_driver.py"))] if command == "capture" else ["-m", "hv.progress"]),
+                 command, "--output", str(output)],
                 cwd=root,
                 check=False,
                 capture_output=True,
@@ -91,3 +95,41 @@ def compare(before: dict, after: dict) -> tuple[list[Change], int, int]:
 
 def _bytes(runs: list) -> set[int]:
     return {address for start, size in runs for address in range(start, start + size)}
+
+
+def normalized(checkout: Path, base: str) -> tuple[dict, dict, dict]:
+    """Compare committed sources using the head's configuration on both sides.
+
+    The isolated worktree owns its captures and build outputs. The caller's
+    source, index, matching reports and committed evidence are never replaced.
+    """
+    checkout = checkout.resolve()
+    def git(*args):
+        return subprocess.check_output(['git', '-C', str(checkout), *args])
+    head = git('rev-parse', 'HEAD').decode().strip()
+    base = git('rev-parse', '--verify', base + '^{commit}').decode().strip()
+    if git('status', '--porcelain', '--untracked-files=normal', '--', 'src', 'third_party', 'config', 'tools', 'builds.json', 'uv.lock', 'toolchain'):
+        raise ValueError('normalized scores require committed measurement inputs; commit or isolate source/config changes first')
+    changed = git('diff', '--name-only', '-z', base, head, '--', 'src', 'third_party').decode().split('\0')
+    with tempfile.TemporaryDirectory(prefix='concord-gate-') as tmp:
+        root = Path(tmp) / 'worktree'
+        subprocess.run(['git', '-C', str(checkout), 'worktree', 'add', '-q', '--detach', str(root), head], check=True)
+        try:
+            if (checkout / 'orig').exists() and not (root / 'orig').exists():
+                (root / 'orig').symlink_to(checkout / 'orig', target_is_directory=True)
+            tool = checkout / 'build' / 'tools' / 'objdiff-cli'
+            if tool.is_file():
+                (root / 'build' / 'tools').mkdir(parents=True, exist_ok=True)
+                shutil.copy2(tool, root / 'build' / 'tools' / tool.name)
+            subprocess.run(['git', '-C', str(root), 'restore', '--source', base, '--worktree', '--', 'src', 'third_party'], check=True)
+            before = snapshot(report(root, capture=True))
+            subprocess.run(['git', '-C', str(root), 'restore', '--source', head, '--worktree', '--', 'src', 'third_party'], check=True)
+            after = snapshot(report(root, capture=True))
+            build = json.loads((root / 'builds.json').read_text())['canonical']
+            config = root / 'config' / build
+            evidence = {'base': base, 'head': head, 'source_paths': sorted(filter(None, changed)),
+                        'configuration': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(config.iterdir()) if p.is_file()},
+                        'baseline': before}
+            return before, after, evidence
+        finally:
+            subprocess.run(['git', '-C', str(checkout), 'worktree', 'remove', '--force', str(root)], check=True)

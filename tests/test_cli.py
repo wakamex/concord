@@ -10,6 +10,29 @@ from concord.cli import build_parser, main
 
 
 class CliTest(unittest.TestCase):
+    def test_scores_base_uses_normalized_snapshots(self):
+        from pathlib import Path
+        from unittest import mock
+
+        snapshot = {'functions': {}, 'data': []}
+        with mock.patch('concord.cli.scores.normalized', return_value=(snapshot, dict(snapshot), {})) as run:
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(['scores', '--harvest', '/root', '--base', 'base']), 0)
+            run.assert_called_once_with(Path('/root'), 'base')
+            self.assertIn('0 worse', output.getvalue())
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            main(['scores', '--harvest', '/root', '--base', 'base', '--against', 'old.json'])
+
+    def test_symbols_check_reports_suspects_and_returns_failure(self):
+        from unittest import mock
+
+        report = {'findings': [{'status': 'suspect', 'address': 16, 'symbol': 'f', 'reasons': ['return mismatch']}]}
+        with mock.patch('concord.cli.symbol_audit.run', return_value=report) as run:
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(['symbols-check', '--harvest', '/root', '--evidence', 'manual']), 1)
+            self.assertIn('return mismatch', output.getvalue())
+            self.assertEqual(run.call_args.args[1], ['manual'])
+
     def test_causal_census_routes_selection_and_output(self):
         from pathlib import Path
         from unittest import mock

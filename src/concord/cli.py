@@ -24,6 +24,8 @@ from concord import (
     place,
     results,
     scores,
+    symbol_audit,
+    symbol_table,
 )
 from concord.complete import TYPES, absent, complete, settle, state
 from concord.diff import diff_code, read_function
@@ -162,9 +164,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_scores.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_scores.add_argument("--capture", action="store_true", help="recapture Harvest's progress evidence first")
+    p_scores.add_argument("--base", help="capture base and HEAD sources with HEAD configuration in an isolated worktree")
     p_scores.add_argument("--ref", help="use the evidence committed at this git revision instead of the checkout's")
     p_scores.add_argument("--save", type=Path, help="write the snapshot to this JSON file")
     p_scores.add_argument("--against", type=Path, help="compare with a snapshot saved earlier")
+
+    p_audit = sub.add_parser("symbols-check", help="audit weak symbol names using emitted copies and target return-value evidence")
+    p_audit.add_argument('--harvest', type=Path, required=True)
+    p_audit.add_argument('--evidence', action='append', help="evidence kind to check (repeatable; default: manual)")
+    p_audit.add_argument('--save', type=Path, help="write structured evidence")
+
+    p_merge = sub.add_parser("symbols-merge", help="three-way merge symbol tables, refusing row and address conflicts")
+    for side in ('base', 'ours', 'theirs'):
+        p_merge.add_argument('--' + side, type=Path, required=True)
+    p_merge.add_argument('--output', type=Path, required=True)
 
     p_phase = sub.add_parser(
         "phase", help="find functions whose code depends on the number of declarations before them"
@@ -341,6 +354,25 @@ def main(argv: list[str] | None = None) -> int:
         return _repair(args)
     if args.command == "rerun":
         return _rerun(args)
+    if args.command == "symbols-check":
+        report = symbol_audit.run(args.harvest.resolve(), args.evidence)
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        suspect = [row for row in report['findings'] if row['status'] == 'suspect']
+        for row in suspect:
+            print(f"suspect {row['address']:#x} {row['symbol']}: {'; '.join(row['reasons'])}")
+        unverified = sum(row['status'] == 'unverified-not-emitted' for row in report['findings'])
+        print(f"{len(report['findings'])} rows checked: {len(suspect)} suspect, {unverified} not emitted")
+        return int(bool(suspect))
+    if args.command == "symbols-merge":
+        try:
+            rows = symbol_table.merge(*(symbol_table.load(getattr(args, side)) for side in ('base', 'ours', 'theirs')))
+            args.output.write_text(symbol_table.render(rows))
+        except (OSError, ValueError) as error:
+            print(f"symbols-merge: {error}")
+            return 1
+        print(f"merged {len(rows)} symbols -> {args.output}")
+        return 0
     if args.command == "scores":
         return _scores(parser, args)
     if args.command == "vtables":
@@ -969,15 +1001,22 @@ def _rerun(args: argparse.Namespace) -> int:
 
 
 def _scores(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    if not (args.save or args.against):
+    if args.base and (args.against or args.ref):
+        parser.error("--base cannot be combined with --against or --ref")
+    if not (args.save or args.against or args.base):
         parser.error("pass --save, --against or both")
-    current = scores.snapshot(scores.report(args.harvest, args.capture, args.ref))
+    baseline = None
+    if args.base:
+        baseline, current, evidence = scores.normalized(args.harvest, args.base)
+        current['normalization'] = evidence
+    else:
+        current = scores.snapshot(scores.report(args.harvest, args.capture, args.ref))
     if args.save:
         args.save.write_text(json.dumps(current, sort_keys=True))
         print(f"saved {len(current['functions'])} functions and {len(current['data'])} matched data runs to {args.save}")
-    if not args.against:
+    if not args.against and baseline is None:
         return 0
-    changes, lost, gained = scores.compare(json.loads(args.against.read_text()), current)
+    changes, lost, gained = scores.compare(baseline if baseline is not None else json.loads(args.against.read_text()), current)
 
     def show(s: dict | None) -> str:
         return "absent" if s is None else ("matched" if s["matched"] else f"{s['fuzzy']:.2f}")
