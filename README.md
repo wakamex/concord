@@ -213,7 +213,7 @@ What concord is for. These are meant to stay fixed; they change only if the aim 
 2. A result counts only when the target's own matcher proves it and no other function in the build scores lower, because a gain in one function has repeatedly cost an exact match elsewhere through a shared header or the declaration count.
 3. A function's behavior is kept, except where the oracle shows a change brings it closer to the original's; a matching search must not drift away from what the code does.
 4. What goes upstream, and every trial in a target checkout, is concord's output: never hand-edit the target. A new matching step is built as a general concord capability with tests first, so the next function gets it for free and the result can be reproduced.
-5. Concord tells whoever writes source, a person, an agent or a separate model harness, what to change, and proves the result. It does not write a function from its disassembly itself.
+5. Concord tells whoever writes source, a person, an agent or a separate model harness, what to change, and proves the result. It does not write a function from its disassembly itself. An author may write source the diff calls for, in the project's idiom, and concord encodes it as a translation rule or capability that is kept only when the function is exact and nothing else in the build scores lower; the commit says the source is authored rather than translated, as for `CCameraMayaSceneNode::setPosition` and the TGA loader's field-by-field header reads.
 6. Submitted source reads as if a person wrote it for the project: its layout, names and idioms, since a maintainer reviews and keeps it.
 
 ## How we work now
