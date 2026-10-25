@@ -242,7 +242,7 @@ class Translate(unittest.TestCase):
 
     def test_pointer_byte_arithmetic_moves_to_char_star_on_64_bit(self):
         out = translate(
-            "float CQ3LevelMesh::Blend(float s[3], float t[3], tBSPVertex *v[9], int offset)\n"
+            "float OtherMesh::Blend(float s[3], float t[3], tBSPVertex *v[9], int offset)\n"
             "{\n\tptr = (f32 *)( (int)v[i*3+j] + offset );\n}\n"
             "x = Blend(cs, ct, v, (int)&v[0]->vPosition[0] - (int)v[0]);\n"
             "x = Blend(cs, ct, v, (int)v[0] - (int)&v[0]->vNormal[0]);\n"
@@ -253,6 +253,21 @@ class Translate(unittest.TestCase):
         self.assertIn("(int)((char*)&v[0]->vPosition[0] - (char*)v[0])", out)
         self.assertIn("(int)((char*)v[0] - (char*)&v[0]->vNormal[0])", out)
         self.assertIn("(int)a - (int)b", out)  # two plain ints keep their arithmetic
+
+    def test_q3_blend_preserves_the_targets_zero_field_offset(self):
+        source = "inline f32 CQ3LevelMesh::Blend(f32 s[3], f32 t[3], tBSPVertex *v[9], int offset)\n{\nptr = (f32 *)( (int)v[i*3+j] + offset );\n}\n"
+        out = translate(source)
+        self.assertIn("ptr = (float*)v[i*3 + j];", out)
+        self.assertNotIn("+ offset", out)
+        self.assertIn("int offset", out)
+
+    def test_only_animated_mesh_post_render_loses_its_duplicate_update(self):
+        source = "void CAnimatedMeshSceneNode::OnPostRender(u32 timeMs)\n{\n\t// update absolute position\n\tupdateAbsolutePosition();\n\trenderChildren();\n}\nvoid CCameraFPSSceneNode::OnPostRender(u32 timeMs)\n{\n\tupdateAbsolutePosition();\n}\n"
+        out = translate(source)
+        animated, camera = out.split("void CCameraFPSSceneNode")
+        self.assertNotIn("updateAbsolutePosition", animated)
+        self.assertIn("renderChildren();", animated)
+        self.assertIn("updateAbsolutePosition();", camera)
 
     def test_exist_file_searches_open_archives_as_irrlicht_did(self):
         out = translate(

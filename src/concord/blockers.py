@@ -106,11 +106,12 @@ def _with_includes(text: bytes, includes: bytes, helpers: bytes = b"") -> bytes:
     return text
 
 
-def restored(current: bytes, irrlicht: bytes, helpers: set[str] = frozenset()) -> dict[str, bytes]:
+def restored(current: bytes, irrlicht: bytes, helpers: set[str] = frozenset(), *, stubs_only: bool = True) -> dict[str, bytes]:
     """For each function of `current` whose body is a stub, the unit with that one
     body replaced by the body of the function of the same name in `irrlicht` (the
     qualified translation), plus the includes the translation has that the unit
-    lacks. `helpers` is the names of the file-local helpers the translation
+    lacks. With `stubs_only=False`, existing bodies are candidates too; callers
+    must explicitly select the methods to refresh. `helpers` is the names of the file-local helpers the translation
     defines; the ones the unit lacks are carried too."""
     ours, theirs = _definitions(current), _definitions(irrlicht)
     includes = _missing_includes(current, irrlicht)
@@ -119,7 +120,7 @@ def restored(current: bytes, irrlicht: bytes, helpers: set[str] = frozenset()) -
     for name, node in ours.items():
         body = node.child_by_field_name("body")
         original = theirs.get(name)
-        if body is None or b"__builtin_trap();" not in body.text or original is None:
+        if body is None or (stubs_only and b"__builtin_trap();" not in body.text) or original is None:
             continue
         start = node.child_by_field_name("declarator").end_byte
         original_start = original.child_by_field_name("declarator").end_byte
@@ -165,22 +166,24 @@ def cause(message: str) -> str:
     return re.sub(r"'[^']*'", "X", message)[:80]
 
 
-def stubs(harvest: Harvest, units: list[str], apply: bool = False, only: set[str] | None = None) -> list[Stub]:
+def stubs(harvest: Harvest, units: list[str], apply: bool = False, only: set[str] | None = None, *, refresh: bool = False) -> list[Stub]:
     """Diagnose each restored body, optionally writing the compiling ones in
     place after their combined source also compiles. No headers are changed."""
+    if refresh and not only:
+        raise ValueError("refresh requires explicit method names")
     root = harvest.root
     found = []
     for unit in units:
         path = root / "src" / unit
         irrlicht = root / IRRLICHT / "source" / "Irrlicht" / Path(unit).name
         current = path.read_bytes()
-        if b"__builtin_trap();" not in current or not irrlicht.exists():
+        if (not refresh and b"__builtin_trap();" not in current) or not irrlicht.exists():
             continue
         raw = translate(irrlicht.read_text(encoding="latin-1"))
         taken = helper_taken(root, raw, unit)
         helpers = set(helper_names(raw, taken).values())
         translation = qualify(root, name_helpers(raw, taken), unit).encode()
-        candidates = restored(current, translation, helpers)
+        candidates = restored(current, translation, helpers, stubs_only=not refresh)
         if only is not None:
             candidates = {name: text for name, text in candidates.items() if name in only}
         if not candidates:

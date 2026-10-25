@@ -59,6 +59,16 @@ class CliTest(unittest.TestCase):
                 analyze.assert_called_once_with(harvest.return_value, 'u.cpp', 'f', Path(tmp), limit=8, offsets=None)
                 self.assertEqual(json.loads(save.read_text()), report)
 
+    def test_refresh_requires_explicit_methods_and_preserves_other_bodies(self):
+        from unittest import mock
+
+        from concord.blockers import Stub
+
+        with mock.patch('concord.cli.Harvest') as harvest, mock.patch('concord.cli.blockers.stubs', return_value=[Stub('u.cpp', 'A::f')]) as run:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['refresh', '--harvest', '/root', '--unit', 'u.cpp', 'A::f', '--apply']), 0)
+            run.assert_called_once_with(harvest.return_value, ['u.cpp'], apply=True, only={'A::f'}, refresh=True)
+
     def test_blockers_passes_selected_methods(self):
         from unittest import mock
 

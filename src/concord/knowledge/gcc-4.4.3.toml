@@ -274,3 +274,14 @@ limits = "CQ3LevelMesh::createCurvedSurface needs more than the cast spelling: t
 evidence = [
   { function = "daisy::scene::CQ3LevelMesh::createCurvedSurface", note = "36 struct-layout findings at 97.63% (harvest e0b3763); 160 candidates including every address-arithmetic rewrite gave no improvement" },
 ]
+
+[[idiom]]
+id = "q3-zero-blend-offset"
+cause = "struct-layout"
+status = "confirmed"
+symptom = "36 mulss loads differ only by control-vertex field displacements in CQ3LevelMesh::createCurvedSurface"
+fix = "Preserve the original 64-bit port's zero-offset reads in CQ3LevelMesh::Blend. Irrlicht's 32-bit int-cast pointer arithmetic intends field offsets, but the target reads the first float for every blended field; translating it to correct char-pointer arithmetic repairs behavior that the target actually retains."
+limits = "Specific to the target-proven Q3 Blend behavior. Other pointer arithmetic keeps byte offsets. On b0464ee the candidate has 1517 instructions and 6656 bytes against the target's 1517 and 6620, with exactly 36 differing mulss loads; removing Blend's offset makes createCurvedSurface exact."
+evidence = [
+  { commit = "b0464ee", function = "daisy::scene::CQ3LevelMesh::createCurvedSurface", note = "Target field loads all use offset zero, where the byte-correct translation uses offsets 4 through 36. Both camera OnPostRender overrides remain exact with their explicit updateAbsolutePosition calls; only CAnimatedMeshSceneNode's duplicate call is removed by translation." },
+]

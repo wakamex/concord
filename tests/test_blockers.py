@@ -43,6 +43,13 @@ class Blockers(unittest.TestCase):
         self.assertIn(b"return 1;", text)
         self.assertIn(b"void A::stubbed(int n)\n{\n    Items.set_used(n);\n}", text)
 
+    def test_refresh_can_replace_a_selected_existing_body_without_reseeding(self):
+        candidates = restored(CURRENT, IRRLICHT, stubs_only=False)
+        self.assertEqual(set(candidates), {'A::kept', 'A::stubbed'})
+        self.assertIn(b'return 2;', candidates['A::kept'])
+        self.assertIn(b'__builtin_trap();', candidates['A::kept'])
+        self.assertIn(b'return 1;', candidates['A::stubbed'])
+
     def test_overloaded_stubs_are_restored_independently(self):
         current = b"void A::f(int n) { __builtin_trap(); }\nvoid A::f(float n) { __builtin_trap(); }\n"
         original = b"void A::f(int n) { useInt(n); }\nvoid A::f(float n) { useFloat(n); }\n"
@@ -95,7 +102,7 @@ class Apply(unittest.TestCase):
     current = declarations + CURRENT + b"void A::broken() { __builtin_trap(); }\n"
     original = declarations + IRRLICHT.replace(b"Items.set_used(n);", b"(void)n;") + b"void A::broken() { missing(); }\n"
 
-    def run_trial(self, apply=False, combined_error=False, outside_error=False, current=None, original=None, only=None):
+    def run_trial(self, apply=False, combined_error=False, outside_error=False, current=None, original=None, only=None, refresh=False):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path = root / "src" / "d" / "A.cpp"
@@ -126,7 +133,7 @@ class Apply(unittest.TestCase):
                         blockers.stubs(harvest, ["d/A.cpp"], apply=True)
                     self.assertEqual(path.read_bytes(), source)
                     return
-                found = blockers.stubs(harvest, ["d/A.cpp"], apply=apply, only=only)
+                found = blockers.stubs(harvest, ["d/A.cpp"], apply=apply, only=only, refresh=refresh)
             return found, path.read_bytes(), source
 
     def test_apply_changes_only_the_compiling_stub_body(self):
@@ -134,6 +141,12 @@ class Apply(unittest.TestCase):
         self.assertEqual({s.name for s in found if s.applied}, {"A::stubbed"})
         self.assertEqual(text, restored(source, self.original)["A::stubbed"])
         self.assertTrue(next(s for s in found if s.name == "A::broken").errors)
+
+    def test_refresh_compiles_and_applies_only_the_selected_existing_body(self):
+        found, text, source = self.run_trial(apply=True, only={'A::kept'}, refresh=True)
+        self.assertEqual([s.name for s in found if s.applied], ['A::kept'])
+        self.assertEqual(text, restored(source, self.original, stubs_only=False)['A::kept'])
+        self.assertEqual(text.count(b'__builtin_trap();'), 2)
 
     def test_selected_restore_leaves_other_compiling_stubs_untouched(self):
         original = self.original.replace(b'missing();', b'(void)0;')

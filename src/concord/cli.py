@@ -17,6 +17,7 @@ from concord import (
     causal,
     census,
     destructors,
+    initialization,
     inlines,
     knowledge,
     layout,
@@ -249,6 +250,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_blockers.add_argument("--apply", action="store_true", help="restore compiling stub bodies in place; verify matching separately")
     p_blockers.add_argument("--only", action="append", metavar="METHOD", help="examine only this declarator name, such as Class::method (repeatable)")
 
+    p_resize = sub.add_parser('resize-forms', help="measure vector resize initialization call shapes without changing source")
+    p_resize.add_argument('--harvest', type=Path, required=True)
+    p_resize.add_argument('--unit', required=True)
+    p_resize.add_argument('--method', required=True)
+    p_resize.add_argument('--member', required=True)
+    p_resize.add_argument('--element-type', required=True)
+    p_resize.add_argument('--restore', action='store_true', help="use the translated ancestor body in place first")
+    p_resize.add_argument('--save', type=Path)
+
+    p_refresh = sub.add_parser("refresh", help="refresh selected seeded method bodies from current Irrlicht translation")
+    p_refresh.add_argument('--harvest', type=Path, required=True)
+    p_refresh.add_argument('--unit', required=True)
+    p_refresh.add_argument('methods', nargs='+', help="declarator names such as Class::method")
+    p_refresh.add_argument('--apply', action='store_true', help="write compiling refreshed bodies; gate matches separately")
+
     p_rename = sub.add_parser(
         "rename", help="give each file-local helper in a unit the plain name a person would write"
     )
@@ -354,6 +370,22 @@ def main(argv: list[str] | None = None) -> int:
         return _repair(args)
     if args.command == "rerun":
         return _rerun(args)
+    if args.command == 'resize-forms':
+        report = initialization.diagnose(Harvest(args.harvest), args.unit, args.method, args.member, args.element_type, args.restore)
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + '\n')
+        for name, row in report['variants'].items():
+            data = [s for s in row['sections'] if s['name'] == '.gcc_except_table']
+            print(f"{name}: {row['error'] or str(row['exact']) + ' exact functions'}; exception table {[s.get('exact') for s in data]}")
+        return int(any(row['error'] for row in report['variants'].values()))
+    if args.command == "refresh":
+        found = blockers.stubs(Harvest(args.harvest), [args.unit], apply=args.apply, only=set(args.methods), refresh=True)
+        for row in found:
+            print(f"{row.name}: {'refreshed' if row.applied else '; '.join(row.errors) or 'compiles'}")
+        missing = set(args.methods) - {row.name for row in found}
+        if missing:
+            print('not found in current and ancestor source: ' + ', '.join(sorted(missing)))
+        return int(bool(missing or any(row.errors for row in found)))
     if args.command == "symbols-check":
         report = symbol_audit.run(args.harvest.resolve(), args.evidence)
         if args.save:

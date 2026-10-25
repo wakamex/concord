@@ -312,6 +312,23 @@ def _translate(source: str, namespace: str) -> str:
         r"(\1*)((char*)\2 + \3)",
         source,
     )
+    # The original 64-bit Q3 port reads the first float of each control vertex
+    # for every blended field: all 36 nonzero mulss displacements are zero in
+    # the target. Preserve that port's behavior, rather than repairing Irrlicht's
+    # 32-bit field-offset arithmetic (Goal 3 permits target-proven behavior).
+    source = re.sub(
+        r"^(?:inline\s+)?float\s+CQ3LevelMesh::Blend\([^;{]*\)\s*\{.*?^\}",
+        lambda match: re.sub(r"\(float\*\)\(\(char\*\)(v\[[^\]\n]+\])\s*\+\s*offset\)", r"(float*)\1", match[0]),
+        source, flags=re.MULTILINE | re.DOTALL,
+    )
+    # Daisy updates an animated mesh's absolute transform during OnPreRender.
+    # Its target OnPostRender omits Irrlicht's extra update; camera overrides
+    # retain their own update calls and already match with them present.
+    source = re.sub(
+        r"^void CAnimatedMeshSceneNode::OnPostRender\([^)]*\)\s*\{.*?^\}",
+        lambda match: re.sub(r"^[ \t]*(?:// update absolute position\n[ \t]*)?updateAbsolutePosition\(\);\n", "", match[0], flags=re.MULTILINE),
+        source, flags=re.MULTILINE | re.DOTALL,
+    )
     # Irrlicht's existFile looked inside open archives too; daisy's signature
     # takes that choice as an argument (CQ3LevelMesh::loadTextures).
     source = re.sub(r"(\.|->)existFile\(((?:[^,()]|\([^()]*\))+?)\)", r"\1existFile(\2, true)", source)
