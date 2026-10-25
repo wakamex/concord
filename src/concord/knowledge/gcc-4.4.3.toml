@@ -129,6 +129,18 @@ evidence = [
 ]
 
 [[idiom]]
+id = "ipa-inliner-distribution"
+cause = "inlining"
+status = "hypothesis"
+symptom = "functions in a unit differ only in how many copies of a shared inline callee (CString<char>::CString(const char*), ~CString) the IPA inliner placed in each; total call sites agree with the target"
+fix = "The deciding pass is pass_ipa_inline (042i.inline dump), which greedily inlines edges by badness until the unit growth passes inline-unit-growth (30%) of the starting insn count. Equal-badness edges are decided by fibheap order, which follows the order callers are walked: cgraph_nodes is a LIFO list, so callers are visited in reverse cgraph uid order, which is reverse DEFINITION order in the unit for the unit's own functions (nodes are created at definition, not at declaration). Only a definition-order change moves the distribution."
+limits = "Verified on CAlienEntity.cpp at harvest 048e50d (unit starts at 22513 insns and ends at 29299, exactly the 30% cap): include order (own header first), free declarations and unused static inline helpers before the unit, member declaration order and added member declarations in the class header all compile byte-identical. The unit's replaceWith* definition order matches the Mac map, and moving replaceWithTinySprites before replaceWithMegaSprites shifted copies (Magneto 14005->11717, Looker 7045->8917, Tiny 4549->5557, all still inexact; targets 12437/8485/4741), moving JammerSprite or SummonerSprites late improved Looker to 76.46 at size 7029, while moving Magneto earlier changed nothing. Raising the cap param (growth=31..35) only grows the tail callers (Tiny, then Looker), never shrinks Magneto, so the original's cap did not simply sit elsewhere: the residual difference is in the unit's body content (inexact neighbors feed the initial count and edge frequencies), not in its declaration context. Do not reorder the unit to force the distribution; the map already shows the original order."
+evidence = [
+  { function = "harvest::entity::CAlienEntity replaceWith{Magneto,Looker,Tiny}Sprites", note = "ours 14005/7045/4549 bytes against targets 12437/8485/4741; the 042i.inline dump shows 57 CString-ctor copies popped for Magneto first; same 227 call sites on both sides" },
+  { function = "harvest::entity::CDefenseTowerEntity C1/C2 and harvest::states::CPlayState::OnEvent", note = "same cause family per the second reader: C2 target 24437 vs 24325, C1 15365 vs 15573, OnEvent 13607 vs 13263, equal call counts on both sides" },
+]
+
+[[idiom]]
 id = "qualified-base-call"
 cause = "inlining"
 status = "confirmed"
