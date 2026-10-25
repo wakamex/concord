@@ -141,6 +141,18 @@ evidence = [
 ]
 
 [[idiom]]
+id = "frame-layout-declaration-placement"
+cause = "register-allocation"
+status = "hypothesis"
+symptom = "a large near-exact function whose only differences are register choices, stack slots and an occasional spill across loops and class temporaries, with identical stack usage on both sides"
+fix = "Move a local's declaration: within its block, or across a scope boundary into or out of the block holding all its uses. GCC 4.4 assigns registers and stack slots in declaration order."
+limits = "Measured negative at harvest 048e50d on daisy::scene::CQ3LevelMesh::loadTextures (96.40, target differs by register picks in all four loops): moving CString<char> s into either loop, swapping it with the extensions array or permuting the s/extensions/tex declaration groups all lost 5-18 points; hoisting the inner-loop b, lm and i declarations compiled byte-identical, as did moving the e and l loop counters out of their for-init clauses. concord phase finds no locked function in the unit, so the cause is not the declaration count. concord's move_declarations transform covers only intra-block moves; a cross-scope move is untested by the search."
+evidence = [
+  { function = "daisy::scene::CQ3LevelMesh::loadTextures", note = "2377 bytes at 96.40 with identical stack slots; every tested declaration placement left it worse or identical" },
+  { function = "harvest::states::CPlayState::render", note = "same family per the second reader: 14277 bytes, 95.61, differences across CColor, CVector2d, CRect<int> and CString<wchar_t> temporaries" },
+]
+
+[[idiom]]
 id = "qualified-base-call"
 cause = "inlining"
 status = "confirmed"
