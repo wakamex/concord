@@ -16,11 +16,14 @@ from concord.transforms import (
     flip_nan_sense,
     for_loop,
     inline_temporaries,
+    join_declaration,
     merge_conditions,
     move_declarations,
     name_temporaries,
     nest_condition,
+    split_declaration,
     swap_branches,
+    swap_commutative,
     swap_operands,
     swap_statements,
     while_loop,
@@ -255,6 +258,45 @@ class FlipNanSense(unittest.TestCase):
         self.assertIn(b"    a = a + (b - 1);\n", next(expand_assignment(source, scope)).source)
         [compressed] = compress_assignment(source, scope)  # a = b + a does not start with its target
         self.assertIn(b"    b *= a;\n", compressed.source)
+
+    def test_commutative_operands_swap_and_keep_precedence(self):
+        source = (
+            b"float f(float x, float y, int a, int b)\n{\n"
+            b"    float d = x * x + y * y;\n"
+            b"    int e = a - b + a;\n"
+            b"    int g = a + next();\n"
+            b"    float h = x + x;\n"
+            b"    return d + e + g + h;\n}\n"
+        )
+        rewrites = [r.source for r in swap_commutative(source, Parser(CPP).parse(source).root_node)]
+        self.assertEqual(len(rewrites), 5)  # a + next() has a call, x + x and x * x would not change
+        for swapped in (
+            b"    float d = y * y + x * x;\n",
+            b"    int e = a + (a - b);\n",
+            b"    return e + d + g + h;\n",
+            b"    return g + (d + e) + h;\n",
+            b"    return h + (d + e + g);\n",
+        ):
+            self.assertTrue(any(swapped in rewrite for rewrite in rewrites), swapped)
+
+    def test_a_declaration_splits_from_its_initializer_and_joins_back(self):
+        source = (
+            b"void f(float t)\n{\n"
+            b"    float best = 1000000000.0f;\n"
+            b"    const float limit = t;\n"
+            b"    int grid;\n"
+            b"    grid = (int)t;\n"
+            b"    float other;\n"
+            b"    best = other;\n"
+            b"}\n"
+        )
+        scope = Parser(CPP).parse(source).root_node
+        [split] = split_declaration(source, scope)  # the const declaration stays joined
+        self.assertIn(b"    float best;\n    best = 1000000000.0f;\n", split.source)
+        [joined] = join_declaration(source, scope)  # other is not the name assigned next
+        self.assertIn(b"    int grid = (int)t;\n", joined.source)
+        backs = [r.source for r in join_declaration(split.source, Parser(CPP).parse(split.source).root_node)]
+        self.assertIn(source, backs)  # joining best again, beside joining grid
 
     def test_nested_ifs_merge_and_an_and_condition_nests(self):
         source = b"void f(int a, int b, int c)\n{\n    if (a)\n    {\n        if (b || c)\n            g();\n    }\n    if (a && b)\n        h();\n    if (a)\n    {\n        if (b)\n            g();\n        else\n            h();\n    }\n}\n"

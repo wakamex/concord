@@ -7,14 +7,13 @@ the unit still does. `solve` then runs concord's searches from the mutated sourc
 and records whether each gets back to exact, so recovery can be counted by kind
 of change and by search.
 
-Mutations come in two groups. Most are rewrites concord can undo with a rewrite
-it has (swap a comparison's operands or an if's branches, swap adjacent
-statements, move a declaration, name or inline a temporary, change a loop
-between for and while, spell out or compress a compound assignment, nest or
-merge the halves of an `&&`), so they measure whether a search finds that
-rewrite among the others. The rest are changes it has no rewrite to undo (swap
-the operands of a commutative operator, split a declaration from its
-initializer): they measure what the searches cannot reach. Each kind is capped
+Each mutation is a rewrite concord can undo with a rewrite it has (swap a
+comparison's operands or an if's branches, swap adjacent statements, move a
+declaration, split a declaration from its initializer, name or inline a
+temporary, change a loop between for and while, spell out or compress a
+compound assignment, nest or merge the halves of an `&&`, swap the operands
+of a commutative operator), so they measure whether a search finds that
+rewrite among the others. Each kind is capped
 at the same number of cases, so a common kind does not decide the totals.
 Real near misses are harder than either, since nothing says one rewrite
 separates them from a match; the benchmark is a floor to compare versions of
@@ -48,6 +47,7 @@ from concord.transforms import (
     move_declarations,
     name_temporaries,
     nest_condition,
+    split_declaration,
     swap_branches,
     swap_operands,
     swap_statements,
@@ -68,23 +68,6 @@ def commute(source: bytes, scope: Node) -> Iterator[Rewrite]:
             yield _rewrite("bench-commute", Cause.OPERAND_ORDER, source, node, swapped, f"{node.text.decode()} -> {swapped.decode()}")
 
 
-def split_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
-    """`int x = e;` as `int x; x = e;`, for a non-const local of a built-in type."""
-    for node in _descendants(scope, "declaration"):
-        kinds = [c.type for c in node.named_children]
-        if kinds != ["primitive_type", "init_declarator"] or node.parent.type != "compound_statement":
-            continue
-        declarator = node.named_children[1]
-        name, value = declarator.child_by_field_name("declarator"), declarator.child_by_field_name("value")
-        if name is None or value is None or name.type != "identifier" or value.type in ("initializer_list", "argument_list"):
-            continue
-        indent = source[source.rfind(b"\n", 0, node.start_byte) + 1 : node.start_byte]
-        if indent.strip():
-            continue
-        split = node.named_children[0].text + b" " + name.text + b";\n" + indent + name.text + b" = " + value.text + b";"
-        yield _rewrite("bench-split-declaration", Cause.REGISTER_ALLOCATION, source, node, split, f"{name.text.decode()} declared, then assigned")
-
-
 # name -> (mutation, whether concord has a rewrite that undoes it)
 MUTATIONS = {
     "swap comparison operands": (swap_operands, True),
@@ -100,8 +83,8 @@ MUTATIONS = {
     "nest an && condition": (nest_condition, True),
     "merge nested ifs": (merge_conditions, True),
     "recast an address sum": (address_arithmetic, True),
-    "swap commutative operands": (commute, False),
-    "split a declaration": (split_declaration, False),
+    "swap commutative operands": (commute, True),
+    "split a declaration": (split_declaration, True),
 }
 
 

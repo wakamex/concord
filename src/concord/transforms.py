@@ -125,6 +125,54 @@ def swap_operands(source: bytes, scope: Node) -> Iterator[Rewrite]:
         )
 
 
+COMMUTATIVE = {"+", "*", "&", "|", "^"}
+# How tightly a binary operator binds, higher binds tighter. An operand that
+# binds no tighter than the operator it moves under keeps parentheses.
+BINDS = {"*": 12, "/": 12, "%": 12, "+": 11, "-": 11, "<<": 10, ">>": 10,
+         "<": 9, "<=": 9, ">": 9, ">=": 9, "==": 8, "!=": 8, "&": 7, "^": 6, "|": 5, "&&": 4, "||": 3}
+SIDE_EFFECTS = {"call_expression", "assignment_expression", "update_expression", "new_expression", "delete_expression"}
+
+
+def _side_effect(node: Node) -> bool:
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.type in SIDE_EFFECTS:
+            return True
+        stack.extend(current.children)
+    return False
+
+
+def _operand(node: Node, operator: str) -> bytes:
+    """The operand's text, parenthesized when moving it under `operator` could regroup it."""
+    loose = node.type in ("conditional_expression", "assignment_expression", "comma_expression")
+    if node.type == "binary_expression":
+        own = node.child_by_field_name("operator")
+        loose = loose or (own is not None and BINDS.get(own.type, 0) <= BINDS[operator])
+    return b"(" + node.text + b")" if loose else node.text
+
+
+def swap_commutative(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per commutative operation whose operands have no side
+    effects: `a + b` becomes `b + a`. The two spellings compute the same
+    value, but GCC 4.4 creates the operands' values in source order, which
+    sets SSA numbering and with it register choices and the operand order of
+    the instruction that consumes the result. An overloaded operator may
+    resolve differently swapped, or not at all; the compile step drops
+    those, as it does for swapped comparisons."""
+    for node in _descendants(scope, "binary_expression"):
+        operator = node.child_by_field_name("operator").type
+        if operator not in COMMUTATIVE:
+            continue
+        left, right = node.child_by_field_name("left"), node.child_by_field_name("right")
+        if left.text == right.text or _side_effect(left) or _side_effect(right):
+            continue
+        swapped = _operand(right, operator) + b" " + operator.encode() + b" " + _operand(left, operator)
+        yield _rewrite(
+            "commutative-operand-order", Cause.OPERAND_ORDER, source, node, swapped, f"{node.text.decode()} -> {swapped.decode()}"
+        )
+
+
 INVERSE = {b"==": b"!=", b"!=": b"==", b"<": b">=", b">=": b"<", b">": b"<=", b"<=": b">"}
 # Expressions that `!` binds to without parentheses.
 TIGHT = {"identifier", "field_expression", "call_expression", "subscript_expression", "qualified_identifier",
@@ -352,6 +400,57 @@ def move_declarations(source: bytes, scope: Node) -> Iterator[Rewrite]:
                     f"line {line}: {declaration.text.decode()} moved to line {target}",
                     moved,
                 )
+
+
+def split_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`float x = e;` as `float x; x = e;`, for a non-const local of a built-in
+    type. GCC 4.4 numbers the declaration and the assignment as separate
+    statements, which moves the order it creates later values in."""
+    for node in _descendants(scope, "declaration"):
+        kinds = [c.type for c in node.named_children]
+        if kinds != ["primitive_type", "init_declarator"] or node.parent is None or node.parent.type != "compound_statement":
+            continue
+        declarator = node.named_children[1]
+        name, value = declarator.child_by_field_name("declarator"), declarator.child_by_field_name("value")
+        if name is None or value is None or name.type != "identifier" or value.type in ("initializer_list", "argument_list"):
+            continue
+        indent = source[_line_start(source, node.start_byte) : node.start_byte]
+        if indent.strip():
+            continue
+        split = node.named_children[0].text + b" " + name.text + b";\n" + indent + name.text + b" = " + value.text + b";"
+        yield _rewrite("split-declaration", Cause.REGISTER_ALLOCATION, source, node, split, f"{name.text.decode()} declared, then assigned")
+
+
+def join_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """`float x; x = e;` as `float x = e;`, the inverse of split_declaration:
+    a declaration of a built-in type whose next statement assigns the name."""
+    for block in _descendants(scope, "compound_statement"):
+        statements = [c for c in block.named_children if c.type != "comment"]
+        for declaration, statement in pairwise(statements):
+            kinds = [c.type for c in declaration.named_children] if declaration.type == "declaration" else []
+            if len(kinds) != 2 or kinds[0] != "primitive_type":
+                continue
+            name = declaration.child_by_field_name("declarator")
+            if name is None or name.type != "identifier" or statement.type != "expression_statement" or len(statement.named_children) != 1:
+                continue
+            assignment = statement.named_children[0]
+            if assignment.type != "assignment_expression" or assignment.child_by_field_name("operator").type != "=":
+                continue
+            left, value = assignment.child_by_field_name("left"), assignment.child_by_field_name("right")
+            if left is None or left.type != "identifier" or left.text != name.text or value is None:
+                continue
+            start = _line_start(source, declaration.start_byte)
+            if source[start : declaration.start_byte].strip():
+                continue
+            end = source.find(b"\n", statement.end_byte) + 1 or len(source)
+            joined = declaration.named_children[0].text + b" " + name.text + b" = " + value.text + b";\n"
+            line = source.count(b"\n", 0, declaration.start_byte) + 1
+            yield Rewrite(
+                "split-declaration",
+                Cause.REGISTER_ALLOCATION,
+                f"line {line}: {name.text.decode()} assigned in its declaration",
+                source[:start] + source[start : declaration.start_byte] + joined + source[end:],
+            )
 
 
 # Expressions worth naming: a value computed from others, not a plain name or literal.
@@ -662,7 +761,7 @@ def _ancestors(node: Node, stop: Node) -> list[Node]:
     return out
 
 
-TRANSFORMS = {Cause.OPERAND_ORDER: [swap_operands], Cause.BLOCK_ORDER: [swap_branches], Cause.STRUCT_LAYOUT: [address_arithmetic]}
+TRANSFORMS = {Cause.OPERAND_ORDER: [swap_operands, swap_commutative], Cause.BLOCK_ORDER: [swap_branches], Cause.STRUCT_LAYOUT: [address_arithmetic]}
 # Every rewrite, for searches that do not pick rewrites by cause.
 def flip_nan_sense(source: bytes, scope: Node) -> Iterator[Rewrite]:
     """One rewrite per relational comparison in scope that changes how it treats
@@ -694,9 +793,12 @@ def flip_nan_sense(source: bytes, scope: Node) -> Iterator[Rewrite]:
 
 ALL = [
     swap_operands,
+    swap_commutative,
     swap_branches,
     swap_statements,
     move_declarations,
+    split_declaration,
+    join_declaration,
     name_temporaries,
     inline_temporaries,
     while_loop,

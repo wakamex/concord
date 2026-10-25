@@ -115,7 +115,7 @@ class Cases(unittest.TestCase):
 
         rows = table([outcome("swap if branches", True, True), outcome("swap if branches", False, True), outcome("for loop as while loop", False, False)])
         self.assertEqual(rows, [("swap if branches", True, 2, 1, 2, 90.0, 8.0), ("for loop as while loop", True, 1, 0, 0, 90.0, 0.0)])
-        self.assertEqual(sum(1 for _, known in MUTATIONS.values() if not known), 2)
+        self.assertEqual(sum(1 for _, known in MUTATIONS.values() if not known), 0)  # every mutation has an inverse rewrite
 
 
 class Location(unittest.TestCase):

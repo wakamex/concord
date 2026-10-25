@@ -24,6 +24,28 @@ evidence = [
 ]
 
 [[idiom]]
+id = "commutative-operand-order"
+cause = "operand-order"
+status = "hypothesis"
+symptom = "the two values of a commutative operation sit in the other registers, or a consuming instruction takes its operands in the other order"
+fix = "Write a commutative operation with its operands in the other order: `x * x + y * y` as `y * y + x * x`. GCC 4.4 creates the operands' values in source order, so the spelling sets SSA numbering and with it register choices, even though the computed value is the same."
+limits = "Operands with side effects are left alone, since C++ does not fix their evaluation order and swapping the text could swap the effects. An overloaded operator resolves on its left operand, so a swap can call a different function or fail to compile; the compile and oracle checks reject those. The benchmark's commutative mutation had no inverse rewrite before this one."
+evidence = [
+  { function = "harvest::entity::CAlienEntity::locateTargetBuilding", note = "candidate for the xmm0/xmm1 swap behind its distance sums at harvest c5d2e4c; unconfirmed until a search makes a function exact with it" },
+]
+
+[[idiom]]
+id = "split-declaration"
+cause = "register-allocation"
+status = "hypothesis"
+symptom = "a short-lived value sits in the neighbouring register, with every instruction otherwise the same"
+fix = "Split a built-in local's declaration from its initializer (`float x = e;` as `float x; x = e;`), or join the two back into one declaration. GCC 4.4 numbers the declaration and the assignment separately, which moves the order it creates later values in."
+limits = "Only non-const locals of built-in types split safely: splitting a class local would default-construct it and then assign, which changes what the code does. The benchmark's split mutation had no inverse rewrite before this pair."
+evidence = [
+  { function = "harvest::entity::CAlienEntity::locateTargetBuilding", note = "candidate for the xmm1 against xmm0 choice on its bestDistance constant at harvest c5d2e4c; unconfirmed until a search makes a function exact with it" },
+]
+
+[[idiom]]
 id = "definition-order"
 cause = "register-allocation"
 status = "confirmed"
