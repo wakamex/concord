@@ -9,6 +9,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+from elftools.elf.elffile import ELFFile
+from elftools.elf.relocation import RelocationSection
 from tree_sitter import Node
 
 from concord.harvest import BUILD, Harvest
@@ -83,6 +85,41 @@ def restore_literals(harvest: Harvest, unit: str) -> list[str]:
     return []
 
 
+def readonly_sections(obj: Path, target: Path, names: set[str]) -> dict[str, int]:
+    """Prove complete unrelocated constant sections by a unique target copy.
+
+    Search all allocated read-only data, including duplicates in other sections.
+    Short, writable, executable and relocation-bearing sections are excluded.
+    """
+    with target.open("rb") as stream:
+        elf = ELFFile(stream)
+        regions = [(s["sh_addr"], s.data()) for s in elf.iter_sections()
+                   if s["sh_type"] == "SHT_PROGBITS" and s["sh_flags"] & 2 and not s["sh_flags"] & 5]
+    found = {}
+    with obj.open("rb") as stream:
+        elf = ELFFile(stream)
+        relocated = {s["sh_info"] for s in elf.iter_sections() if isinstance(s, RelocationSection) and s.num_relocations()}
+        for index, section in enumerate(elf.iter_sections()):
+            if section.name not in names or not section.name.startswith(".rodata") or index in relocated:
+                continue
+            if section["sh_type"] != "SHT_PROGBITS" or not section["sh_flags"] & 2 or section["sh_flags"] & 5:
+                continue
+            data = section.data()
+            if len(data) < 32:
+                continue
+            matches = []
+            for base, region in regions:
+                offset = region.find(data)
+                while offset >= 0 and len(matches) < 2:
+                    matches.append(base + offset)
+                    offset = region.find(data, offset + 1)
+                if len(matches) > 1:
+                    break
+            if len(matches) == 1 and matches[0] % max(1, section["sh_addralign"]) == 0:
+                found[section.name] = matches[0]
+    return found
+
+
 def place(harvest: Harvest, unit: str, literals: bool = False) -> dict:
     """Learn existing exact references, then verify temporary section placements.
     Preserve all existing placements. Whole-build scoring is a separate gate."""
@@ -94,6 +131,9 @@ def place(harvest: Harvest, unit: str, literals: bool = False) -> dict:
     sections = {}
     for _ in range(2):
         called = _place_called_sections(root, unit)
+        unplaced = set(json.loads(report.read_text()).get("unplaced_sections", []))
+        called.update(readonly_sections(
+            report.with_suffix(".o"), root / "orig" / BUILD / "Harvest", unplaced))
         if not called:
             break
         _register(root, unit, {**placements, **called})

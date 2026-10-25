@@ -34,5 +34,41 @@ class Literals(unittest.TestCase):
         self.assertIsNone(literal_candidate(self.current, self.current, SYMBOL))
 
 
+@unittest.skipUnless(__import__('shutil').which('as') and __import__('shutil').which('ld'), 'GNU assembler and linker are needed')
+class ReadonlyPlacement(unittest.TestCase):
+    def test_real_sections_require_unique_complete_unrelocated_data(self):
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        from concord.place import readonly_sections
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assembly = root / 'data.s'
+            obj, target = root / 'data.o', root / 'target'
+            constants = ','.join(str(i) for i in range(32))
+            source = '.section .rodata,"a"\n.balign 16\n.byte ' + constants + '\n'
+            assembly.write_text(source)
+            subprocess.run(['as', str(assembly), '-o', str(obj)], check=True)
+            subprocess.run(['ld', '-e', '0', str(obj), '-o', str(target)], check=True)
+            found = readonly_sections(obj, target, {'.rodata'})
+            self.assertEqual(list(found), ['.rodata'])
+            self.assertEqual(found['.rodata'] % 16, 0)
+            self.assertEqual(readonly_sections(obj, target, set()), {})
+            assembly.write_text(source + '.section .other,"a"\n.byte ' + constants + '\n')
+            duplicate = root / 'duplicate.o'
+            subprocess.run(['as', str(assembly), '-o', str(duplicate)], check=True)
+            subprocess.run(['ld', '-e', '0', str(duplicate), '-o', str(target)], check=True)
+            self.assertEqual(readonly_sections(obj, target, {'.rodata'}), {})
+            for variant in (source.replace('"a"', '"aw"'), source.replace('"a"', '"ax"'), source.replace(constants, '1,2,3')):
+                assembly.write_text(variant)
+                subprocess.run(['as', str(assembly), '-o', str(obj)], check=True)
+                self.assertEqual(readonly_sections(obj, target, {'.rodata'}), {})
+            assembly.write_text(source + '.quad external\n')
+            subprocess.run(['as', str(assembly), '-o', str(obj)], check=True)
+            self.assertEqual(readonly_sections(obj, target, {'.rodata'}), {})
+
+
 if __name__ == '__main__':
     unittest.main()
