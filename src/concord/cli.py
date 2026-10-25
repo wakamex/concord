@@ -18,6 +18,7 @@ from concord import (
     census,
     destructors,
     initialization,
+    inline_budget,
     inlines,
     knowledge,
     layout,
@@ -303,6 +304,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_overrides.add_argument("units", nargs="+", help="units to restore, as source paths or report slugs")
     p_overrides.add_argument("--apply", action="store_true", help="write the verified declarations and definitions")
 
+    p_budget = sub.add_parser("inline-budget", help="explain GCC IPA inline estimates and edge decisions from a compiler dump")
+    p_budget.add_argument("dump", type=Path)
+    p_budget.add_argument("--against", type=Path, help="compare against an unchanged-source dump")
+    p_budget.add_argument("--save", type=Path)
+
     p_inlines = sub.add_parser(
         "inlines", help="compare a unit's out-of-line inline and template copies with the target's"
     )
@@ -419,6 +425,21 @@ def main(argv: list[str] | None = None) -> int:
         return _vtables(args)
     if args.command == "overrides":
         return _overrides(args)
+    if args.command == "inline-budget":
+        report = inline_budget.load(args.dump)
+        if args.against:
+            baseline = inline_budget.load(args.against)
+            report['comparison'] = inline_budget.compare(baseline, report)
+            report['baseline'] = {key: baseline[key] for key in ('dump', 'sha256', 'starting_insns', 'final_insns')}
+        output = json.dumps(report, indent=2) + "\n"
+        if args.save:
+            args.save.write_text(output)
+        print(f"pass_ipa_inline: {report['starting_insns']} -> {report['final_insns']} estimated instructions; {report['inlined_calls']} calls inlined")
+        for reason, count in report['rejections'].items():
+            print(f"  {count}: {reason}")
+        for row in report.get('comparison', {}).get('functions', [])[:12]:
+            print(f"  {row['delta']:+d}: {row['name']}")
+        return 0
     if args.command == "inlines":
         harvest = Harvest(args.harvest)
         units = args.units or sorted(p.stem for p in harvest.reports.glob("*.json"))

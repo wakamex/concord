@@ -1,0 +1,6 @@
+{
+  "compiler": "GCC 4.4.3",
+  "unit": "daisy/scene/CXFileReader.cpp",
+  "source_dump_sha256": "a838285d94b6a8160c24d66bc0cef2d5d09238126873da3a6d40be95cf0b3388",
+  "scope": "First 115 decision lines, summary, and parseDataObjectAnimationKey graph records extracted without editing from the pinned compiler dump."
+}

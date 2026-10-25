@@ -1,0 +1,117 @@
+Deciding on inlining.  Starting with 9029 insns.
+
+Inlining always_inline functions:
+
+Considering int pthread_equal(pthread_t, pthread_t) 1 insns (always inline)
+ Inlined for a net change of +0 insns.
+
+Deciding on smaller functions:
+Considering inline candidate void std::vector<_Tp, _Alloc>::resize(size_t, _Tp) [with _Tp = int, _Alloc = std::allocator<int>].
+Considering inline candidate ox::TArray<daisy::scene::CXFileReader::SXSkinWeight>::~TArray().
+Considering inline candidate _ForwardIterator std::__uninitialized_move_a(_InputIterator, _InputIterator, _ForwardIterator, _Allocator&) [with _InputIterator = int*, _ForwardIterator = int*, _Allocator = std::allocator<int>].
+Considering inline candidate void std::vector<_Tp, _Alloc>::_M_fill_insert(__gnu_cxx::__normal_iterator<typename std::_Vector_base<_Tp, _Alloc>::_Tp_alloc_type::pointer, std::vector<_Tp, _Alloc> >, size_t, const _Tp&) [with _Tp = ox::core::CVector2d<float>, _Alloc = std::allocator<ox::core::CVector2d<float> >].
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate void std::vector<_Tp, _Alloc>::_M_fill_insert(__gnu_cxx::__normal_iterator<typename std::_Vector_base<_Tp, _Alloc>::_Tp_alloc_type::pointer, std::vector<_Tp, _Alloc> >, size_t, const _Tp&) [with _Tp = int, _Alloc = std::allocator<int>].
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate void std::vector<_Tp, _Alloc>::_M_fill_insert(__gnu_cxx::__normal_iterator<typename std::_Vector_base<_Tp, _Alloc>::_Tp_alloc_type::pointer, std::vector<_Tp, _Alloc> >, size_t, const _Tp&) [with _Tp = ox::core::CVector3d<float>, _Alloc = std::allocator<ox::core::CVector3d<float> >].
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate typename _Alloc::rebind<_Tp>::other::pointer std::_Vector_base<_Tp, _Alloc>::_M_allocate(size_t) [with _Tp = daisy::scene::CXFileReader::SXAnimationKey, _Alloc = std::allocator<daisy::scene::CXFileReader::SXAnimationKey>].
+Considering inline candidate _ForwardIterator std::__uninitialized_move_a(_InputIterator, _InputIterator, _ForwardIterator, _Allocator&) [with _InputIterator = daisy::scene::CXFileReader::SXAnimation*, _ForwardIterator = daisy::scene::CXFileReader::SXAnimation*, _Allocator = std::allocator<daisy::scene::CXFileReader::SXAnimation>].
+Considering inline candidate std::vector<_Tp, _Alloc>& std::vector<_Tp, _Alloc>::operator=(const std::vector<_Tp, _Alloc>&) [with _Tp = daisy::scene::CXFileReader::SXAnimationKey, _Alloc = std::allocator<daisy::scene::CXFileReader::SXAnimationKey>].
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate void ox::core::CString<T>::reallocate(int) [with T = char].
+Considering inline candidate void std::vector<_Tp, _Alloc>::_M_insert_aux(__gnu_cxx::__normal_iterator<typename std::_Vector_base<_Tp, _Alloc>::_Tp_alloc_type::pointer, std::vector<_Tp, _Alloc> >, const _Tp&) [with _Tp = daisy::scene::CXFileReader::SXAnimationKey, _Alloc = std::allocator<daisy::scene::CXFileReader::SXAnimationKey>].
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate void std::vector<_Tp, _Alloc>::_M_insert_aux(__gnu_cxx::__normal_iterator<typename std::_Vector_base<_Tp, _Alloc>::_Tp_alloc_type::pointer, std::vector<_Tp, _Alloc> >, const _Tp&) [with _Tp = daisy::scene::CXFileReader::SXAnimation, _Alloc = std::allocator<daisy::scene::CXFileReader::SXAnimation>].
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate daisy::scene::CXFileReader::SXAnimation& daisy::scene::CXFileReader::SXAnimation::operator=(const daisy::scene::CXFileReader::SXAnimation&).
+Considering inline candidate daisy::scene::CXFileReader::SXAnimation::SXAnimation(const daisy::scene::CXFileReader::SXAnimation&).
+Considering inline candidate ox::core::CString<T>& ox::core::CString<T>::operator=(const ox::core::CString<T>&) [with T = char].
+Considering inline candidate ox::core::CString<T> ox::core::CString<T>::subString(int, int) const [with T = char].
+Considering inline candidate ox::core::CString<T>::CString(const B*) [with B = char, T = char].
+Considering inline candidate std::vector<_Tp, _Alloc>::~vector() [with _Tp = daisy::scene::CXFileReader::SXMesh, _Alloc = std::allocator<daisy::scene::CXFileReader::SXMesh>].
+Inlining failed: --param max-inline-insns-single limit reached
+Considering inline candidate ox::core::CString<T>::~CString() [with T = char].
+Considering inline candidate ox::core::CString<T>::CString() [with T = char].
+Considering inline candidate float daisy::scene::CXFileReader::readFloat().
+Considering inline candidate void daisy::scene::CXFileReader::computeGlobalFrameMatrizes(daisy::scene::CXFileReader::SXFrame&, daisy::scene::CXFileReader::SXFrame*).
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate void daisy::scene::CXFileReader::findNextNoneWhiteSpace().
+Considering inline candidate void daisy::scene::CXFileReader::findNextNoneWhiteSpaceNumber().
+Considering inline candidate ox::core::CString<char> daisy::scene::CXFileReader::getNextToken().
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate bool daisy::scene::CXFileReader::readHeadOfDataObject(ox::core::CString<char>*).
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate bool daisy::scene::CXFileReader::checkForTwoFollowingSemicolons().
+Considering inline candidate bool daisy::scene::CXFileReader::parseUnknownDataObject().
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate ox::TArray<int>::~TArray().
+Considering inline candidate bool daisy::scene::CXFileReader::parseDataObjectAnimationKey(daisy::scene::CXFileReader::SXAnimationKey&).
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate bool daisy::scene::CXFileReader::parseDataObjectAnimation(daisy::scene::CXFileReader::SXAnimation&).
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate daisy::scene::CXFileReader::SXAnimation::~SXAnimation().
+Considering inline candidate bool daisy::scene::CXFileReader::getNextTokenAsString(ox::core::CString<char>&).
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate bool daisy::scene::CXFileReader::readFileIntoMemory(ox::io::IReadFile*).
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate bool daisy::scene::CXFileReader::validateMesh(daisy::scene::CXFileReader::SXFrame*).
+Inlining failed: --param max-inline-insns-auto limit reached
+Considering inline candidate ox::TArray<daisy::scene::CXFileReader::SXAnimationSet>::~TArray().
+Considering inline candidate daisy::scene::CXFileReader::SXFrame::~SXFrame().
+Considering inline candidate daisy::scene::CXFileReader::SXFrame::SXFrame().
+Considering inline candidate ox::TArray<daisy::scene::CXFileReader::SXFrame>::~TArray().
+Considering inline candidate char* daisy::core::fast_atof_move(char*, float&).
+Considering inline candidate void daisy::scene::CXFileReader::SXAnimationKey::del().
+
+Considering ox::core::CString<T>::CString() [with T = char] with 18 insns
+ to be inlined into bool daisy::scene::CXFileReader::parseDataObjectAnimationSet(daisy::scene::CXFileReader::SXAnimationSet&)
+ Estimated growth after inlined into all callees is +2 insns.
+ Estimated badness is 6, frequency 6.43.
+ Inlined into bool daisy::scene::CXFileReader::parseDataObjectAnimationSet(daisy::scene::CXFileReader::SXAnimationSet&) which now has 381 insns,net change of +5 insns.
+
+Considering ox::TArray<int>::~TArray() with 15 insns
+ to be inlined into std::vector<_Tp, _Alloc>::~vector() [with _Tp = daisy::scene::CXFileReader::SXMesh, _Alloc = std::allocator<daisy::scene::CXFileReader::SXMesh>]
+ Estimated growth after inlined into all callees is +5 insns.
+ Estimated badness is 6, frequency 50.00.
+ Inlined into std::vector<_Tp, _Alloc>::~vector() [with _Tp = daisy::scene::CXFileReader::SXMesh, _Alloc = std::allocator<daisy::scene::CXFileReader::SXMesh>] which now has 465 insns,net change of +2 insns.
+
+Considering ox::TArray<int>::~TArray() with 15 insns
+ to be inlined into std::vector<_Tp, _Alloc>::~vector() [with _Tp = daisy::scene::CXFileReader::SXMesh, _Alloc = std::allocator<daisy::scene::CXFileReader::SXMesh>]
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 4, frequency 50.00.
+ Inlined into std::vector<_Tp, _Alloc>::~vector() [with _Tp = daisy::scene::CXFileReader::SXMesh, _Alloc = std::allocator<daisy::scene::CXFileReader::SXMesh>] which now has 467 insns,net change of +2 insns.
+
+Considering ox::TArray<int>::~TArray() with 15 insns
+ to be inlined into std::vector<_Tp, _Alloc>::~vector() [with _Tp = daisy::scene::CXFileReader::SXMesh, _Alloc = std::allocator<daisy::scene::CXFileReader::SXMesh>]
+ Estimated growth after inlined into all callees is +1 insns.
+ Estimated badness is 2, frequency 50.00.
+ Inlined into std::vector<_Tp, _Alloc>::~vector() [with _Tp = daisy::scene::CXFileReader::SXMesh, _Alloc = std::allocator<daisy::scene::CXFileReader::SXMesh>] which now has 469 insns,net change of +2 insns.
+
+Considering ox::TArray<int>::~TArray() with 15 insns
+ to be inlined into std::vector<_Tp, _Alloc>::~vector() [with _Tp = daisy::scene::CXFileReader::SXMesh, _Alloc = std::allocator<daisy::scene::CXFileReader::SXMesh>]
+ Estimated growth after inlined into all callees is -1 insns.
+ Estimated badness is 0, frequency 50.00.
+ Inlined into std::vector<_Tp, _Alloc>::~vector() [with _Tp = daisy::scene::CXFileReader::SXMesh, _Alloc = std::allocator<daisy::scene::CXFileReader::SXMesh>] which now has 471 insns,net change of +2 insns.
+
+Considering float daisy::scene::CXFileReader::readFloat() with 15 insns
+ to be inlined into bool daisy::scene::CXFileReader::parseDataObjectMeshTextureCoords(ox::TArray<ox::core::CVector2d<float> >&)
+ Estimated growth after inlined into all callees is +11 insns.
+ Estimated badness is 12, frequency 6.17.
+ Inlined into bool daisy::scene::CXFileReader::parseDataObjectMeshTextureCoords(ox::TArray<ox::core::CVector2d<float> >&) which now has 217 insns,net change of +2 insns.
+
+Considering float daisy::scene::CXFileReader::readFloat() with 15 insns
+ to be inlined into bool daisy::scene::CXFileReader::parseDataObjectMeshTextureCoords(ox::TArray<ox::core::CVector2d<float> >&)
+ Estimated growth after inlined into all callees is +9 insns.
+ Estimated badness is 10, frequency 6.17.
+ Inlined into bool daisy::scene::CXFileReader::parseDataObjectMeshTextureCoords(ox::TArray<ox::core::CVector2d<float> >&) which now has 219 insns,net change of +2 insns.
+
+Considering float daisy::scene::CXFileReader::readFloat() with 15 insns
+ to be inlined into bool daisy::scene::CXFileReader::parseDataObjectMeshNormals(ox::TArray<ox::core::CVector3d<float> >&, ox::TArray<int>&, int, ox::TArray<int>&)
+ Estimated growth after inlined into all callees is +7 insns.
+ Estimated badness is 8, frequency 6.16.
+ Inlined into bool daisy::scene::CXFileReader::parseDataObjectMeshNormals(ox::TArray<ox::core::CVector3d<float> >&, ox::TArray<int>&, int, ox::TArray<int>&) which now has 488 insns,net change of +2 insns.
+
+Considering float daisy::scene::CXFileReader::readFloat() with 15 insns
+Inlined 977 calls, eliminated 423 functions, 9029 insns turned to 13045 insns.
+bool daisy::scene::CXFileReader::parseDataObjectAnimationKey(daisy::scene::CXFileReader::SXAnimationKey&)/557(480): availability:available 754 insns (1229 after inlining) 32 bytes stack usage 44 bytes after inlining needed body externally_visible finalized inlinable
