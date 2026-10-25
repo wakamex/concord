@@ -67,7 +67,7 @@ class CliTest(unittest.TestCase):
         with mock.patch('concord.cli.Harvest') as harvest, mock.patch('concord.cli.blockers.stubs', return_value=[Stub('u.cpp', 'A::f')]) as run:
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(main(['refresh', '--harvest', '/root', '--unit', 'u.cpp', 'A::f', '--apply']), 0)
-            run.assert_called_once_with(harvest.return_value, ['u.cpp'], apply=True, only={'A::f'}, refresh=True)
+            run.assert_called_once_with(harvest.return_value, ['u.cpp'], apply=True, only={'A::f'}, refresh=True, companion_first=False)
 
     def test_blockers_passes_selected_methods(self):
         from unittest import mock

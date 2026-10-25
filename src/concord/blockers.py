@@ -20,7 +20,7 @@ from tree_sitter import Node, Parser
 
 from concord.harvest import Harvest
 from concord.irrlicht import helper_names, name_helpers, translate
-from concord.seed import IRRLICHT, helper_taken, qualify
+from concord.seed import IRRLICHT, companion_header_first, helper_taken, qualify
 from concord.transforms import CPP
 
 
@@ -166,7 +166,7 @@ def cause(message: str) -> str:
     return re.sub(r"'[^']*'", "X", message)[:80]
 
 
-def stubs(harvest: Harvest, units: list[str], apply: bool = False, only: set[str] | None = None, *, refresh: bool = False) -> list[Stub]:
+def stubs(harvest: Harvest, units: list[str], apply: bool = False, only: set[str] | None = None, *, refresh: bool = False, companion_first: bool = False) -> list[Stub]:
     """Diagnose each restored body, optionally writing the compiling ones in
     place after their combined source also compiles. No headers are changed."""
     if refresh and not only:
@@ -184,6 +184,8 @@ def stubs(harvest: Harvest, units: list[str], apply: bool = False, only: set[str
         helpers = set(helper_names(raw, taken).values())
         translation = qualify(root, name_helpers(raw, taken), unit).encode()
         candidates = restored(current, translation, helpers, stubs_only=not refresh)
+        if companion_first:
+            candidates = {name: companion_header_first(text.decode(), unit).encode() for name, text in candidates.items()}
         if only is not None:
             candidates = {name: text for name, text in candidates.items() if name in only}
         if not candidates:
@@ -216,6 +218,8 @@ def stubs(harvest: Harvest, units: list[str], apply: bool = False, only: set[str
                 _missing_includes(current, translation),
                 _missing_helpers(current, translation, helpers),
             )
+            if companion_first:
+                combined = companion_header_first(combined.decode(), unit).encode()
             verification = harvest.evaluate(unit, {"combined": combined})["combined"]
             if verification.error:
                 raise RuntimeError(f"{unit}: combined restored bodies do not compile:\n{verification.error}")

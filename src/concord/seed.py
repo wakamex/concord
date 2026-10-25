@@ -433,6 +433,34 @@ def helper_taken(root: Path, text: str, own: str = "") -> set[str]:
     return taken
 
 
+def companion_header_first(text: str, own: str) -> str:
+    """Keep a unit's companion before other quoted headers, after system includes.
+
+    Conditional includes retain their position. Moving a conditional companion
+    out of its guard would change which declarations the unit sees.
+    """
+    if not own.endswith('.cpp'):
+        return text
+    wanted = Path(own).with_suffix('.h').name
+    includes, depth, offset = [], 0, 0
+    for line in text.splitlines(keepends=True):
+        directive = re.match(r'^\s*#\s*(if|ifdef|ifndef|endif)\b', line)
+        if directive:
+            depth += -1 if directive[1] == 'endif' else 1
+        match = re.match(r'^#include ([<"])([^>"\n]+)[>"][^\n]*(?:\n|$)', line)
+        if match:
+            includes.append((offset, offset + len(line), match[1], Path(match[2]).name, depth))
+        offset += len(line)
+    companions = [row for row in includes if row[3] == wanted]
+    if len(companions) != 1 or companions[0][4]:
+        return text
+    own_line = companions[0]
+    first = next((row for row in includes if row[2] == '"' and not row[4]), own_line)
+    if first[0] >= own_line[0]:
+        return text
+    return text[:first[0]] + text[own_line[0]:own_line[1]] + text[first[0]:own_line[0]] + text[own_line[1]:]
+
+
 def qualify(root: Path, text: str, own: str = "") -> str:
     """Point Irrlicht names at Harvest's ox declarations. `video::SMaterial` names
     ox::video::SMaterial when Harvest declares it there and daisy does not; an
@@ -443,8 +471,9 @@ def qualify(root: Path, text: str, own: str = "") -> str:
     included, since Harvest's versions of Irrlicht headers often only
     forward-declare them. A `_concord_` helper marker takes the plain name a
     person would write, numbered when the unit or a header already uses it. None
-    of this changes the generated code or the mangled names of what the text
-    defines. A file of ox itself (`own`, its path under src/) needs no
+    of the type qualifications changes the mangled names. The companion header
+    stays before generated quoted includes: header definition order can change
+    inlining and exception tables. A file of ox itself (`own`, its path under src/) needs no
     using-directive and does not include itself."""
     inside = own.startswith("ox/")
     if "_concord_" in text:
@@ -525,7 +554,7 @@ def qualify(root: Path, text: str, own: str = "") -> str:
             text = re.sub(r"^(#include [^\n]*\n)", lambda m: m[1] + added, text, count=1, flags=re.MULTILINE)
         elif re.search(r"^namespace ", text, flags=re.MULTILINE):  # a file with no include yet gets its first at the top
             text = added + text
-    return text
+    return companion_header_first(text, own)
 
 
 def _includes(text: str, header: str) -> bool:

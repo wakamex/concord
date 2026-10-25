@@ -269,6 +269,14 @@ class Translate(unittest.TestCase):
         self.assertIn("renderChildren();", animated)
         self.assertIn("updateAbsolutePosition();", camera)
 
+    def test_q3_temporary_texture_arrays_keep_the_targets_reserve_calls(self):
+        source = "void CQ3LevelMesh::loadTextures()\n{\ntex.set_used(NumTextures+1);\nlig.set_used(NumLightMaps+1);\nother.set_used(n);\nFileSystem->existFile(s.c_str());\n}\n"
+        out = translate(source)
+        self.assertIn("tex.reserve(NumTextures+1)", out)
+        self.assertIn("lig.reserve(NumLightMaps+1)", out)
+        self.assertIn("other.resize(n)", out)
+        self.assertIn("existFile(s.c_str(), false)", out)
+
     def test_exist_file_searches_open_archives_as_irrlicht_did(self):
         out = translate(
             "if (FileSystem->existFile(s.c_str()))\n    go();\n"

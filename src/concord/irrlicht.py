@@ -332,6 +332,16 @@ def _translate(source: str, namespace: str) -> str:
     # Irrlicht's existFile looked inside open archives too; daisy's signature
     # takes that choice as an argument (CQ3LevelMesh::loadTextures).
     source = re.sub(r"(\.|->)existFile\(((?:[^,()]|\([^()]*\))+?)\)", r"\1existFile(\2, true)", source)
+    # Q3's temporary texture arrays use vector::reserve in the target (the
+    # two calls go to 0x574680); their explicit index writes initialize storage
+    # without changing the vectors' sizes, as in the original 64-bit port.
+    # Its archive-search argument is also false in the target (xor edx, edx).
+    source = re.sub(
+        r"^void CQ3LevelMesh::loadTextures\(\)\s*\{.*?^\}",
+        lambda match: match[0].replace("tex.set_used(", "tex.reserve(").replace("lig.set_used(", "lig.reserve(")
+        .replace("existFile(s.c_str(), true)", "existFile(s.c_str(), false)"),
+        source, flags=re.MULTILINE | re.DOTALL,
+    )
     # daisy kept the signature where Irrlicht defaulted an argument:
     # addDummyTransformationSceneNode's id=-1 and addTexture's ECF_A1R5G5B5. The
     # two-argument addTexture is told from (name, image) by its size argument, a

@@ -27,6 +27,7 @@ from concord.seed import (
     _stub_failing,
     _tidy,
     _whole_class,
+    companion_header_first,
     drop_forward_declared_includes,
     helper_taken,
     port_conflicts,
@@ -442,6 +443,15 @@ class ReplacedInterfaces(unittest.TestCase):
         self.assertIn("class IXMLReader : public ox::IUnknown\n", out)
         self.assertNotIn("class ox::io::IXMLReader", out)
         self.assertIn("virtual bool read() = 0;", out)
+
+    def test_companion_header_precedes_generated_headers_after_iostream(self):
+        text = '#include <iostream>\n#include "ox/video/SMaterial.h"\n#include "ox/scene/ISceneNode.h"\n#include "Node.h"\nvoid f();\n'
+        expected = '#include <iostream>\n#include "Node.h"\n#include "ox/video/SMaterial.h"\n#include "ox/scene/ISceneNode.h"\nvoid f();\n'
+        self.assertEqual(companion_header_first(text, 'daisy/scene/Node.cpp'), expected)
+        self.assertEqual(companion_header_first(expected, 'daisy/scene/Node.cpp'), expected)
+        self.assertEqual(companion_header_first(text, 'daisy/scene/Node.h'), text)
+        guarded = '#include "other.h"\n#ifdef OPTIONAL\n#include "Node.h"\n#endif\n'
+        self.assertEqual(companion_header_first(guarded, 'Node.cpp'), guarded)
 
     def test_an_include_of_the_same_file_name_counts_whatever_its_path(self):
         self.assertTrue(_includes('#include "../IUnknown.h"\n', "ox/IUnknown.h"))

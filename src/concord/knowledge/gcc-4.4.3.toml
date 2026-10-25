@@ -287,3 +287,14 @@ limits = "Specific to the target-proven Q3 Blend behavior. Other pointer arithme
 evidence = [
   { commit = "b0464ee", function = "daisy::scene::CQ3LevelMesh::createCurvedSurface", note = "Target field loads all use offset zero, where the byte-correct translation uses offsets 4 through 36. Both camera OnPostRender overrides remain exact with their explicit updateAbsolutePosition calls; only CAnimatedMeshSceneNode's duplicate call is removed by translation." },
 ]
+
+[[idiom]]
+id = "companion-header-definition-order"
+cause = "inlining"
+status = "confirmed"
+symptom = "Restoring an exact ancestor body rotates otherwise exact destructor exception records, losing matched data while adding exact functions."
+fix = "Keep the companion header ahead of generated quoted includes, retaining preceding system includes. This preserves the ancestor's order of inline definitions instead of letting qualified type includes invert it. seed does this by default; refresh --companion-first applies it to an existing unit together with a selected body restoration."
+limits = "The observed cause is translation-unit context. Include order is measured together with the restored body; reordering a stubbed unit alone need not preserve its output. Conditional companion includes are left untouched."
+evidence = [
+  { commit = "981330e", function = "daisy::scene::CAnimatedMeshSceneNode::getMS3DJointNode", note = "The restored 593-byte body is exact but four bytes of the 224-byte exception table differ. Putting CAnimatedMeshSceneNode.h before generated ox headers makes all 224 bytes exact while retaining 58 exact functions. Default, explicit-zero and typed-null resize arguments produce identical exception differences." },
+]

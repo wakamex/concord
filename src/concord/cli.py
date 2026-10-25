@@ -263,6 +263,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_refresh.add_argument('--harvest', type=Path, required=True)
     p_refresh.add_argument('--unit', required=True)
     p_refresh.add_argument('methods', nargs='+', help="declarator names such as Class::method")
+    p_refresh.add_argument('--companion-first', action='store_true', help="place the companion header before generated quoted includes")
     p_refresh.add_argument('--apply', action='store_true', help="write compiling refreshed bodies; gate matches separately")
 
     p_rename = sub.add_parser(
@@ -379,7 +380,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name}: {row['error'] or str(row['exact']) + ' exact functions'}; exception table {[s.get('exact') for s in data]}")
         return int(any(row['error'] for row in report['variants'].values()))
     if args.command == "refresh":
-        found = blockers.stubs(Harvest(args.harvest), [args.unit], apply=args.apply, only=set(args.methods), refresh=True)
+        found = blockers.stubs(Harvest(args.harvest), [args.unit], apply=args.apply, only=set(args.methods), refresh=True, companion_first=args.companion_first)
         for row in found:
             print(f"{row.name}: {'refreshed' if row.applied else '; '.join(row.errors) or 'compiles'}")
         missing = set(args.methods) - {row.name for row in found}
