@@ -1,0 +1,691 @@
+;; Function virtual ox::gui::IGUIStaticText* daisy::gui::CGUIEnvironment::addStaticText(const wchar_t*, int, ox::gui::IGUIElement*, ox::gui::IGUIFont*, int, const wchar_t*) (_ZN5daisy3gui15CGUIEnvironment13addStaticTextEPKwiPN2ox3gui11IGUIElementEPNS5_8IGUIFontEiS3_)
+
+Partition 0: size 8 align 16
+	D.67400, offset 0
+Partition 2: size 16 align 16
+	D.51533, offset 0
+Partition 1: size 16 align 16
+	D.51535, offset 0
+Partition 3: size 24 align 16
+	lines, offset 0
+
+;; Generating RTL for gimple basic block 2
+
+;; Generating RTL for gimple basic block 3
+
+;; Generating RTL for gimple basic block 4
+
+;; Generating RTL for gimple basic block 5
+
+;; Generating RTL for gimple basic block 6
+
+;; Generating RTL for gimple basic block 7
+
+;; Generating RTL for gimple basic block 8
+
+;; Generating RTL for gimple basic block 9
+
+;; Generating RTL for gimple basic block 10
+
+;; Generating RTL for gimple basic block 11
+
+;; Generating RTL for gimple basic block 12
+
+;; Generating RTL for gimple basic block 13
+
+;; Generating RTL for gimple basic block 14
+
+;; Generating RTL for gimple basic block 15
+
+;; Generating RTL for gimple basic block 16
+
+;; Generating RTL for gimple basic block 17
+
+;; Generating RTL for gimple basic block 18
+
+;; Generating RTL for gimple basic block 19
+
+;; Generating RTL for gimple basic block 20
+
+;; Generating RTL for gimple basic block 21
+
+;; Generating RTL for gimple basic block 22
+
+;; Generating RTL for gimple basic block 23
+
+;; Generating RTL for gimple basic block 24
+
+
+;;
+;; Full RTL generated for this function:
+;;
+(note 1 0 10 NOTE_INSN_DELETED)
+
+(note 10 1 2 2 [bb 2] NOTE_INSN_BASIC_BLOCK)
+
+(insn 2 10 3 2 src/daisy/gui/CGUIEnvironment.cpp:571 (set (reg/f:DI 71 [ this ])
+        (reg:DI 5 di [ this ])) -1 (nil))
+
+(insn 3 2 4 2 src/daisy/gui/CGUIEnvironment.cpp:571 (set (reg/v/f:DI 72 [ text ])
+        (reg:DI 4 si [ text ])) -1 (nil))
+
+(insn 4 3 5 2 src/daisy/gui/CGUIEnvironment.cpp:571 (set (reg/v:SI 73 [ width ])
+        (reg:SI 1 dx [ width ])) -1 (nil))
+
+(insn 5 4 6 2 src/daisy/gui/CGUIEnvironment.cpp:571 (set (reg/v/f:DI 74 [ parent ])
+        (reg:DI 2 cx [ parent ])) -1 (nil))
+
+(insn 6 5 7 2 src/daisy/gui/CGUIEnvironment.cpp:571 (set (reg/v/f:DI 75 [ font ])
+        (reg:DI 37 r8 [ font ])) -1 (nil))
+
+(insn 7 6 8 2 src/daisy/gui/CGUIEnvironment.cpp:571 (set (reg/v:SI 76 [ id ])
+        (reg:SI 38 r9 [ id ])) -1 (nil))
+
+(insn 8 7 9 2 src/daisy/gui/CGUIEnvironment.cpp:571 (set (reg/v/f:DI 77 [ style ])
+        (mem/f/c/i:DI (reg/f:DI 53 virtual-incoming-args) [33 style+0 S8 A64])) -1 (expr_list:REG_EQUIV (mem/f/c/i:DI (reg/f:DI 53 virtual-incoming-args) [33 style+0 S8 A64])
+        (nil)))
+
+(note 9 8 11 2 NOTE_INSN_FUNCTION_BEG)
+
+(note 11 9 12 3 [bb 3] NOTE_INSN_BASIC_BLOCK)
+
+(insn 12 11 13 3 src/daisy/gui/CGUIEnvironment.cpp:572 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/v/f:DI 75 [ font ])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 13 12 14 3 src/daisy/gui/CGUIEnvironment.cpp:572 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 23)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 9921 [0x26c1])
+        (nil)))
+
+(note 14 13 15 4 [bb 4] NOTE_INSN_BASIC_BLOCK)
+
+(insn 15 14 16 4 src/daisy/gui/CGUIEnvironment.cpp:574 (set (reg/f:DI 69 [ D.51538 ])
+        (mem/s/f:DI (plus:DI (reg/f:DI 71 [ this ])
+                (const_int 264 [0x108])) [123 <variable>.CurrentSkin+0 S8 A64])) -1 (nil))
+
+(insn 16 15 17 4 src/daisy/gui/CGUIEnvironment.cpp:574 (set (reg/f:DI 78)
+        (mem/s/f:DI (reg/f:DI 69 [ D.51538 ]) [4 <variable>.D.38315._vptr.IUnknown+0 S8 A64])) -1 (nil))
+
+(insn 17 16 18 4 src/daisy/gui/CGUIEnvironment.cpp:574 (set (reg/f:DI 79)
+        (mem/f:DI (plus:DI (reg/f:DI 78)
+                (const_int 64 [0x40])) [236 S8 A64])) -1 (nil))
+
+(insn 18 17 19 4 src/daisy/gui/CGUIEnvironment.cpp:574 (set (reg:DI 5 di)
+        (reg/f:DI 69 [ D.51538 ])) -1 (nil))
+
+(call_insn 19 18 20 4 src/daisy/gui/CGUIEnvironment.cpp:574 (set (reg:DI 0 ax)
+        (call (mem:QI (reg/f:DI 79) [0 S1 A8])
+            (const_int 0 [0x0]))) -1 (nil)
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(insn 20 19 21 4 src/daisy/gui/CGUIEnvironment.cpp:574 (set (reg/v/f:DI 75 [ font ])
+        (reg:DI 0 ax)) -1 (nil))
+
+(insn 21 20 22 4 src/daisy/gui/CGUIEnvironment.cpp:575 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/v/f:DI 75 [ font ])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 22 21 23 4 src/daisy/gui/CGUIEnvironment.cpp:575 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 155)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 1014 [0x3f6])
+        (nil)))
+
+(code_label 23 22 24 5 955 "" [1 uses])
+
+(note 24 23 25 5 [bb 5] NOTE_INSN_BASIC_BLOCK)
+
+(insn 25 24 26 5 src/daisy/gui/CGUIEnvironment.cpp:579 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/v/f:DI 74 [ parent ])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 26 25 27 5 src/daisy/gui/CGUIEnvironment.cpp:579 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 31)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 1500 [0x5dc])
+        (nil)))
+
+(note 27 26 28 6 [bb 6] NOTE_INSN_BASIC_BLOCK)
+
+(insn 28 27 29 6 src/daisy/gui/CGUIEnvironment.cpp:579 (set (reg/v/f:DI 67 [ textParent ])
+        (reg/v/f:DI 74 [ parent ])) -1 (nil))
+
+(jump_insn 29 28 30 6 src/daisy/gui/CGUIEnvironment.cpp:579 (set (pc)
+        (label_ref 34)) -1 (nil))
+
+(barrier 30 29 31)
+
+(code_label 31 30 32 7 957 "" [1 uses])
+
+(note 32 31 33 7 [bb 7] NOTE_INSN_BASIC_BLOCK)
+
+(insn 33 32 34 7 src/daisy/gui/CGUIEnvironment.cpp:579 (parallel [
+            (set (reg/v/f:DI 67 [ textParent ])
+                (plus:DI (reg/f:DI 71 [ this ])
+                    (const_int 24 [0x18])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(code_label 34 33 35 8 958 "" [1 uses])
+
+(note 35 34 36 8 [bb 8] NOTE_INSN_BASIC_BLOCK)
+
+(insn 36 35 37 8 src/daisy/gui/CGUIEnvironment.cpp:580 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/v/f:DI 77 [ style ])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 37 36 38 8 src/daisy/gui/CGUIEnvironment.cpp:580 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 42)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 1500 [0x5dc])
+        (nil)))
+
+(note 38 37 39 9 [bb 9] NOTE_INSN_BASIC_BLOCK)
+
+(insn 39 38 40 9 src/daisy/gui/CGUIEnvironment.cpp:580 (set (reg/v/f:DI 66 [ textStyle ])
+        (reg/v/f:DI 77 [ style ])) -1 (nil))
+
+(jump_insn 40 39 41 9 src/daisy/gui/CGUIEnvironment.cpp:580 (set (pc)
+        (label_ref 45)) -1 (nil))
+
+(barrier 41 40 42)
+
+(code_label 42 41 43 10 959 "" [1 uses])
+
+(note 43 42 44 10 [bb 10] NOTE_INSN_BASIC_BLOCK)
+
+(insn 44 43 45 10 src/daisy/gui/CGUIEnvironment.cpp:580 (set (reg/v/f:DI 66 [ textStyle ])
+        (symbol_ref/f:DI ("*.LC0") [flags 0x2] <string_cst 0x7f2bbc8c3f30>)) -1 (nil))
+
+(code_label 45 44 46 11 960 "" [1 uses])
+
+(note 46 45 47 11 [bb 11] NOTE_INSN_BASIC_BLOCK)
+
+(insn 47 46 48 11 src/ox/gui/../core/CString.h:97 (set (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -32 [0xffffffffffffffe0])) [33 D.51533.array+0 S8 A64])
+        (const_int 0 [0x0])) -1 (nil))
+
+(insn 48 47 49 11 src/ox/gui/../core/CString.h:97 (set (mem/s/c:SI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -24 [0xffffffffffffffe8])) [11 D.51533.allocated+0 S4 A64])
+        (const_int 0 [0x0])) -1 (nil))
+
+(insn 49 48 50 11 src/ox/gui/../core/CString.h:97 (set (mem/s/c:SI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -20 [0xffffffffffffffec])) [11 D.51533.used+0 S4 A32])
+        (const_int 0 [0x0])) -1 (nil))
+
+(insn 50 49 51 11 src/ox/gui/../core/CString.h:99 (parallel [
+            (set (reg:DI 80)
+                (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                    (const_int -32 [0xffffffffffffffe0])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 51 50 52 11 src/ox/gui/../core/CString.h:99 (set (reg:DI 4 si)
+        (reg/v/f:DI 72 [ text ])) -1 (nil))
+
+(insn 52 51 53 11 src/ox/gui/../core/CString.h:99 (set (reg:DI 5 di)
+        (reg:DI 80)) -1 (nil))
+
+(call_insn 53 52 54 11 src/ox/gui/../core/CString.h:99 (set (reg:DI 0 ax)
+        (call (mem:QI (symbol_ref/i:DI ("_ZN2ox4core7CStringIwEaSIwEERS2_PKT_") [flags 0x1] <function_decl 0x7f2bc02d1600 operator=>) [0 S1 A8])
+            (const_int 0 [0x0]))) -1 (nil)
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (expr_list:REG_DEP_TRUE (use (reg:DI 4 si))
+            (nil))))
+
+(insn 54 53 55 11 /usr/include/c++/4.4/bits/stl_vector.h:81 (set (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -80 [0xffffffffffffffb0])) [104 lines.D.42910.D.42907._M_impl._M_start+0 S8 A64])
+        (const_int 0 [0x0])) -1 (nil))
+
+(insn 55 54 56 11 /usr/include/c++/4.4/bits/stl_vector.h:81 (set (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -72 [0xffffffffffffffb8])) [104 lines.D.42910.D.42907._M_impl._M_finish+0 S8 A64])
+        (const_int 0 [0x0])) -1 (nil))
+
+(insn 56 55 57 11 /usr/include/c++/4.4/bits/stl_vector.h:81 (set (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -64 [0xffffffffffffffc0])) [104 lines.D.42910.D.42907._M_impl._M_end_of_storage+0 S8 A64])
+        (const_int 0 [0x0])) -1 (nil))
+
+(insn 57 56 58 11 src/ox/gui/IGUIStaticText.h:54 (parallel [
+            (set (reg:DI 81)
+                (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                    (const_int -80 [0xffffffffffffffb0])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 58 57 59 11 src/ox/gui/IGUIStaticText.h:54 (parallel [
+            (set (reg:DI 82)
+                (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                    (const_int -32 [0xffffffffffffffe0])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 59 58 60 11 src/ox/gui/IGUIStaticText.h:54 (set (reg:DI 37 r8)
+        (reg/v/f:DI 66 [ textStyle ])) -1 (nil))
+
+(insn 60 59 61 11 src/ox/gui/IGUIStaticText.h:54 (set (reg:SI 2 cx)
+        (reg/v:SI 73 [ width ])) -1 (nil))
+
+(insn 61 60 62 11 src/ox/gui/IGUIStaticText.h:54 (set (reg:DI 1 dx)
+        (reg:DI 81)) -1 (nil))
+
+(insn 62 61 63 11 src/ox/gui/IGUIStaticText.h:54 (set (reg:DI 4 si)
+        (reg/v/f:DI 75 [ font ])) -1 (nil))
+
+(insn 63 62 64 11 src/ox/gui/IGUIStaticText.h:54 (set (reg:DI 5 di)
+        (reg:DI 82)) -1 (nil))
+
+(call_insn 64 63 65 11 src/ox/gui/IGUIStaticText.h:54 (call (mem:QI (symbol_ref/i:DI ("_ZN2ox3gui14IGUIStaticText9breakTextERKNS_4core7CStringIwEEPNS0_8IGUIFontERNS_6TArrayIS4_EEiPKw") [flags 0x1] <function_decl 0x7f2bbebd8a00 breakText>) [0 S1 A8])
+        (const_int 0 [0x0])) -1 (expr_list:REG_EH_REGION (const_int 3 [0x3])
+        (nil))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (expr_list:REG_DEP_TRUE (use (reg:DI 4 si))
+            (expr_list:REG_DEP_TRUE (use (reg:DI 1 dx))
+                (expr_list:REG_DEP_TRUE (use (reg:SI 2 cx))
+                    (expr_list:REG_DEP_TRUE (use (reg:DI 37 r8))
+                        (nil)))))))
+
+(note 65 64 66 12 [bb 12] NOTE_INSN_BASIC_BLOCK)
+
+(insn 66 65 67 12 src/ox/gui/IGUIStaticText.h:55 (set (reg/f:DI 84)
+        (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -80 [0xffffffffffffffb0])) [104 lines.D.42910.D.42907._M_impl._M_start+0 S8 A64])) -1 (nil))
+
+(insn 67 66 68 12 src/ox/gui/IGUIStaticText.h:55 (set (reg/f:DI 85)
+        (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -72 [0xffffffffffffffb8])) [104 lines.D.42910.D.42907._M_impl._M_finish+0 S8 A64])) -1 (nil))
+
+(insn 68 67 69 12 src/ox/gui/IGUIStaticText.h:55 (parallel [
+            (set (reg:DI 83)
+                (minus:DI (reg/f:DI 85)
+                    (reg/f:DI 84)))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (expr_list:REG_EQUAL (minus:DI (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                    (const_int -72 [0xffffffffffffffb8])) [104 lines.D.42910.D.42907._M_impl._M_finish+0 S8 A64])
+            (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                    (const_int -80 [0xffffffffffffffb0])) [104 lines.D.42910.D.42907._M_impl._M_start+0 S8 A64]))
+        (nil)))
+
+(insn 69 68 70 12 src/ox/gui/IGUIStaticText.h:55 (parallel [
+            (set (reg:DI 87)
+                (ashiftrt:DI (reg:DI 83)
+                    (const_int 4 [0x4])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (expr_list:REG_EQUAL (div:DI (reg:DI 83)
+            (const_int 16 [0x10]))
+        (nil)))
+
+(insn 70 69 71 12 src/ox/gui/IGUIStaticText.h:55 (set (reg:SI 63 [ D.67401 ])
+        (subreg:SI (reg:DI 87) 0)) -1 (nil))
+
+(insn 71 70 72 12 src/ox/gui/IGUIStaticText.h:55 (parallel [
+            (set (reg:DI 88)
+                (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                    (const_int -16 [0xfffffffffffffff0])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 72 71 73 12 src/ox/gui/IGUIStaticText.h:55 (set (reg/f:DI 89)
+        (mem/s/f:DI (reg/v/f:DI 75 [ font ]) [4 <variable>.D.44983._vptr.IUnknown+0 S8 A64])) -1 (nil))
+
+(insn 73 72 74 12 src/ox/gui/IGUIStaticText.h:55 (set (reg/f:DI 90)
+        (mem/f:DI (plus:DI (reg/f:DI 89)
+                (const_int 24 [0x18])) [236 S8 A64])) -1 (nil))
+
+(insn 74 73 75 12 src/ox/gui/IGUIStaticText.h:55 (set (reg:DI 1 dx)
+        (symbol_ref/f:DI ("*.LC1") [flags 0x2] <string_cst 0x7f2bbc5f1b40>)) -1 (nil))
+
+(insn 75 74 76 12 src/ox/gui/IGUIStaticText.h:55 (set (reg:DI 4 si)
+        (reg/v/f:DI 75 [ font ])) -1 (nil))
+
+(insn 76 75 77 12 src/ox/gui/IGUIStaticText.h:55 (set (reg:DI 5 di)
+        (reg:DI 88)) -1 (nil))
+
+(call_insn 77 76 78 12 src/ox/gui/IGUIStaticText.h:55 (call (mem:QI (reg/f:DI 90) [0 S1 A8])
+        (const_int 0 [0x0])) -1 (expr_list:REG_EH_REGION (const_int 3 [0x3])
+        (nil))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (expr_list:REG_DEP_TRUE (use (reg:DI 4 si))
+            (expr_list:REG_DEP_TRUE (use (reg:DI 1 dx))
+                (nil)))))
+
+(note 78 77 79 13 [bb 13] NOTE_INSN_BASIC_BLOCK)
+
+(insn 79 78 80 13 src/ox/gui/IGUIStaticText.h:55 (set (reg:SI 64 [ D.67396 ])
+        (mem/s/c:SI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -12 [0xfffffffffffffff4])) [11 D.67400.Height+0 S4 A32])) -1 (nil))
+
+(insn 80 79 81 13 /usr/include/c++/4.4/bits/stl_vector.h:313 (set (reg/f:DI 60 [ D.74655 ])
+        (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -72 [0xffffffffffffffb8])) [104 lines.D.42910.D.42907._M_impl._M_finish+0 S8 A64])) -1 (nil))
+
+(insn 81 80 82 13 /usr/include/c++/4.4/bits/stl_vector.h:313 (set (reg/v/f:DI 61 [ __first ])
+        (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -80 [0xffffffffffffffb0])) [104 lines.D.42910.D.42907._M_impl._M_start+0 S8 A64])) -1 (nil))
+
+(insn 82 81 83 13 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 60 [ D.74655 ])
+            (reg/v/f:DI 61 [ __first ]))) -1 (nil))
+
+(jump_insn 83 82 94 13 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 97)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 450 [0x1c2])
+        (nil)))
+
+(code_label 94 83 84 14 963 "" [1 uses])
+
+(note 84 94 85 14 [bb 14] NOTE_INSN_BASIC_BLOCK)
+
+(insn 85 84 86 14 src/ox/gui/../core/CString.h:105 (set (reg/f:DI 59 [ D.74668 ])
+        (mem/s/f:DI (reg/v/f:DI 61 [ __first ]) [33 <variable>.array+0 S8 A64])) -1 (nil))
+
+(insn 86 85 87 14 src/ox/gui/../core/CString.h:105 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 59 [ D.74668 ])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 87 86 88 14 src/ox/gui/../core/CString.h:105 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 91)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 2165 [0x875])
+        (nil)))
+
+(note 88 87 89 15 [bb 15] NOTE_INSN_BASIC_BLOCK)
+
+(insn 89 88 90 15 src/ox/gui/../core/CString.h:105 (set (reg:DI 5 di)
+        (reg/f:DI 59 [ D.74668 ])) -1 (nil))
+
+(call_insn 90 89 91 15 src/ox/gui/../core/CString.h:105 (call (mem:QI (symbol_ref:DI ("_ZdaPv") [flags 0x41] <function_decl 0x7f2bc1323800 operator delete []>) [0 S1 A8])
+        (const_int 0 [0x0])) -1 (expr_list:REG_EH_REGION (const_int 0 [0x0])
+        (nil))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 91 90 92 16 962 "" [1 uses])
+
+(note 92 91 93 16 [bb 16] NOTE_INSN_BASIC_BLOCK)
+
+(insn 93 92 95 16 /usr/include/c++/4.4/bits/stl_construct.h:92 (parallel [
+            (set (reg/v/f:DI 61 [ __first ])
+                (plus:DI (reg/v/f:DI 61 [ __first ])
+                    (const_int 16 [0x10])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 95 93 96 16 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 60 [ D.74655 ])
+            (reg/v/f:DI 61 [ __first ]))) -1 (nil))
+
+(jump_insn 96 95 97 16 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 94)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 9550 [0x254e])
+        (nil)))
+
+(code_label 97 96 98 17 961 "" [1 uses])
+
+(note 98 97 99 17 [bb 17] NOTE_INSN_BASIC_BLOCK)
+
+(insn 99 98 100 17 /usr/include/c++/4.4/bits/stl_vector.h:132 (set (reg/f:DI 62 [ D.74650 ])
+        (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -80 [0xffffffffffffffb0])) [104 lines.D.42910.D.42907._M_impl._M_start+0 S8 A64])) -1 (nil))
+
+(insn 100 99 101 17 /usr/include/c++/4.4/bits/stl_vector.h:145 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 62 [ D.74650 ])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 101 100 102 17 /usr/include/c++/4.4/bits/stl_vector.h:145 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 105)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 2165 [0x875])
+        (nil)))
+
+(note 102 101 103 18 [bb 18] NOTE_INSN_BASIC_BLOCK)
+
+(insn 103 102 104 18 /usr/include/c++/4.4/ext/new_allocator.h:95 (set (reg:DI 5 di)
+        (reg/f:DI 62 [ D.74650 ])) -1 (nil))
+
+(call_insn 104 103 105 18 /usr/include/c++/4.4/ext/new_allocator.h:95 (call (mem:QI (symbol_ref:DI ("_ZdlPv") [flags 0x41] <function_decl 0x7f2bc1323700 operator delete>) [0 S1 A8])
+        (const_int 0 [0x0])) -1 (expr_list:REG_EH_REGION (const_int 0 [0x0])
+        (nil))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 105 104 106 19 964 "" [1 uses])
+
+(note 106 105 107 19 [bb 19] NOTE_INSN_BASIC_BLOCK)
+
+(insn 107 106 108 19 src/ox/gui/../core/CString.h:105 (set (reg/f:DI 58 [ D.74671 ])
+        (mem/s/f/c:DI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -32 [0xffffffffffffffe0])) [33 D.51533.array+0 S8 A64])) -1 (nil))
+
+(insn 108 107 109 19 src/ox/gui/../core/CString.h:105 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 58 [ D.74671 ])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 109 108 110 19 src/ox/gui/../core/CString.h:105 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 113)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 2165 [0x875])
+        (nil)))
+
+(note 110 109 111 20 [bb 20] NOTE_INSN_BASIC_BLOCK)
+
+(insn 111 110 112 20 src/ox/gui/../core/CString.h:105 (set (reg:DI 5 di)
+        (reg/f:DI 58 [ D.74671 ])) -1 (nil))
+
+(call_insn 112 111 113 20 src/ox/gui/../core/CString.h:105 (call (mem:QI (symbol_ref:DI ("_ZdaPv") [flags 0x41] <function_decl 0x7f2bc1323800 operator delete []>) [0 S1 A8])
+        (const_int 0 [0x0])) -1 (expr_list:REG_EH_REGION (const_int 0 [0x0])
+        (nil))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 113 112 114 21 965 "" [1 uses])
+
+(note 114 113 115 21 [bb 21] NOTE_INSN_BASIC_BLOCK)
+
+(insn 115 114 116 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg/f:DI 91)
+        (mem/s/f:DI (reg/f:DI 71 [ this ]) [4 <variable>.D.17235.D.10026._vptr.IUnknown+0 S8 A64])) -1 (nil))
+
+(insn 116 115 117 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg/f:DI 68 [ D.51558 ])
+        (mem/f:DI (plus:DI (reg/f:DI 91)
+                (const_int 256 [0x100])) [236 S8 A64])) -1 (nil))
+
+(insn 117 116 118 21 src/ox/gui/../core/CPosition2d.h:17 (set (mem/s/c:SI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -48 [0xffffffffffffffd0])) [11 D.51535.UpperLeftCorner.X+0 S4 A64])
+        (const_int 0 [0x0])) -1 (nil))
+
+(insn 118 117 119 21 src/ox/gui/../core/CPosition2d.h:17 (set (mem/s/c:SI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -44 [0xffffffffffffffd4])) [11 D.51535.UpperLeftCorner.Y+0 S4 A32])
+        (const_int 0 [0x0])) -1 (nil))
+
+(insn 119 118 120 21 src/ox/gui/../core/CPosition2d.h:17 (set (mem/s/c:SI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -40 [0xffffffffffffffd8])) [11 D.51535.LowerRightCorner.X+0 S4 A64])
+        (reg/v:SI 73 [ width ])) -1 (nil))
+
+(insn 120 119 121 21 src/ox/gui/../core/CPosition2d.h:17 (set (reg:DI 92)
+        (sign_extend:DI (reg:SI 64 [ D.67396 ]))) -1 (nil))
+
+(insn 121 120 122 21 src/ox/gui/../core/CPosition2d.h:17 (parallel [
+            (set (reg:SI 93)
+                (mult:SI (reg:SI 63 [ D.67401 ])
+                    (subreg:SI (reg:DI 92) 0)))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 122 121 123 21 src/ox/gui/../core/CPosition2d.h:17 (set (mem/s/c:SI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -36 [0xffffffffffffffdc])) [11 D.51535.LowerRightCorner.Y+0 S4 A32])
+        (reg:SI 93)) -1 (nil))
+
+(insn 123 122 124 21 src/daisy/gui/CGUIEnvironment.cpp:584 (parallel [
+            (set (reg:DI 94)
+                (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                    (const_int -48 [0xffffffffffffffd0])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 124 123 125 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (mem:DI (plus:DI (reg/f:DI 56 virtual-outgoing-args)
+                (const_int 8 [0x8])) [0 S8 A64])
+        (reg/v/f:DI 66 [ textStyle ])) -1 (nil))
+
+(insn 125 124 126 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (mem:SI (reg/f:DI 56 virtual-outgoing-args) [0 S4 A64])
+        (reg/v:SI 76 [ id ])) -1 (nil))
+
+(insn 126 125 127 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg:DI 38 r9)
+        (reg/v/f:DI 67 [ textParent ])) -1 (nil))
+
+(insn 127 126 128 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg:SI 37 r8)
+        (const_int 1 [0x1])) -1 (nil))
+
+(insn 128 127 129 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg:SI 2 cx)
+        (const_int 0 [0x0])) -1 (nil))
+
+(insn 129 128 130 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg:DI 1 dx)
+        (reg:DI 94)) -1 (nil))
+
+(insn 130 129 131 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg:DI 4 si)
+        (reg/v/f:DI 72 [ text ])) -1 (nil))
+
+(insn 131 130 132 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg:DI 5 di)
+        (reg/f:DI 71 [ this ])) -1 (nil))
+
+(call_insn 132 131 133 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg:DI 0 ax)
+        (call (mem:QI (reg/f:DI 68 [ D.51558 ]) [0 S1 A8])
+            (const_int 16 [0x10]))) -1 (nil)
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (expr_list:REG_DEP_TRUE (use (reg:DI 4 si))
+            (expr_list:REG_DEP_TRUE (use (reg:DI 1 dx))
+                (expr_list:REG_DEP_TRUE (use (reg:SI 2 cx))
+                    (expr_list:REG_DEP_TRUE (use (reg:SI 37 r8))
+                        (expr_list:REG_DEP_TRUE (use (reg:DI 38 r9))
+                            (nil))))))))
+
+(insn 133 132 134 21 src/daisy/gui/CGUIEnvironment.cpp:584 (set (reg/v/f:DI 65 [ staticText ])
+        (reg:DI 0 ax)) -1 (nil))
+
+(insn 134 133 135 21 src/daisy/gui/CGUIEnvironment.cpp:585 (set (reg/f:DI 95)
+        (mem/s/f:DI (reg/v/f:DI 65 [ staticText ]) [4 <variable>.D.46469.D.12377._vptr.IUnknown+0 S8 A64])) -1 (nil))
+
+(insn 135 134 136 21 src/daisy/gui/CGUIEnvironment.cpp:585 (set (reg/f:DI 96)
+        (mem/f:DI (plus:DI (reg/f:DI 95)
+                (const_int 296 [0x128])) [236 S8 A64])) -1 (nil))
+
+(insn 136 135 137 21 src/daisy/gui/CGUIEnvironment.cpp:585 (set (reg:DI 4 si)
+        (reg/v/f:DI 75 [ font ])) -1 (nil))
+
+(insn 137 136 138 21 src/daisy/gui/CGUIEnvironment.cpp:585 (set (reg:DI 5 di)
+        (reg/v/f:DI 65 [ staticText ])) -1 (nil))
+
+(call_insn 138 137 139 21 src/daisy/gui/CGUIEnvironment.cpp:585 (call (mem:QI (reg/f:DI 96) [0 S1 A8])
+        (const_int 0 [0x0])) -1 (nil)
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (expr_list:REG_DEP_TRUE (use (reg:DI 4 si))
+            (nil))))
+
+(jump_insn 139 138 140 21 src/daisy/gui/CGUIEnvironment.cpp:586 (set (pc)
+        (label_ref 158)) -1 (nil))
+
+(barrier 140 139 141)
+
+(code_label/s 141 140 142 22 967 "" [0 uses])
+
+(note 142 141 143 22 [bb 22] NOTE_INSN_BASIC_BLOCK)
+
+(insn 143 142 144 22 src/ox/gui/IGUIStaticText.h:55 (parallel [
+            (set (reg:DI 97)
+                (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                    (const_int -80 [0xffffffffffffffb0])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 144 143 145 22 src/ox/gui/IGUIStaticText.h:55 (set (reg:DI 5 di)
+        (reg:DI 97)) -1 (nil))
+
+(call_insn 145 144 146 22 src/ox/gui/IGUIStaticText.h:55 (call (mem:QI (symbol_ref/i:DI ("_ZN2ox6TArrayINS_4core7CStringIwEEED1Ev") [flags 0x1] <function_decl 0x7f2bbebed300 __comp_dtor >) [0 S1 A8])
+        (const_int 0 [0x0])) -1 (expr_list:REG_EH_REGION (const_int 0 [0x0])
+        (nil))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(jump_insn 146 145 147 22 src/ox/gui/IGUIStaticText.h:55 (resx 3) -1 (nil))
+
+(barrier 147 146 148)
+
+(code_label/s 148 147 149 23 968 "" [0 uses])
+
+(note 149 148 150 23 [bb 23] NOTE_INSN_BASIC_BLOCK)
+
+(insn 150 149 151 23 src/daisy/gui/CGUIEnvironment.cpp:582 (parallel [
+            (set (reg:DI 100)
+                (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                    (const_int -32 [0xffffffffffffffe0])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 151 150 152 23 src/daisy/gui/CGUIEnvironment.cpp:582 (set (reg:DI 5 di)
+        (reg:DI 100)) -1 (nil))
+
+(call_insn 152 151 153 23 src/daisy/gui/CGUIEnvironment.cpp:582 (call (mem:QI (symbol_ref/i:DI ("_ZN2ox4core7CStringIwED1Ev") [flags 0x1] <function_decl 0x7f2bc03f3800 __comp_dtor >) [0 S1 A8])
+        (const_int 0 [0x0])) -1 (expr_list:REG_EH_REGION (const_int 0 [0x0])
+        (nil))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(jump_insn 153 152 154 23 src/daisy/gui/CGUIEnvironment.cpp:582 (resx 1) -1 (nil))
+
+(barrier 154 153 155)
+
+(code_label 155 154 156 24 956 "" [1 uses])
+
+(note 156 155 157 24 [bb 24] NOTE_INSN_BASIC_BLOCK)
+
+(insn 157 156 158 24 src/daisy/gui/CGUIEnvironment.cpp:582 (set (reg/v/f:DI 65 [ staticText ])
+        (const_int 0 [0x0])) -1 (nil))
+
+(code_label 158 157 159 25 966 "" [1 uses])
+
+(note 159 158 160 25 [bb 25] NOTE_INSN_BASIC_BLOCK)
+
+(insn 160 159 161 25 src/daisy/gui/CGUIEnvironment.cpp:582 (set (reg:DI 70 [ <result> ])
+        (reg/v/f:DI 65 [ staticText ])) -1 (nil))
+
+(jump_insn 161 160 162 25 src/daisy/gui/CGUIEnvironment.cpp:582 (set (pc)
+        (label_ref 163)) -1 (nil))
+
+(barrier 162 161 171)
+
+(note 171 162 165 26 [bb 26] NOTE_INSN_BASIC_BLOCK)
+
+(insn 165 171 166 26 src/daisy/gui/CGUIEnvironment.cpp:587 (clobber (reg/i:DI 0 ax)) -1 (nil))
+
+(insn 166 165 167 26 src/daisy/gui/CGUIEnvironment.cpp:587 (clobber (reg:DI 70 [ <result> ])) -1 (nil))
+
+(jump_insn 167 166 168 26 src/daisy/gui/CGUIEnvironment.cpp:587 (set (pc)
+        (label_ref 169)) -1 (nil))
+
+(barrier 168 167 163)
+
+(code_label 163 168 172 27 954 "" [1 uses])
+
+(note 172 163 164 27 [bb 27] NOTE_INSN_BASIC_BLOCK)
+
+(insn 164 172 169 27 src/daisy/gui/CGUIEnvironment.cpp:587 (set (reg/i:DI 0 ax)
+        (reg:DI 70 [ <result> ])) -1 (nil))
+
+(code_label 169 164 173 28 969 "" [1 uses])
+
+(note 173 169 170 28 [bb 28] NOTE_INSN_BASIC_BLOCK)
+
+(insn 170 173 0 28 src/daisy/gui/CGUIEnvironment.cpp:587 (use (reg/i:DI 0 ax)) -1 (nil))
+

@@ -17,6 +17,7 @@ from concord import (
     causal,
     census,
     destructors,
+    frames,
     initialization,
     inline_budget,
     inlines,
@@ -304,6 +305,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_overrides.add_argument("units", nargs="+", help="units to restore, as source paths or report slugs")
     p_overrides.add_argument("--apply", action="store_true", help="write the verified declarations and definitions")
 
+    p_frames = sub.add_parser("frames", help="attribute target stack-slot constraints to compiler partitions and source values")
+    p_frames.add_argument("--harvest", type=Path, required=True)
+    p_frames.add_argument("--census", action="store_true", help="count named size- and call-identical near misses")
+    p_frames.add_argument("--unit")
+    p_frames.add_argument("--symbol")
+    p_frames.add_argument("--dumps", type=Path, help="verified dump directory collected by causal")
+    p_frames.add_argument("--probe-constructor", help="test implicit and scoped spellings of this explicit argument type")
+    p_frames.add_argument("--call", help="qualified call containing the argument")
+    p_frames.add_argument("--argument", type=int, default=0)
+    p_frames.add_argument("--apply", action="store_true", help="keep an exact function with no lower emitted unit scores; gate the whole build separately")
+    p_frames.add_argument("--save", type=Path, required=True)
+
     p_budget = sub.add_parser("inline-budget", help="explain GCC IPA inline estimates and edge decisions from a compiler dump")
     p_budget.add_argument("dump", type=Path)
     p_budget.add_argument("--against", type=Path, help="compare against an unchanged-source dump")
@@ -425,6 +438,23 @@ def main(argv: list[str] | None = None) -> int:
         return _vtables(args)
     if args.command == "overrides":
         return _overrides(args)
+    if args.command == "frames":
+        harvest = Harvest(args.harvest)
+        if args.census:
+            result = frames.census(harvest)
+            print(f"{result['distinct_addresses']} named size- and call-identical candidates, {result['bytes']} target bytes")
+        elif args.probe_constructor:
+            if not all((args.unit, args.symbol, args.call)):
+                parser.error('temporary probes require --unit, --symbol and --call')
+            result = frames.probe_temporary(harvest, harvest.source(args.unit), args.symbol, args.call, args.argument, args.probe_constructor, args.apply)
+            print(f"{result['symbol']}: chosen {result['chosen']}, applied {result['applied']}")
+        else:
+            if not all((args.unit, args.symbol, args.dumps)):
+                parser.error('frames requires --census or --unit, --symbol and --dumps')
+            result = frames.analyze(harvest, harvest.source(args.unit), args.symbol, args.dumps)
+            print(f"{result['symbol']}: {len(result['partitions'])} expand partitions; {len(result['constraints'])} aligned slot constraints; size/calls match: {result['size_and_calls_match']}")
+        args.save.write_text(json.dumps(result, indent=2) + "\n")
+        return 0
     if args.command == "inline-budget":
         report = inline_budget.load(args.dump)
         if args.against:

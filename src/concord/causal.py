@@ -142,6 +142,13 @@ def histories_many(directory: Path, wanted: dict[str, set[int]]) -> dict[str, di
 def decision(history: list[dict], cause: Cause) -> dict | None:
     if not history:
         return None
+    if cause == Cause.STACK_LAYOUT:
+        for index, stage in enumerate(history):
+            pattern = stage['pattern']
+            if 'virtual-stack-vars' in pattern:
+                return {"kind": "expand-stack-storage", "before": history[index - 1] if index else None, "after": stage}
+            if re.search(r'\(mem[^ ]*[^\n]*\(reg(?:/[^: ]+)?:DI 7 sp\)', pattern):
+                return {"kind": "post-expand-stack-storage", "before": history[index - 1] if index else None, "after": stage}
     if cause == Cause.BLOCK_ORDER:
         moves = [(a, b) for a, b in pairwise(history) if b.get('order_changed')]
         if moves:

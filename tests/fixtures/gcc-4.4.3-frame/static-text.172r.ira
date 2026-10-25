@@ -1,0 +1,13 @@
+;; Function virtual ox::gui::IGUIStaticText* daisy::gui::CGUIEnvironment::addStaticText(const wchar_t*, int, ox::gui::IGUIElement*, ox::gui::IGUIFont*, int, const wchar_t*) (_ZN5daisy3gui15CGUIEnvironment13addStaticTextEPKwiPN2ox3gui11IGUIElementEPNS5_8IGUIFontEiS3_)
+(insn 214 120 121 15 src/ox/gui/../core/CPosition2d.h:17 (set (reg:SI 1 dx [93])
+        (mem/c:SI (plus:DI (reg/f:DI 7 sp)
+                (const_int 72 [0x48])) [242 %sfp+-88 S4 A32])) 47 {*movsi_1} (nil))
+(insn 121 214 122 15 src/ox/gui/../core/CPosition2d.h:17 (parallel [
+            (set (reg:SI 1 dx [93])
+                (mult:SI (reg:SI 1 dx [93])
+                    (mem/c:SI (plus:DI (reg/f:DI 7 sp)
+                            (const_int 48 [0x30])) [242 %sfp+-112 S4 A128])))
+            (clobber (reg:CC 17 flags))
+        ]) 333 {*mulsi3_1} (expr_list:REG_EQUIV (mem/s/c:SI (plus:DI (reg/f:DI 20 frame)
+                (const_int -36 [0xffffffffffffffdc])) [11 D.51535.LowerRightCorner.Y+0 S4 A32])
+        (nil)))

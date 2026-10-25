@@ -346,3 +346,26 @@ evidence = [
   { commit = "c5d2e4c", function = "daisy::scene::CXFileReader", note = "All seven restored give 55 exact functions at canonical flags. inline-unit-growth 20/31/35/40 gives 55/54/54/51 exact functions. Moving the companion header first leaves 55 exact with the same regressions. Ranking definitions by the Mac's emitted order gives 53 exact; applying that ranking to six restored parsers without parseDataObject gives 45. None is retained." },
   { commit = "c5d2e4c", function = "daisy::scene::CXFileReader parser restorations", note = "Each of the seven individual restorations lowers an existing unit score. Material and SkinMeshHeader lower getNextTokenAsString 100 to 99.833336, readHeadOfDataObject 100 to 99.104805 and MeshTextureCoords 100 to 99.932434. SkinWeights alone lowers MeshNormals 80.31156 to 80.160805. Mesh lowers readHeadOfDataObject 100 to 99.104805. MeshMaterialList, Frame and parseDataObject also lose existing scores. These are unit probes; no new Harvest source change was retained or submitted to a whole-build gate." },
 ]
+
+[[idiom]]
+id = "late-spill-slot-order"
+cause = "stack-layout"
+status = "confirmed"
+symptom = "a near miss has equal size and calls, with two stack references exchanged, but the values have no expand partition"
+fix = "Use frames to distinguish addressable expand variables from storage introduced by a later pass. Follow single-definition pseudo-registers to the original named memory fields. A later spill slot is not evidence that a local declaration's expand partition is in the wrong order. Source spelling remains a hypothesis until its canonical compile gives the desired slots."
+limits = "At Harvest c5d2e4c, the addStaticText width overload is 503 bytes with 12 calls on both sides. Target rsp+48 and rsp+72 are exchanged in our code. Both references first use stack storage at IRA; their values are lines.size() and font->getDimension(L\"A\").Height from IGUIStaticText::getMultilineHeight. Removing the explicit CString argument construction and naming that argument in a scope ending at the original full expression both compile the function byte-identically. These two interventions are rejected and the frame gate is stopped; no source fix is established."
+evidence = [
+  { commit = "c5d2e4c", function = "daisy::gui::CGUIEnvironment::addStaticText(const wchar_t*, int, IGUIElement*, IGUIFont*, int, const wchar_t*)", note = "Expand has four partitions, including a CString temporary, a rectangle temporary, a dimension result and the lines array. The two differing slots are later spills, not those partitions. Expanding the pseudo-register chains identifies the dimension Height field and the lines array finish/start difference." },
+  { commit = "c5d2e4c", function = "size-and-call census", note = "Fresh progress objects yield 149 distinct named candidates, 198282 target bytes: one stack/register-only address (503 bytes), 39 register-only addresses (31859 bytes), and 109 with other differences. Cached match reports with old source/header hashes are rejected. On this base CPlayState::render is target14253/candidate14277 bytes, 185 calls each, with additional instruction-selection, block-order and other differences; loadTextures is target2414/candidate2377, 47 calls each, with instruction-selection and other differences. Neither is frame-only on this base." },
+]
+
+[[idiom]]
+id = "register-only-late-instruction-group"
+cause = "register-allocation"
+status = "hypothesis"
+symptom = "equal-size, equal-call near misses look like register-allocation failures but differing instructions are first present in peephole2"
+fix = "Group traces by their first observed decision before trying declaration placement. A peephole2 instruction introduction is a different lever from an IRA spill or an expand partition. The shared source fix for this group remains unproven; source line attribution inside an exact inline helper does not establish a header bug."
+limits = "At Harvest c5d2e4c the 39 register-only candidates cover 31859 bytes. The largest unit groups are CLuaManager (7 functions, 6619 bytes) and CVideoNull (9, 6278). Among their 16 functions, 14 (12115 bytes) have a traced differing instruction first introduced in peephole2; some also have IRA differences. The remaining mechanisms are mixed, so one declaration-order fix for all 39 is unsupported. No shared ox header or source in these units was changed."
+evidence = [
+  { commit = "c5d2e4c", function = "harvest::game::CLuaManager and daisy::video::CVideoNull", note = "Traces sampled the first three differences per function: peephole2 introductions occur in six Lua-manager functions and eight video-null functions, including CString loops and vector insertion/sort helpers. harvest_getSelectedBuildings and runPPShader also expose expand or IRA decisions. These are observed stages, not proof that the target compiler followed the same history." },
+]

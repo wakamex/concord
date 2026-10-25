@@ -1,0 +1,99 @@
+;; Function virtual void harvest::states::CPlayState::render() (_ZN7harvest6states10CPlayState6renderEv)
+
+Partition 36: size 8 align 16
+	position, offset 0
+	position, offset 0
+	position, offset 0
+	position, offset 0
+Partition 29: size 8 align 16
+	D.68804, offset 0
+Partition 30: size 8 align 16
+	D.68805, offset 0
+Partition 27: size 8 align 16
+	D.68806, offset 0
+Partition 28: size 8 align 16
+	D.68807, offset 0
+Partition 25: size 8 align 16
+	D.68808, offset 0
+Partition 26: size 8 align 16
+	D.68809, offset 0
+Partition 23: size 8 align 16
+	D.68810, offset 0
+Partition 24: size 8 align 16
+	D.68811, offset 0
+Partition 18: size 8 align 16
+	D.68824, offset 0
+Partition 31: size 16 align 16
+	viewPort, offset 0
+Partition 22: size 16 align 16
+	D.68815, offset 0
+Partition 21: size 16 align 16
+	D.68817, offset 0
+Partition 20: size 16 align 16
+	D.68819, offset 0
+Partition 19: size 16 align 16
+	D.68821, offset 0
+Partition 17: size 16 align 16
+	D.68827, offset 0
+Partition 16: size 16 align 16
+	D.68833, offset 0
+Partition 15: size 16 align 16
+	D.68834, offset 0
+Partition 14: size 16 align 16
+	D.68835, offset 0
+Partition 13: size 16 align 16
+	D.68836, offset 0
+Partition 12: size 16 align 16
+	D.68840, offset 0
+Partition 11: size 16 align 16
+	D.68842, offset 0
+Partition 10: size 16 align 16
+	D.68843, offset 0
+Partition 9: size 16 align 16
+	D.68844, offset 0
+Partition 8: size 16 align 16
+	D.68846, offset 0
+Partition 7: size 16 align 16
+	D.68848, offset 0
+Partition 6: size 16 align 16
+	D.68849, offset 0
+Partition 5: size 16 align 16
+	D.68851, offset 0
+Partition 4: size 16 align 16
+	D.68853, offset 0
+Partition 3: size 16 align 16
+	D.68855, offset 0
+Partition 2: size 16 align 16
+	D.68857, offset 0
+Partition 50: size 16 align 16
+	text, offset 0
+	text, offset 0
+	text, offset 0
+	text, offset 0
+	text, offset 0
+	text, offset 0
+Partition 1: size 16 align 16
+	D.68863, offset 0
+Partition 0: size 16 align 16
+	D.68864, offset 0
+Partition 40: size 16 align 16
+	tmpbuf, offset 0
+	tmpbuf, offset 0
+	tmpbuf, offset 0
+	tmpbuf, offset 0
+Partition 32: size 24 align 16
+	buildings, offset 0
+Partition 51: size 64 align 16
+	tmpbuf, offset 0
+	tmpbuf, offset 0
+	tmpbuf, offset 0
+	tmpbuf, offset 0
+	tmpbuf, offset 0
+	tmpbuf, offset 0
+
+(insn 784 783 785 71 src/ox/video/../core/CPosition2d.h:17 (set (mem/s/c:SI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -64 [0xffffffffffffffc0])) [5 D.68804.X+0 S4 A64])
+        (reg:SI 822 [ D.69148 ])) -1 (nil))
+(insn 785 784 786 71 src/ox/video/../core/CPosition2d.h:17 (set (mem/s/c:SI (plus:DI (reg/f:DI 54 virtual-stack-vars)
+                (const_int -60 [0xffffffffffffffc4])) [5 D.68804.Y+0 S4 A32])
+        (reg:SI 824 [ D.69144 ])) -1 (nil))

@@ -1,0 +1,12 @@
+{
+  "compiler": "GCC 4.4.3",
+  "unit": "HarvestFull/harvest/states/CPlayState.cpp",
+  "source_sha256": "3906198fd423fa95469097c7f229bf96ce8294b73b61ca4a0deb863f84641f72",
+  "scope": "The real render partition list and two unedited RTL instructions referencing D.68804.",
+  "static_text": {
+    "compiler": "GCC 4.4.3",
+    "expand_sha256": "516c3e711db41030bf7dd6178d3c961115a34ff88554cfde446923159159aaf7",
+    "ira_source_sha256": "821f466e1dfe4bed5b7956d453ee1d1cdf408890620bfc41ed067fabeb420066",
+    "scope": "Complete expand function and unedited IRA records 121 and 214 for the addStaticText width overload."
+  }
+}
