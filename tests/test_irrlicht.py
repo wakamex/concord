@@ -269,6 +269,12 @@ class Translate(unittest.TestCase):
         self.assertIn("renderChildren();", animated)
         self.assertIn("updateAbsolutePosition();", camera)
 
+    def test_scene_cache_uses_the_existing_locale_aware_lowercase_helper(self):
+        text = 'void CSceneManager::addMesh()\n{\ne.Name.make_lower();\n}\nvoid Other::load()\n{\nname.make_lower();\n}\n'
+        result = translate(text)
+        self.assertIn('ox::core::CStringFunctions::ansiMakeLower(e.Name);', result)
+        self.assertIn('name.make_lower();', result)
+
     def test_texture_sort_key_narrows_through_pointer_width(self):
         self.assertIn("(int)(long)(n->getMaterial(0).Texture1)",
                       translate("textureValue = (s32)(n->getMaterial(0).Texture1);"))

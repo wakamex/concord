@@ -90,6 +90,45 @@ ret
 .size callee,.-callee
 '''
 
+    def test_exact_window_in_an_inexact_unnamed_caller_proves_a_different_size_callee(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            block = 'mov $11,%r8d\nmov $22,%r9d\nmov $33,%r10d\nmov $44,%r11d\nmov $55,%esi\nmov $66,%edi\nmov $77,%edx\nmov $88,%ecx\ncall callee\nmov %eax,%edx\n'
+            source_text = '.text\n.global caller,callee\n.type caller,@function\ncaller:\n.cfi_startproc\nmov $1,%eax\njmp .Lbody\n.Lbody:\n' + block + 'ret\n.cfi_endproc\n.size caller,.-caller\n.type callee,@function\ncallee:\n.cfi_startproc\nxor %eax,%eax\nret\n.cfi_endproc\n.size callee,.-callee\n'
+            source = root / 'a.s'
+            obj = root / 'a.o'
+            source.write_text(source_text)
+            subprocess.run(['as', str(source), '-o', str(obj)], check=True)
+
+            def linked(text):
+                source.write_text(text)
+                subprocess.run(['as', str(source), '-o', str(root / 'target.o')], check=True)
+                subprocess.run(['ld', '-e', 'caller', '-Ttext=0x400000', str(root / 'target.o'), '-o', str(root / 'target')], check=True)
+                with (root / 'target').open('rb') as stream:
+                    elf = ELFFile(stream)
+                    data = elf.get_section_by_name('.text').data()
+                    extents = {e['initial_location']: e['address_range'] for e in elf.get_dwarf_info().EH_CFI_entries() if hasattr(e, 'lsda_pointer')}
+                    symbols = {s.name: s['st_value'] for s in elf.get_section_by_name('.symtab').iter_symbols()}
+                return data, extents, symbols
+
+            target_text = source_text.replace('mov $1,%eax', 'mov $2,%eax').replace('xor %eax,%eax', 'nop\nxor %eax,%eax')
+            data, extents, symbols = linked(target_text)
+            sites, sizes = object_sites(obj, data, 0x400000, extents, {}, 'u.cpp', windows=True)
+            self.assertEqual(len(sites), 1)
+            self.assertEqual(sites[0].proof, 'exact-window')
+            self.assertEqual(sites[0].target_caller, symbols['caller'])
+            self.assertEqual(proven(sites, sizes, extents, {}), {})
+            self.assertEqual(proven(sites, sizes, extents, {}, exact_callers=True)['callee'][0], symbols['callee'])
+            self.assertEqual(proven(sites, sizes, extents, {'other': symbols['callee']}, exact_callers=True), {})
+            self.assertEqual(proven(sites + [CallSite('callee', symbols['callee'] + 1, 'u.cpp', 'other', 0, 0)], sizes, extents, {}, exact_callers=True), {})
+            # A changed physical register invalidates the full block proof.
+            data, extents, _ = linked(target_text.replace('mov $11,%r8d', 'mov $11,%r9d'))
+            self.assertEqual(object_sites(obj, data, 0x400000, extents, {}, 'u.cpp', windows=True)[0], [])
+            # A second identical block anywhere in the image makes it ambiguous.
+            duplicate = '.type duplicate,@function\nduplicate:\n.cfi_startproc\n' + block + 'ret\n.cfi_endproc\n.size duplicate,.-duplicate\n'
+            data, extents, _ = linked(target_text + duplicate)
+            self.assertEqual(object_sites(obj, data, 0x400000, extents, {}, 'u.cpp', windows=True)[0], [])
+
     def test_learning_revisits_a_newly_named_inexact_caller(self):
         from unittest import mock
 

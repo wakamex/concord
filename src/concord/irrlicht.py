@@ -329,6 +329,14 @@ def _translate(source: str, namespace: str) -> str:
         lambda match: re.sub(r"^[ \t]*(?:// update absolute position\n[ \t]*)?updateAbsolutePosition\(\);\n", "", match[0], flags=re.MULTILINE),
         source, flags=re.MULTILINE | re.DOTALL,
     )
+    # The port's scene cache uses its locale-aware helper, as the target's
+    # tolower calls show; keep Irrlicht's ASCII helper in other classes.
+    source = re.sub(
+        r"^[\w:* ]+ CSceneManager::\w+\([^;{]*\)\s*\{.*?^\}",
+        lambda match: re.sub(r"\b([\w.]+)\.make_lower\(\)",
+                             r"ox::core::CStringFunctions::ansiMakeLower(\1)", match[0]),
+        source, flags=re.MULTILINE | re.DOTALL,
+    )
     # Render-list sorting retains the low int bits of a texture pointer. Cast
     # through the target's pointer-width long before narrowing on amd64.
     source = re.sub(r"\(int\)\(n->getMaterial\(0\)\.Texture1\)",

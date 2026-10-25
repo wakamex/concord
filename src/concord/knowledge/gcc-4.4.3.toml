@@ -322,3 +322,14 @@ limits = "The observed cause is translation-unit context. Include order is measu
 evidence = [
   { commit = "981330e", function = "daisy::scene::CAnimatedMeshSceneNode::getMS3DJointNode", note = "The restored 593-byte body is exact but four bytes of the 224-byte exception table differ. Putting CAnimatedMeshSceneNode.h before generated ox headers makes all 224 bytes exact while retaining 58 exact functions. Default, explicit-zero and typed-null resize arguments produce identical exception differences." },
 ]
+
+[[idiom]]
+id = "source-backed-cache-override"
+cause = "instruction-selection"
+status = "confirmed"
+symptom = "an ancestor lacks a target virtual member, but an existing port implements it against a different cache container"
+fix = "Take the declaration and body from the port, and adapt its map-value iteration only when the matching header identifies an array entry with one pointer member of the same value type. Keep the ancestor's unsigned array-loop index width. Reconcile provisional interface type namespaces from the recorded symbols, retaining old names as port-only aliases."
+limits = "The translated member must compile and match its recorded target, with no emitted function scoring lower, before overrides writes it. Whole-build scoring remains required for shared interface changes. An ambiguous entry layout is unsupported."
+evidence = [
+  { commit = "048e50d", function = "daisy::scene::CSceneManager::removeAllMeshes", note = "The existing port drops each cached mesh then clears its map. The matching class declares an array of MeshEntry with a Mesh pointer. The ancestor's destructor uses an unsigned index for the same cache. That adapted body matches the 182-byte target; the vector-iterator form emits 133 bytes, and a signed index with a narrowed size emits 188 bytes. The SKeyMap parameter belongs to daisy, not ox, as its recorded FPS-camera signature shows." },
+]

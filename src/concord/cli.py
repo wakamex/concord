@@ -278,6 +278,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_calls.add_argument("units", nargs="*", help="units whose callees may be named (calls checked across every match report)")
     p_calls.add_argument("--apply", action="store_true", help="save proven addresses using Harvest's symbol writer")
     p_calls.add_argument("--save", type=Path, help="save all aligned call sites and accepted addresses as JSON")
+    p_calls.add_argument("--windows", action="store_true", help="also prove addresses from globally unique byte-exact call blocks")
+    p_calls.add_argument("--object", type=Path, help="use one compiled candidate instead of its canonical object")
     p_calls.add_argument("--constructor-aliases", action="store_true", help="instead reconcile named constructor copies whose exact code and relocations are identical")
 
     p_place = sub.add_parser("place", help="learn references and place called templates without re-seeding source")
@@ -477,11 +479,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "learn-calls":
         from dataclasses import asdict
 
-        sites, learned = calls.discover(args.harvest.resolve(), args.units)
+        if args.object and (len(args.units) != 1 or args.constructor_aliases):
+            parser.error("--object requires one unit and cannot reconcile constructor aliases")
+        overrides = {Harvest(args.harvest).source(args.units[0]): args.object.resolve()} if args.object else None
+        sites, learned = calls.discover(args.harvest.resolve(), args.units, overrides=overrides, windows=args.windows)
         if args.constructor_aliases:
             learned = calls.constructor_aliases(args.harvest.resolve(), sites)
         if args.save:
-            args.save.write_text(json.dumps({"sites": [asdict(s) for s in sites], "learned": learned, "input_hashes": calls.input_hashes(args.harvest.resolve())}, indent=2) + "\n")
+            hashes = calls.input_hashes(args.harvest.resolve())
+            if args.object:
+                import hashlib
+                hashes[str(args.object.resolve())] = hashlib.sha256(args.object.read_bytes()).hexdigest()
+            args.save.write_text(json.dumps({"sites": [asdict(s) for s in sites], "learned": learned, "input_hashes": hashes}, indent=2) + "\n")
         if args.apply:
             (calls.apply_aliases if args.constructor_aliases else calls.apply)(args.harvest.resolve(), learned)
         for name, (address, evidence) in sorted(learned.items()):

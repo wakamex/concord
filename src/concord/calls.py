@@ -7,6 +7,7 @@ and no competing symbol claim. Source and section placements are unchanged.
 
 from __future__ import annotations
 
+import bisect
 import csv
 import difflib
 import hashlib
@@ -34,6 +35,7 @@ class CallSite:
     offset: int
     target_offset: int
     proof: str = "named"
+    target_caller: int | None = None
 
 
 def aligned_calls(target: ObjectFunction, candidate: ObjectFunction, address: int, references: dict[int, str], unit: str) -> list[CallSite]:
@@ -80,6 +82,72 @@ def aligned_calls(target: ObjectFunction, candidate: ObjectFunction, address: in
     return sites
 
 
+def window_calls(candidate: ObjectFunction, references: dict[int, str], target: bytes, base: int,
+                 extents: dict[int, int], unit: str) -> list[CallSite]:
+    """Find call blocks unique in the complete target image, with all physical
+    registers and non-relocation bytes exact. Require 32 fixed bytes and eight
+    non-padding instructions, a real target function and instruction boundary.
+    """
+    md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+    blocks, block = [], []
+    for instruction in md.disasm(candidate.code, 0):
+        if instruction.mnemonic.startswith(('j', 'ret')):
+            if block:
+                blocks.append(block)
+            block = []
+        else:
+            block.append(instruction)
+    if block:
+        blocks.append(block)
+    starts, sites = sorted(extents), []
+    for block in blocks:
+        calls = [i for i in block if i.mnemonic == 'call' and i.bytes[:1] == b'\xe8' and i.address + 1 in references]
+        if not calls or sum(i.mnemonic != 'nop' for i in block) < 8:
+            continue
+        start, end = block[0].address, block[-1].address + block[-1].size
+        code = candidate.code[start:end]
+        masked = {i - start for field in candidate.relocations for i in range(field, field + 4) if start <= i < end}
+        runs, left = [], 0
+        for right in range(len(code) + 1):
+            if right == len(code) or right in masked:
+                if right > left:
+                    runs.append((left, code[left:right]))
+                left = right + 1
+        if len(code) - len(masked) < 32:
+            continue
+        anchor, needle = max(runs, key=lambda r: len(r[1]))
+        if len(needle) < 8:
+            continue
+        matches, pos = [], target.find(needle)
+        while pos >= 0:
+            offset = pos - anchor
+            if 0 <= offset <= len(target) - len(code) and all(i in masked or a == b for i, (a, b) in enumerate(zip(code, target[offset:offset + len(code)], strict=True))):
+                matches.append(offset)
+                if len(matches) > 1:
+                    break
+            pos = target.find(needle, pos + 1)
+        if len(matches) != 1:
+            continue
+        location = base + matches[0]
+        owner_index = bisect.bisect_right(starts, location) - 1
+        if owner_index < 0:
+            continue
+        owner = starts[owner_index]
+        if owner < base or owner + extents[owner] > base + len(target) or location + len(code) > owner + extents[owner]:
+            continue
+        instructions = {i.address: i for i in md.disasm(target[owner - base:owner - base + extents[owner]], owner)}
+        if location not in instructions:
+            continue
+        for call in calls:
+            address = location + call.address - start
+            if address not in instructions or instructions[address].bytes[:1] != b'\xe8':
+                continue
+            displacement = int.from_bytes(instructions[address].bytes[1:5], 'little', signed=True)
+            sites.append(CallSite(references[call.address + 1], address + 5 + displacement, unit,
+                                  candidate.name, call.address, address - owner, 'exact-window', owner))
+    return sites
+
+
 def proven(sites: list[CallSite], sizes: dict[str, set[int]], extents: dict[int, int], known: dict[str, int], exact_callers: bool = False) -> dict[str, tuple[int, str]]:
     """Keep unanimous, size-checked, unclaimed addresses; reject competing new claims."""
     grouped = defaultdict(list)
@@ -90,14 +158,17 @@ def proven(sites: list[CallSite], sizes: dict[str, set[int]], extents: dict[int,
     claimed = set(known.values())
     found = {}
     for name, address in agreed.items():
-        strong = exact_callers and any(s.proof in ("unique-caller", "exact-caller") for s in grouped[name])
+        strong = exact_callers and any(s.proof in ("unique-caller", "exact-caller", "exact-window") for s in grouped[name])
         if name in known or address in claimed or claims[address] != 1 or address not in extents:
             continue
         if sizes.get(name) != {extents[address]} and not strong:
             continue
         site = grouped[name][0]
-        basis = "exact-caller" if strong else ("aligned-unique-call" if any(s.proof == "unique-caller" for s in grouped[name]) else "aligned-call")
-        found[name] = (address, f"{basis}:{site.unit}:{site.caller}+{site.offset:#x}=>+{site.target_offset:#x}")
+        if strong:
+            site = next(s for s in grouped[name] if s.proof in ("unique-caller", "exact-caller", "exact-window"))
+        basis = ("exact-window" if site.proof == "exact-window" else "exact-caller") if strong else ("aligned-unique-call" if any(s.proof == "unique-caller" for s in grouped[name]) else "aligned-call")
+        target_owner = f"{site.target_caller:#x}" if site.target_caller is not None else ""
+        found[name] = (address, f"{basis}:{site.unit}:{site.caller}+{site.offset:#x}=>{target_owner}+{site.target_offset:#x}")
     return found
 
 
@@ -120,7 +191,7 @@ def unique_caller(code: bytes, fields: set[int], target: bytes, base: int, exten
     return matches[0] if matches else None
 
 
-def object_sites(path: Path, target: bytes, base: int, extents: dict[int, int], known: dict[str, int], unit: str) -> tuple[list[CallSite], dict[str, set[int]]]:
+def object_sites(path: Path, target: bytes, base: int, extents: dict[int, int], known: dict[str, int], unit: str, *, windows: bool = False) -> tuple[list[CallSite], dict[str, set[int]]]:
     """Compare callers with named addresses or uniquely matching masked code."""
     sites, sizes = [], defaultdict(set)
     with path.open("rb") as stream:
@@ -146,6 +217,10 @@ def object_sites(path: Path, target: bytes, base: int, extents: dict[int, int], 
                 continue
             sizes[symbol.name].add(size)
             code = sections[index].data()[start:start + size]
+            if windows and not any(start <= f < start + size for f in unsupported[index]):
+                references = {offset - start: name for offset, name in relocations[index].items() if start <= offset < start + size and name not in known}
+                function = ObjectFunction(symbol.name, sections[index].name, start, code, frozenset(f - start for f in fields[index] if start <= f < start + size))
+                sites.extend(window_calls(function, references, target, base, extents, unit))
             address = known.get(symbol.name)
             if address is None and not any(start <= f < start + size for f in unsupported[index]):
                 address = unique_caller(code, {f - start for f in fields[index] if start <= f < start + size}, target, base, extents)
@@ -166,7 +241,7 @@ def object_sites(path: Path, target: bytes, base: int, extents: dict[int, int], 
     return sites, dict(sizes)
 
 
-def discover(root: Path, units: list[str], overrides: dict[str, Path] | None = None, exact_callers: bool = False) -> tuple[list[CallSite], dict[str, tuple[int, str]]]:
+def discover(root: Path, units: list[str], overrides: dict[str, Path] | None = None, exact_callers: bool = False, *, windows: bool = False) -> tuple[list[CallSite], dict[str, tuple[int, str]]]:
     with (root / "config" / BUILD / "symbols.tsv").open() as stream:
         known = {row["symbol"]: int(row["address"], 16) for row in csv.DictReader(stream, delimiter="\t")}
     extents = dict(_extents(root))
@@ -186,13 +261,13 @@ def discover(root: Path, units: list[str], overrides: dict[str, Path] | None = N
         obj = (overrides or {}).get(data["unit"], report.with_suffix(".o"))
         if data["unit"] not in (overrides or {}) and data.get("object_sha256") != hashlib.sha256(obj.read_bytes()).hexdigest():
             raise ValueError(f"{report}: object differs from its match report; run hv match")
-        found, compiled = object_sites(obj, target, base, extents, known, data["unit"])
+        found, compiled = object_sites(obj, target, base, extents, known, data["unit"], windows=windows and (not selected or report.stem in selected))
         sites.extend(found)
         for name, values in compiled.items():
             sizes[name].update(values)
             if not selected or report.stem in selected:
                 allowed.add(name)
-    return sites, {name: row for name, row in proven(sites, dict(sizes), extents, known, exact_callers=exact_callers).items() if name in allowed}
+    return sites, {name: row for name, row in proven(sites, dict(sizes), extents, known, exact_callers=exact_callers or windows).items() if name in allowed}
 
 
 def learn_chain(root: Path, unit: str, obj: Path) -> dict[str, tuple[int, str]]:

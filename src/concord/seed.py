@@ -1682,7 +1682,7 @@ def adapt_cache_iteration(definition: bytes, header: str, *, indexed: bool = Fal
             tail = re.match(r";\s*" + re.escape(iterator) + r"\s*!=\s*" + re.escape(container) + r"\.end\(\);\s*\+\+" + re.escape(iterator), text[loop.end():])
             if tail is None:
                 return None
-            text = text[:loop.start()] + f"int {iterator} = 0; {iterator} < (int){container}.size(); ++{iterator}" + text[loop.end() + tail.end():]
+            text = text[:loop.start()] + f"unsigned int {iterator} = 0; {iterator} < {container}.size(); ++{iterator}" + text[loop.end() + tail.end():]
             value_access = f"{container}[{iterator}].{members[0]}"
         else:
             text = text[:loop.start()] + f"ox::TArray<{array[1]}>::iterator {iterator} = {container}.begin()" + text[loop.end():]
