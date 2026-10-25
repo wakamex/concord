@@ -141,7 +141,7 @@ def spans(harvest: Harvest) -> dict[str, tuple[int, int]]:
     return {unit: (a, placed[i + 1][0] if i + 1 < len(placed) else 1 << 62) for i, (a, unit) in enumerate(placed)}
 
 
-def semantic_candidates(report: dict, ours: ObjectCode, target: ObjectCode) -> list[dict]:
+def semantic_candidates(report: dict, ours: ObjectCode, target: ObjectCode, named: dict[int, str] | None = None) -> list[dict]:
     """Triage differences beyond a CString/fast_atof inline-copy size budget.
     Each changed helper call can account for one full emitted helper copy.
     This is a screening bound, not proof that other inline optimizations cannot
@@ -150,6 +150,16 @@ def semantic_candidates(report: dict, ours: ObjectCode, target: ObjectCode) -> l
     def helper(name):
         return '7CString' in name or 'fast_atof_move' in name
 
+    named = named or {}
+
+    def resolved(name):
+        if name.startswith('sub_'):
+            try:
+                return named.get(int(name[4:], 16), name)
+            except ValueError:
+                pass
+        return name
+
     findings = []
     for section in report['sections']:
         for row in section.get('functions', []):
@@ -157,7 +167,7 @@ def semantic_candidates(report: dict, ours: ObjectCode, target: ObjectCode) -> l
             if row.get('exact') or name not in ours.functions or name not in target.functions or helper(name):
                 continue
             a, b = ours.functions[name].size, target.functions[name].size
-            ac, bc = Counter(ours.direct.get(name, [])), Counter(target.direct.get(name, []))
+            ac, bc = Counter(ours.direct.get(name, [])), Counter(resolved(n) for n in target.direct.get(name, []))
             helpers = {n: ac[n] - bc[n] for n in ac.keys() | bc.keys() if helper(n) and ac[n] != bc[n]}
             sizes = {n: max(ours.functions[n].size if n in ours.functions else 0,
                             target.functions[n].size if n in target.functions else 0) for n in helpers}
@@ -167,7 +177,9 @@ def semantic_candidates(report: dict, ours: ObjectCode, target: ObjectCode) -> l
             indirect = ours.indirect.get(name, 0) - target.indirect.get(name, 0)
             if not calls and not indirect and (unknown or abs(a - b) <= budget):
                 continue
-            findings.append({'symbol': name, 'address': row['address'], 'status': 'beyond-selected-inline-copies',
+            identity = named.get(int(row['address'], 16)) == name
+            findings.append({'symbol': name, 'address': row['address'],
+                             'status': 'beyond-selected-inline-copies' if identity else 'unverified-function-address',
                              'ours_size': a, 'target_size': b, 'size_delta': a - b,
                              'helper_call_deltas': helpers, 'helper_copy_sizes': sizes,
                              'inline_copy_budget': budget, 'unknown_helper_sizes': unknown,
@@ -340,7 +352,7 @@ def analyze(
         "mac-missing": mac_missing,
         "mac-platform": platform,
         "call-differences": call_differences,
-        "semantic-candidates": semantic_candidates(report, ours, target),
+        "semantic-candidates": semantic_candidates(report, ours, target, named),
     }
 
 

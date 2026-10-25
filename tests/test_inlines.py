@@ -307,5 +307,7 @@ class SemanticScreen(unittest.TestCase):
             rep = report(sections=[section('.text', 0x1000, [function('caller', 0x1000, 17)])])
             rows = semantic_candidates(rep, codes['extra'], codes['target'])
             self.assertEqual(rows[0]['size_delta'], 16)
+            self.assertEqual(rows[0]['status'], 'unverified-function-address')
+            self.assertEqual(semantic_candidates(rep, codes['extra'], codes['target'], {0x1000: 'caller'})[0]['status'], 'beyond-selected-inline-copies')
             self.assertEqual(rows[0]['inline_copy_budget'], 0)
             self.assertEqual(semantic_candidates(rep, codes['inline'], codes['target']), [])

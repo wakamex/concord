@@ -428,7 +428,7 @@ def main(argv: list[str] | None = None) -> int:
         for result in reports:
             if args.semantic:
                 for row in result['semantic-candidates']:
-                    print(f"{result['unit']}: {row['symbol']} size {row['ours_size']}/{row['target_size']}, inline budget {row['inline_copy_budget']}, other calls {row['other_direct_call_delta']:+d}, indirect {row['indirect_call_delta']:+d}")
+                    print(f"{result['unit']}: {row['status']}: {row['symbol']} size {row['ours_size']}/{row['target_size']}, inline budget {row['inline_copy_budget']}, other calls {row['other_direct_call_delta']:+d}, indirect {row['indirect_call_delta']:+d}")
                 continue
             lines = inlines.show(result)
             findings = len(lines) - 1
