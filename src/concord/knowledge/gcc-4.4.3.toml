@@ -333,3 +333,16 @@ limits = "The translated member must compile and match its recorded target, with
 evidence = [
   { commit = "048e50d", function = "daisy::scene::CSceneManager::removeAllMeshes", note = "The existing port drops each cached mesh then clears its map. The matching class declares an array of MeshEntry with a Mesh pointer. The ancestor's destructor uses an unsigned index for the same cache. That adapted body matches the 182-byte target; the vector-iterator form emits 133 bytes, and a signed index with a narrowed size emits 188 bytes. The SKeyMap parameter belongs to daisy, not ox, as its recorded FPS-camera signature shows." },
 ]
+
+[[idiom]]
+id = "xreader-restoration-context"
+cause = "inlining"
+status = "hypothesis"
+symptom = "restoring compiling parser bodies changes existing functions through unit-wide inlining and scratch-register decisions"
+fix = "Compare the unchanged and restored IPA inline dumps with inline-budget before changing compiler limits or function order. Separate changed function estimates, newly instantiated copies and changed caller/callee inline counts. Limits and ordering are diagnostic probes; none of the measured forms below preserves the existing reader scores."
+limits = "At Harvest c5d2e4c, all seven compiling CXFileReader restorations remain rejected. A global inline-unit-growth change cannot reproduce the target distribution. Companion-header order has no effect here, despite fixing the animated mesh unit. Mac emitted function order is an experimental ranking, not proof of source definition order. No shared ox header was changed. The semantic size screen is a triage bound: MeshNormals' 16-byte size delta includes different readFloat/fast_atof inline choices and does not establish missing normal-index logic."
+evidence = [
+  { commit = "c5d2e4c", function = "daisy::scene::CXFileReader", note = "Unchanged stubs start at 9029 estimated instructions and finish at 13045; all seven restored start at 21864 and finish at 28517. The largest body-estimate increases are Mesh +1378, MeshMaterialList +736, Frame +673, parseDataObject +613 and Material +609. SXMesh copy construction adds a 595-instruction estimate and new vector insertion/assignment copies contribute further size. These are compiler estimates, not additive target byte counts." },
+  { commit = "c5d2e4c", function = "daisy::scene::CXFileReader", note = "All seven restored give 55 exact functions at canonical flags. inline-unit-growth 20/31/35/40 gives 55/54/54/51 exact functions. Moving the companion header first leaves 55 exact with the same regressions. Ranking definitions by the Mac's emitted order gives 53 exact; applying that ranking to six restored parsers without parseDataObject gives 45. None is retained." },
+  { commit = "c5d2e4c", function = "daisy::scene::CXFileReader parser restorations", note = "Each of the seven individual restorations lowers an existing unit score. Material and SkinMeshHeader lower getNextTokenAsString 100 to 99.833336, readHeadOfDataObject 100 to 99.104805 and MeshTextureCoords 100 to 99.932434. SkinWeights alone lowers MeshNormals 80.31156 to 80.160805. Mesh lowers readHeadOfDataObject 100 to 99.104805. MeshMaterialList, Frame and parseDataObject also lose existing scores. These are unit probes; no new Harvest source change was retained or submitted to a whole-build gate." },
+]
