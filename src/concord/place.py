@@ -85,11 +85,11 @@ def restore_literals(harvest: Harvest, unit: str) -> list[str]:
     return []
 
 
-def readonly_sections(obj: Path, target: Path, names: set[str]) -> dict[str, int]:
-    """Prove complete unrelocated constant sections by a unique target copy.
+def readonly_candidates(obj: Path, target: Path, names: set[str]) -> dict[str, list[int]]:
+    """Find unique full-section constant patterns for target-matcher validation.
 
-    Search all allocated read-only data, including duplicates in other sections.
-    Short, writable, executable and relocation-bearing sections are excluded.
+    Mask supported relocation fields, requiring at least 32 consecutive fixed
+    bytes. The caller must verify every relocation with the target matcher.
     """
     with target.open("rb") as stream:
         elf = ELFFile(stream)
@@ -98,25 +98,77 @@ def readonly_sections(obj: Path, target: Path, names: set[str]) -> dict[str, int
     found = {}
     with obj.open("rb") as stream:
         elf = ELFFile(stream)
-        relocated = {s["sh_info"] for s in elf.iter_sections() if isinstance(s, RelocationSection) and s.num_relocations()}
+        relocations = {}
+        for section in elf.iter_sections():
+            if isinstance(section, RelocationSection):
+                relocations.setdefault(section["sh_info"], []).extend(section.iter_relocations())
         for index, section in enumerate(elf.iter_sections()):
-            if section.name not in names or not section.name.startswith(".rodata") or index in relocated:
+            if section.name not in names or not section.name.startswith(".rodata"):
                 continue
             if section["sh_type"] != "SHT_PROGBITS" or not section["sh_flags"] & 2 or section["sh_flags"] & 5:
                 continue
-            data = section.data()
-            if len(data) < 32:
+            data, masked = section.data(), set()
+            supported = True
+            for relocation in relocations.get(index, []):
+                width = {1: 8, 2: 4, 10: 4, 11: 4}.get(relocation["r_info_type"])
+                start = relocation["r_offset"]
+                if width is None or start < 0 or start + width > len(data):
+                    supported = False
+                    break
+                masked.update(range(start, start + width))
+            if not supported:
+                continue
+            runs, start = [], 0
+            for offset in sorted(masked) + [len(data)]:
+                if offset > start:
+                    runs.append((start, offset))
+                start = offset + 1
+            anchor_start, anchor_end = max(runs, key=lambda r: r[1] - r[0], default=(0, 0))
+            if anchor_end - anchor_start < 32:
                 continue
             matches = []
             for base, region in regions:
-                offset = region.find(data)
-                while offset >= 0 and len(matches) < 2:
-                    matches.append(base + offset)
-                    offset = region.find(data, offset + 1)
-                if len(matches) > 1:
-                    break
-            if len(matches) == 1 and matches[0] % max(1, section["sh_addralign"]) == 0:
-                found[section.name] = matches[0]
+                offset = region.find(data[anchor_start:anchor_end])
+                while offset >= 0:
+                    location = offset - anchor_start
+                    if 0 <= location <= len(region) - len(data) and all(
+                        i in masked or value == region[location + i] for i, value in enumerate(data)
+                    ):
+                        matches.append(base + location)
+                    offset = region.find(data[anchor_start:anchor_end], offset + 1)
+            aligned = [address for address in matches if address % max(1, section["sh_addralign"]) == 0]
+            if aligned:
+                found[section.name] = aligned
+    return found
+
+
+def readonly_sections(obj: Path, target: Path, names: set[str]) -> dict[str, int]:
+    """Return patterns with a single candidate; relocations still need proof."""
+    return {name: addresses[0] for name, addresses in readonly_candidates(obj, target, names).items() if len(addresses) == 1}
+
+
+def place_readonly(root: Path, unit: str, placements: dict[str, int]) -> dict[str, int]:
+    """Keep a constant pattern only at one fully matching target address."""
+    report = root / "build" / "match" / BUILD / (unit.replace("/", "__").removesuffix(".cpp") + ".json")
+    names = set(json.loads(report.read_text()).get("unplaced_sections", []))
+    candidates = readonly_candidates(report.with_suffix(".o"), root / "orig" / BUILD / "Harvest", names)
+    found = {}
+    if not candidates:
+        return found
+    try:
+        for name, addresses in candidates.items():
+            exact = []
+            for address in addresses:
+                _register(root, unit, {**placements, name: address})
+                _match(root, unit, learn=False)
+                sections = json.loads(report.read_text()).get("sections", [])
+                if any(s["name"] == name and s.get("exact") for s in sections):
+                    exact.append(address)
+            if len(exact) == 1:
+                found[name] = exact[0]
+    finally:
+        _register(root, unit, placements)
+        _match(root, unit, learn=False)
     return found
 
 
@@ -131,9 +183,7 @@ def place(harvest: Harvest, unit: str, literals: bool = False) -> dict:
     sections = {}
     for _ in range(2):
         called = _place_called_sections(root, unit)
-        unplaced = set(json.loads(report.read_text()).get("unplaced_sections", []))
-        called.update(readonly_sections(
-            report.with_suffix(".o"), root / "orig" / BUILD / "Harvest", unplaced))
+        called.update(place_readonly(root, unit, placements))
         if not called:
             break
         _register(root, unit, {**placements, **called})

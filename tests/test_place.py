@@ -41,7 +41,7 @@ class ReadonlyPlacement(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from concord.place import readonly_sections
+        from concord.place import readonly_candidates, readonly_sections
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -65,7 +65,16 @@ class ReadonlyPlacement(unittest.TestCase):
                 assembly.write_text(variant)
                 subprocess.run(['as', str(assembly), '-o', str(obj)], check=True)
                 self.assertEqual(readonly_sections(obj, target, {'.rodata'}), {})
-            assembly.write_text(source + '.quad external\n')
+            assembly.write_text(source + '.quad external\n.text\n.global external\nexternal: ret\n')
+            subprocess.run(['as', str(assembly), '-o', str(obj)], check=True)
+            subprocess.run(['ld', '-e', '0', str(obj), '-o', str(target)], check=True)
+            self.assertIn('.rodata', readonly_sections(obj, target, {'.rodata'}))
+            assembly.write_text(source + '.quad external\n.section .other,"a"\n.balign 16\n.byte ' + constants + '\n.quad external+1\n.text\n.global external\nexternal: ret\n')
+            subprocess.run(['as', str(assembly), '-o', str(duplicate)], check=True)
+            subprocess.run(['ld', '-e', '0', str(duplicate), '-o', str(target)], check=True)
+            self.assertEqual(len(readonly_candidates(obj, target, {'.rodata'})['.rodata']), 2)
+            self.assertEqual(readonly_sections(obj, target, {'.rodata'}), {})
+            assembly.write_text(source + '.long external@GOTPCREL\n')
             subprocess.run(['as', str(assembly), '-o', str(obj)], check=True)
             self.assertEqual(readonly_sections(obj, target, {'.rodata'}), {})
 
