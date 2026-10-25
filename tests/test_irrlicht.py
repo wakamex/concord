@@ -287,6 +287,27 @@ class Translate(unittest.TestCase):
         self.assertIn("other.resize(n)", out)
         self.assertIn("existFile(s.c_str(), false)", out)
 
+    def test_xml_reader_narrows_attributes_with_the_locale_aware_helper(self):
+        source = "float CXMLReader::getAttributeValueAsFloat(const wchar_t* name)\n{\n\tSAttribute* attr = getAttributeByName(name);\n\tif (!attr)\n\t\treturn 0;\n\tcore::stringc c = attr->Value.c_str();\n\treturn core::fast_atof(c.c_str());\n}\n"
+        out = translate(source)
+        self.assertIn("ox::core::CStringFunctions::wideToAnsi(attr->Value.c_str())", out)
+        self.assertIn("fast_atof(c.c_str())", out)
+
+    def test_the_tga_header_is_read_field_by_field(self):
+        source = "IImage* CImageLoaderTGA::loadImage(io::IReadFile* file)\n{\n\tSTGAHeader header;\n\tfile->seek(0);\n\tfile->read(&header, sizeof(STGAHeader));\n}\n"
+        out = translate(source)
+        self.assertIn("header.ColorMapLength = ox::io::CHelpIO::readShort(file);", out)
+        self.assertIn("header.ImageHeight = ox::io::CHelpIO::readShort(file);", out)
+        self.assertIn("file->read(header.YOrigin, 2);", out)
+        self.assertNotIn("sizeof(STGAHeader)", out)
+
+    def test_bsp_poly_equality_compares_vertex_members(self):
+        source = "bool operator==(const BspPoly& other) const\n{\n\tfor (u32 i=0; i<vertices.size(); ++i)\n\t\tif (vertices[i] != other.vertices[i])\n\t\t\treturn false;\n\treturn true;\n}\n"
+        out = translate(source)
+        self.assertNotIn("vertices[i] != other.vertices[i]", out)
+        self.assertIn("vertices[i].Pos == other.vertices[i].Pos", out)
+        self.assertIn("vertices[i].Color.color == other.vertices[i].Color.color", out)
+
     def test_exist_file_searches_open_archives_as_irrlicht_did(self):
         out = translate(
             "if (FileSystem->existFile(s.c_str()))\n    go();\n"

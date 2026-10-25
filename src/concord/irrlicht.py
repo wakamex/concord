@@ -354,6 +354,47 @@ def _translate(source: str, namespace: str) -> str:
         .replace("existFile(s.c_str(), true)", "existFile(s.c_str(), false)"),
         source, flags=re.MULTILINE | re.DOTALL,
     )
+    # The reader narrows a wide attribute through the locale-aware helper: the
+    # target calls wcstombs, which the templated CString<char> construction from
+    # c_str() would not.
+    source = re.sub(
+        r"^float\s+CXMLReader::getAttributeValueAsFloat\([^)]*\)\s*\{.*?^\}",
+        lambda match: match[0].replace(
+            "= attr->Value.c_str();",
+            "= ox::core::CStringFunctions::wideToAnsi(attr->Value.c_str());",
+        ),
+        source, flags=re.MULTILINE | re.DOTALL,
+    )
+    # Daisy reads the TGA header field by field, the 16-bit fields through
+    # CHelpIO::readShort, as CZipReader reads its packed headers; one read of
+    # the packed struct would compile to a single call.
+    source = re.sub(
+        r"^IImage\*\s+CImageLoaderTGA::loadImage\([^)]*\)\s*\{.*?^\}",
+        lambda match: match[0].replace(
+            "file->read(&header, sizeof(STGAHeader));",
+            "file->read(&header.IdLength, 1);\n"
+            "\tfile->read(&header.ColorMapType, 1);\n"
+            "\tfile->read(&header.ImageType, 1);\n"
+            "\tfile->read(header.FirstEntryIndex, 2);\n"
+            "\theader.ColorMapLength = ox::io::CHelpIO::readShort(file);\n"
+            "\tfile->read(&header.ColorMapEntrySize, 1);\n"
+            "\tfile->read(header.XOrigin, 2);\n"
+            "\tfile->read(header.YOrigin, 2);\n"
+            "\theader.ImageWidth = ox::io::CHelpIO::readShort(file);\n"
+            "\theader.ImageHeight = ox::io::CHelpIO::readShort(file);\n"
+            "\tfile->read(&header.PixelDepth, 1);\n"
+            "\tfile->read(&header.ImageDescriptor, 1);",
+        ),
+        source, flags=re.MULTILINE | re.DOTALL,
+    )
+    # ox's S3DVertex declares no operator!=; compare the members as the
+    # file-local vertex equality helper does (CBspTree::BspPoly::operator==).
+    source = re.sub(
+        r"vertices\[(\w+)\] != other\.vertices\[\1\]",
+        r"!(vertices[\1].Pos == other.vertices[\1].Pos && vertices[\1].Normal == other.vertices[\1].Normal && "
+        r"vertices[\1].Color.color == other.vertices[\1].Color.color && vertices[\1].TCoords == other.vertices[\1].TCoords)",
+        source,
+    )
     # daisy kept the signature where Irrlicht defaulted an argument:
     # addDummyTransformationSceneNode's id=-1 and addTexture's ECF_A1R5G5B5. The
     # two-argument addTexture is told from (name, image) by its size argument, a
