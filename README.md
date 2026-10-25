@@ -51,6 +51,7 @@ Upstream results so far, each verified by Harvest's `hv match` on every unit:
 | [banteg/harvest#35](https://github.com/banteg/harvest/pull/35) | `concord seed --complete --stub` on nineteen daisy scene and PCX loader units | 231 |
 | [banteg/harvest#36](https://github.com/banteg/harvest/pull/36) | `concord seed --complete --stub` on the remaining twenty-two Irrlicht daisy units (`CSceneManager`, `CImage`, `CVideoSoftware`, `CXAnimationPlayer`, `CAnimatedMeshSceneNode`, `CTerrainSceneNode`, `CQ3LevelMesh`, XML/text readers, BMP/TGA/JPG loaders, and exact completions of `COctTreeTriangleSelector` and `CMetaTriangleSelector`) | 383 |
 | [banteg/harvest#37](https://github.com/banteg/harvest/pull/37) | `concord seed --complete --stub` again on twenty-one Irrlicht daisy units, with the container, colour and inline-helper translations that let their stubbed methods take Irrlicht's bodies; 12 of the 21 units exact | 202 |
+| [banteg/harvest#38](https://github.com/banteg/harvest/pull/38), open | `concord blockers --apply` restoring stubs in eight scene units, addresses learned by `learn-calls` and `place --object`, `overrides`, the companion-first include order, translation of daisy's semantic differences found by `inlines --semantic`, and searched near misses | 104 |
 
 ### Requirements
 
@@ -166,32 +167,26 @@ concord is the deterministic half of matching: it verifies candidates with the t
 
 ### Finishing Harvest's platform layer
 
-`python -m hv.progress report` splits Harvest's Linux binary into four layers (plus 264 PLT thunks, all matched). The table compares each layer's exact functions with [banteg/harvest#37](https://github.com/banteg/harvest/pull/37) applied and on the `seed/stub-merged` branch of [wakamex/harvest](https://github.com/wakamex/harvest), which adds the stub restorations, learned addresses and searched near misses below. Bytes are target code bytes; more exact is better. The layer totals are the branch's; #37's shares are of its own totals, which differ by a few functions because learned addresses split some extents.
+`python -m hv.progress report` splits Harvest's Linux binary into four layers (plus 264 PLT thunks, all matched). The table compares each layer's exact functions on Harvest's master, which includes [banteg/harvest#37](https://github.com/banteg/harvest/pull/37), and with [banteg/harvest#38](https://github.com/banteg/harvest/pull/38), which adds the stub restorations, learned addresses and searched near misses below. Bytes are target code bytes; more exact is better. Layer totals differ by a few functions between the two because learned addresses split some extents.
 
-| Layer | Functions (bytes) | Exact with #37 (bytes, share of layer) | Exact on seed/stub-merged (bytes, share of layer) |
-| --- | ---: | ---: | ---: |
-| game | 1,452 (707,867) | 1,338 (426,703, 60.3%) | 1,338 (426,703, 60.3%) |
-| engine | 1,617 (386,347) | 1,508 (277,732, 72.0%) | 1,514 (278,189, 72.0%) |
-| toolkit | 558 (231,777) | 487 (147,269, 63.5%) | 488 (152,892, 66.0%) |
-| platform | 1,613 (622,618) | 1,288 (365,119, 58.6%) | 1,364 (412,545, 66.3%) |
+| Layer | Exact on master (functions, bytes, share of layer) | Exact with #38 (functions, bytes, share of layer) |
+| --- | ---: | ---: |
+| game | 1,338 of 1,452 (426,703 of 707,867, 60.3%) | 1,339 of 1,452 (426,924 of 707,867, 60.3%) |
+| engine | 1,508 of 1,611 (277,732 of 385,833, 72.0%) | 1,515 of 1,619 (278,274 of 386,647, 72.0%) |
+| toolkit | 487 of 558 (147,269 of 231,777, 63.5%) | 488 of 558 (152,892 of 231,777, 66.0%) |
+| platform | 1,288 of 1,619 (365,119 of 623,132, 58.6%) | 1,383 of 1,611 (432,380 of 622,318, 69.5%) |
 
-Over the whole binary that is 63.58% of code bytes matched against #37's 60.90%, and a fuzzy score of 78.35% against 75.95%. Against #37's evidence, 83 functions are newly matched and 2,345 more data bytes match, with none lost. Ten functions score lower, each because the function compared at an address changed: stubs and misplaced functions whose recorded addresses learning moved, all at 16% or lower, and `CImage::CImage`, which keeps its 87.37% at the address its relocation evidence proves.
+Over the whole binary that is 64.59% of code bytes matched against master's 60.90%, and a fuzzy score of 78.93% against 75.95%. Against master's evidence, 104 functions are newly matched and 3,388 more data bytes match, with none lost; compiling master's own sources with #38's learned symbol table gives 53 of the 104 with none lower, so the other 51 come from the learned addresses alone. Six functions score lower, each because the function compared at its address changed.
 
-All 42 daisy units in the Mac debug map that have a file in `third_party/irrlicht-0.7/source/Irrlicht/` are seeded; the only two unrecovered daisy units without a `.cpp` file are the Winsock network device and its socket object (46 functions, 9.6 KB). When a stubbed method gets its real body, the template instantiations it calls are emitted and the functions after it move back to their target FDEs, so a restoration is judged against a baseline whose addresses were learned first: `concord place --object` learns them from the compiled candidate while the source stays unchanged, and without it a restoration can look like a loss because the old placement compared stubs at other functions' addresses.
+All 42 daisy units in the Mac debug map that have a file in `third_party/irrlicht-0.7/source/Irrlicht/` are seeded; the only two unrecovered daisy units without a `.cpp` file are the Winsock network device and its socket object (46 functions, 9.6 KB). When a stubbed method gets its real body, the template instantiations it calls are emitted and the functions after it move back to their target FDEs, so a restoration is judged with `concord scores --base` after `concord place --object` has learned the candidate's addresses.
 
-Three units still hold 9 out-of-line `__builtin_trap()` stubs, and two headers hold one each (`CBspTree::BspPoly::operator==`, `CSceneManager::DefaultNodeEntry`'s constructor). Eight of the nine compile with Irrlicht's body; each is kept stubbed because restoring it costs an existing match:
-
-| Stub | What restoring it costs |
-| --- | --- |
-| `CAnimatedMeshSceneNode::getMS3DJointNode` | four bytes of the unit's 224-byte `.gcc_except_table`, whatever the definition's position; it would add two exact functions |
-| seven `CXFileReader` parsers (`parseDataObjectMaterial`, `MeshMaterialList`, `SkinMeshHeader`, `SkinWeights`, `Mesh`, `Frame`, `parseDataObject`) | together, the `TArray<SXAnimationSet>` destructor drops to 99.92%, one scratch register in its epilogue; alone, each lowers `getNextTokenAsString`, `readHeadOfDataObject` or an inferred extent; a definition-order search plateaued |
-| `createSceneManager` | does not compile: it constructs a class still abstract in daisy |
+Seven out-of-line `__builtin_trap()` stubs remain, all `CXFileReader` parsers (`parseDataObjectMaterial`, `MeshMaterialList`, `SkinMeshHeader`, `SkinWeights`, `Mesh`, `Frame` and `parseDataObject`). Their addresses are proven and their bodies compile, but restoring any of them changes the generated code of functions that already match: all seven together lower five functions, and `SkinWeights` alone lowers `MeshNormals` from 80.31% to 80.16%. The likely causes are unit-wide, the unit reaching GCC 4.4's inline growth limit while inlining `fast_atof_move` and register choices shifting across the unit.
 
 So the platform work is, in order:
 
-1. Find the context the original gave the units where a shared callee stays out of line: in the daisy GUI units, `IGUIElement::removeChild` and `bringToFront` are inexact in all 23 units that emit them because the original calls a weak `std::list::_M_erase` copy that GCC 4.4's early inliner keeps only while another caller still needs it. The knowledge base records what has been ruled out.
-2. Name the compiler pass behind the remaining register-allocation and instruction-selection differences in large near-exact functions (Roadmap step 2), where body searches have stopped paying.
-3. Reconcile the abstract class behind `createSceneManager` from Harvest's reference data: build its header from Irrlicht's declaration aligned against `reference/1.18-mac-i386/functions.csv`, `reference/1.18-mac-i386/vtables.csv` and the field offsets `layout` reads from the original's memory accesses.
+1. Run `inlines --semantic` over the remaining Irrlicht-backed units and fix the source differences it names through translation; the jpeg loader's are behind its missing libjpeg path, and those in the shared `src/ox` headers (the terrain and text node destructors, `updateAbsolutePosition` in the camera node) are judged across every unit that includes them.
+2. Find what in `CXFileReader` decides how its inlining budget is spent, so the seven parsers can return without changing the functions that match.
+3. For large game-layer functions whose difference is how GCC 4.4 distributes one unit's inlined `CString` copies (`CDefenseTowerEntity`'s constructors, `CAlienEntity`'s sprite replacements, `CPlayState::OnEvent`), make the unit's other inexact functions exact first: definition order already matches the Mac map, and the remaining input to the distribution is the size of the unit's other bodies.
 
 ## Development
 
@@ -226,7 +221,11 @@ Method
 - Grow the analysis from its measured blockers, inside the tools that already work: group what stays open by the cause, helper or caller that blocks it, give the largest group the narrowest change that frees it, and measure. A new subsystem comes only when the blockers are shown to lie beyond the existing tools. `concord blockers` grouped the stubs by compile error, and fixing its eleven causes at the call site freed all but one stub; the causal census attributed 34, 16 and 12 near misses to three `CString.h` lines until its sites were checked against the header's exact out-of-line copies, which moved them under their callers.
 - Before launching a new load of work orders whose best approach is not clear, ask the second reader once which lever to take next, with the current census, the settled results and what the last round found; not before every order, and not for questions the master session can answer from the code.
 - A question that two attempts have not answered goes to the second reader with the evidence and the failed attempts, asking for its reading of the code rather than for a plan. The second reader is the `con-argon` session (an [Antigravity](https://antigravity.google/) agent in this repository, reached with `panetone send --to con-argon --reply`), used for these consultations only, sparingly, and not as an implementer.
+- Treat the second reader's specifics as hypotheses the implementer verifies before building on them. Its levers held every time (zero-offset blending in `createCurvedSurface`, the cause of `CAnimatedMeshSceneNode`'s exception-table bytes, `CSceneManager`'s two header bugs), while about half its details did not (which `encode2` lines flip, the `loadTextures` declaration fix, parser restorations recovering at once).
+- Count the distinct target addresses behind a symptom repeated across units before investigating it. Five runs went into why `removeChild` and `bringToFront` were inexact in all 23 GUI units that emit them, before a check showed the 23 copies map to two target functions, 201 bytes.
 - Check a unit's context before searching its function bodies: virtual table slots (`vtables`), field offsets (`layout`), emitted inline copies, and the declaration count (`phase`). On Harvest, wrong headers and out-of-class key functions kept functions inexact across whole units where body rewrites could not move them.
+- In an Irrlicht-backed unit, run `inlines --semantic` before body searches: a size or call-count difference beyond an inlined copy points at a source difference between Irrlicht 0.7 and daisy that no search can reach. It and the reading behind it found the zero-offset blend, the moved `updateAbsolutePosition` call, the field-by-field TGA header read, `SKeyMap`'s namespace and the missing `removeAllMeshes`.
+- Before changing a shared header that a census attributes sites to, check whether that header's out-of-line copies are exact; inlined code carries the header's line numbers, so exact copies mean the cause is in the callers. The `CString.h` census above is the case: its out-of-line copies were exact in nearly every unit, and every header rewrite changed nothing or lost matches.
 - Un-stub seeded ancestor methods before running body searches on them. All 42 Irrlicht-backed daisy units are now seeded, and a 2-byte `__builtin_trap()` stub not only leaves that method inexact but also omits the `.text.*` template instantiations it calls and shifts the `.text` offsets of unnamed functions and `_GLOBAL__I_a` after it. Derive class changes from the target's recorded symbols, virtual tables and memory accesses, and keep a shared-header change only if every file that includes it is no worse.
 - When a seeded unit calls a short inline `ox::core` or `ox::video` helper (`CRect::clipAgainst`, `SColor::toA1R5G5B5`, `SColor::set`, `CVector3d::rotateXYBy`, `CVector3d::rotateXZBy`, `CMatrix4::interpolate`) and completing the shared `ox` header cannot settle without shifting `DECL_UID` modulo 31 in other units, expand the inline body at the call site in `translate` or place the free helper in `ox/video/ColorPacking.h` rather than touching the shared header or stubbing the caller. When a `.cpp` unit constructs a 9-argument `S3DVertex`, `qualify` includes `ox/video/S3DVertexInline.h` so `S3DVertex.h` keeps its declaration count.
 - Grow the search's vocabulary on evidence: add a rewrite, with its inverse, when the benchmark or a real near miss shows a change the search cannot undo. The loop, assignment and condition rewrites came that way, and the condition rewrite then matched three real functions.
@@ -236,6 +235,8 @@ Evidence
 - Judge a search change against the previous version on the same benchmark cases, then confirm it on the target's real near misses, since benchmark cases are easier than real ones.
 - When a change is meant to preserve output, compare hashes of every output before and after, as for each driver and delinker speedup.
 - Run lint and the tests after the last edit and before every push; a push that ran only the tests has failed CI.
+- Judge a restoration with `concord scores --base`, which compiles the base and the change with the same learned symbol table, before calling it a loss. Three restorations recorded as costing a match (`CBspTree::splitPoly`, `CSceneManager::findMesh`, `getMS3DJointNode`) were address artifacts or include order.
+- Recapture evidence after merging an implementer's branch and commit it with the merge. Evidence committed with the work went stale twice: once before an implementer's final edits, and once when a header change recompiled 31 units.
 - A check run once by hand becomes a concord command with a test. The whole-build gates were run by hand against a baseline of the old sources compiled with the newly learned symbol table, `symbols.tsv` was merged per symbol by a one-off script, and a manually named symbol was checked against its code by reading the disassembly, which showed the `_M_erase` at 0x4ff6b0 is `list::erase`.
 
 Upstream
@@ -263,6 +264,16 @@ Implementation work is handed to implementer sessions, so which one gets a work 
 | Codex with `gpt-6-luna` | 1 | 1 | 61 s | 0.71M | $0.01 at API rates | stopped after one translation rule |
 
 `swe-2-high` and `gpt-6.1-sol` are the implementers for open-ended work across several units, such as un-stubbing by shared blocker; `swe-2-high`'s changes were the ones applied, and re-seeding with them made 141 functions newly exact. `claude-haiku-5-5` suits only tightly specified mechanical steps, and the other two are not reliable for GCC 4.4 C++98 work. This is one task run once, so it guides the choice of implementer rather than ranking them.
+
+The scene round that produced banteg/harvest#38 gave each session different work, so its comparison is by outcome rather than on one task. Scores are out of 100 and judge results on the work each was given.
+
+| Session | Role | Score | What it did well | What needed correcting |
+| --- | --- | ---: | --- | --- |
+| Codex with `gpt-6.1-sol` | implementer | 90 | multi-unit recoveries with the tooling they needed (the `CSceneManager` recovery, `getMS3DJointNode` with its exception table, the causal census, the normalized gate and symbol checks), every change gated across the whole build | committed evidence captured before its final edits once; progress notes did not always say what had changed |
+| Antigravity with Gemini 4 Argon | second reader | 85 | named the lever both times it was asked, and its mechanism readings held (zero-offset blending, the destructors' exception-table order, `CSceneManager`'s header bugs, recycled SSA names behind the `CString` flips) | about half its specifics: line numbers, file paths, a declaration fix and an immediate-recovery claim |
+| Devin with `swe-2-high` | implementer | 78 | bounded investigations with careful negative results that closed questions, corrections of the second reader's claims, and the `overrides`, `limits` and TGA and `BspPoly` fixes | four runs ended with no Harvest change; commit text needed its em dashes and co-author trailers removed |
+
+`gpt-6.1-sol` gets cross-unit recoveries that need new tooling, `swe-2-high` gets one bounded question with a stop limit, and the second reader is asked only which lever to take and why.
 
 ## License
 
