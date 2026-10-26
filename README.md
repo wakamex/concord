@@ -223,6 +223,9 @@ The current best way toward the goals. It changes as tools and knowledge improve
 
 Method
 - Delegate implementation and unit-by-unit runs to implementer sessions, keeping the master session on diagnosis, work-order framing, and whole-build verification; doing implementation in the master session burns its turns on compile-and-test loops that a lighter session or parallel bake-off handles faster and cheaper.
+- Choose each task's executor from the scorecard in docs/EXECUTORS.md and append the task's row when it finishes; do not rerun finished tasks only to compare executors, and judge an executor on all its rows of one kind, since two runs of one task can differ as much as two executors. Devin's `swe-2-high` is free on the subscription and Cursor's `composer-2.5` costs a fraction of a percent of its month, so the cheapest clean executor for a kind gets it before Codex, which is kept at no more than 1x pace of its quota for capabilities only it has done cleanly.
+- Write a brief's constraints as numbered checkable rules and check each on the diff before integrating. Cursor kept every constraint written that way and broke one stated in prose (C++11 lambdas against GCC 4.4); the em dashes and co-author trailers other implementers left came from rules stated only as prose.
+- Stop a Cursor job once its report exists, since its process may not exit, and resume a Muse run with `aop resume` after its subscription window resets, which ended one task partway.
 - Find out what blocks a function or file by measuring before building: the benchmark for searches, `phase` for declaration-count sensitivity, `--locate` for where the diff points. The two findings that paid most, the declaration count modulo 31 and the key function, came from understanding the compiler, not from more search.
 - Grow the analysis from its measured blockers, inside the tools that already work: group what stays open by the cause, helper or caller that blocks it, give the largest group the narrowest change that frees it, and measure. A new subsystem comes only when the blockers are shown to lie beyond the existing tools. `concord blockers` grouped the stubs by compile error, and fixing its eleven causes at the call site freed all but one stub; the causal census attributed 34, 16 and 12 near misses to three `CString.h` lines until its sites were checked against the header's exact out-of-line copies, which moved them under their callers.
 - Before launching a new load of work orders whose best approach is not clear, ask the second reader once which lever to take next, with the current census, the settled results and what the last round found; not before every order, and not for questions the master session can answer from the code.
@@ -259,27 +262,7 @@ Speed
 
 ## Implementer comparison
 
-Implementation work is handed to implementer sessions, so which one gets a work order matters. Five implementers were given the same task once, in a single turn with no help: extend concord's translation so that nine stubbed methods across seven seeded daisy units (`CSceneManager`, `CXAnimationPlayer`, `C3DSMeshFileLoader`, `CCameraMayaSceneNode`, `CTestSceneNode`, `CBspTreeSceneNode`, `CWaterSurfaceSceneNode`) compile under Harvest's GCC 4.4 dialect (`-std=gnu++98`), with lint and tests passing. Each ran in its own worktree of concord.
-
-| Implementer | Units compiling, of 7 | Methods compiling, of 9 | Wall time | Tokens | Cost | Notes |
-| --- | ---: | ---: | ---: | ---: | --- | --- |
-| [Devin](https://devin.ai/) with `swe-2-high` | 7 | 9 | 558 s | 9.79M | none on the subscription | the cleanest C++98 and concord idioms, reusing `ox/algo/CArrayFunctions.h` |
-| [Codex](https://openai.com/codex/) with `gpt-6.1-sol` | 7 | 9 | 490 s | 3.16M | $0.74 at API rates | 3.1 times fewer tokens; also fixed a curly-quote bug in `missing_members` |
-| [Cursor](https://cursor.com/) with `composer-2.5` | 5 | 4 | 383 s | 4.30M | | wrote C++11 lambdas, which GCC 4.4 rejects |
-| [Claude Code](https://www.anthropic.com/claude-code) with `claude-haiku-5-5` | 1 | 2 | 900 s, timed out | 11.59M | $0.67 at API rates | broke the include order of `SColor.h` for six units |
-| Codex with `gpt-6-luna` | 1 | 1 | 61 s | 0.71M | $0.01 at API rates | stopped after one translation rule |
-
-`swe-2-high` and `gpt-6.1-sol` are the implementers for open-ended work across several units, such as un-stubbing by shared blocker; `swe-2-high`'s changes were the ones applied, and re-seeding with them made 141 functions newly exact. `claude-haiku-5-5` suits only tightly specified mechanical steps, and the other two are not reliable for GCC 4.4 C++98 work. This is one task run once, so it guides the choice of implementer rather than ranking them.
-
-The scene round that produced banteg/harvest#38 gave each session different work, so its comparison is by outcome rather than on one task. Scores are out of 100 and judge results on the work each was given.
-
-| Session | Role | Score | What it did well | What needed correcting |
-| --- | --- | ---: | --- | --- |
-| Codex with `gpt-6.1-sol` | implementer | 90 | multi-unit recoveries with the tooling they needed (the `CSceneManager` recovery, `getMS3DJointNode` with its exception table, the causal census, the normalized gate and symbol checks), every change gated across the whole build | committed evidence captured before its final edits once; progress notes did not always say what had changed |
-| Antigravity with Gemini 4 Argon | second reader | 85 | named the lever both times it was asked, and its mechanism readings held (zero-offset blending, the destructors' exception-table order, `CSceneManager`'s header bugs, recycled SSA names behind the `CString` flips) | about half its specifics: line numbers, file paths, a declaration fix and an immediate-recovery claim |
-| Devin with `swe-2-high` | implementer | 78 | bounded investigations with careful negative results that closed questions, corrections of the second reader's claims, and the `overrides`, `limits` and TGA and `BspPoly` fixes | four runs ended with no Harvest change; commit text needed its em dashes and co-author trailers removed |
-
-`gpt-6.1-sol` gets cross-unit recoveries that need new tooling, `swe-2-high` gets one bounded question with a stop limit, and the second reader is asked only which lever to take and why.
+Which executor takes a task is decided from the running scorecard in [docs/EXECUTORS.md](docs/EXECUTORS.md): each finished task adds its kind, executor, gate result, the master session's reading of its diff, its gains and its cost, and a kind of task goes to the cheapest executor whose rows of that kind are clean. The scorecard's log starts with the five-way stub-translation test and the scene round behind banteg/harvest#38.
 
 ## License
 
