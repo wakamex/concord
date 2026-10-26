@@ -23,6 +23,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Devin `swe-2-high` | diagnosis | 11 | 11 of 11 | 11 of 11 | 9 | $0.50 to $3.92, mean $2.06 where recorded |
 | Devin `swe-2-high` | search | 1 | 1 of 1 | 1 of 1 | 3 | not recorded |
 | Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
+| Codex `gpt-6.1-terra` | diagnosis | 1 | 1 of 1 | 1 of 1 | 0 | $0.19 |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
 | Muse `muse-wonder-full-1.0` | capability | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 29.6M input tokens |
 | Cursor `composer-2.5` | search | 1 | 1 of 1 | 1 of 1 | 0 | 1.66M input tokens, a fraction of a percent of the month |
@@ -37,7 +38,7 @@ Evaluation:
 - Muse `muse-wonder-full-1.0`: one search task, precise and honest, but its 5-hour and weekly subscription windows run out quickly (3.13x pace after one day on 2026-10-26); aop's resume continues a run after the window resets.
 - Cursor `composer-2.5`: with its constraints as 12 numbered rules, its first search task kept all of them and passed the gate in 31 minutes. Its earlier rule task wrote C++11 lambdas, which GCC 4.4 rejects, against a constraint stated in prose; elsewhere it keeps constraints written as numbered checkable rules, so briefs for it list them that way, and its process may not exit after its report, so its job is stopped once the report exists.
 
-Gaps: Cursor has no diagnosis row; Muse has no diagnosis or rule row.
+Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a cheaper Codex option at half Sol's price; Cursor has no diagnosis row; Muse has no diagnosis or rule row.
 
 ## Log
 
@@ -84,3 +85,4 @@ Gaps: Cursor has no diagnosis row; Muse has no diagnosis or rule row.
 | 2026-10-26 | CXFileReader blockers by scratch position | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | definition order cannot move the emit slots; the restoration emits seven template copies the target never did, so the lever is the parser bodies |
 | 2026-10-26 | CXFileReader's extra template copies | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | falsified its own earlier claim: all seven copies exist in the target; the difference is inlining inside them, not a source construct; spent neither intervention |
 | 2026-10-26 | hand-solve CXFileReader's size mismatches | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | both size differences are inliner choices of which calls stay out of line; no source difference; four variants rejected |
+| 2026-10-26 | CXFileReader's inlined callees against the original's copies | diagnosis | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.19 | both header definitions compile to the original's code; `operator=` copies differ only by peephole2 registers; 2 minutes |
