@@ -127,7 +127,11 @@ def _name_for(text: bytes) -> str:
             break
         word = "value"
         break
+    template = "<" in word  # a template-id such as CRect<int> names its type
+    word = re.sub(r"<.*|[^\w]", "", word)
     word = re.sub(r"^(get|is)(?=[A-Z])", "", word)
+    if template and re.match(r"[A-Z][A-Z][a-z]", word):
+        word = word[1:]  # the class prefix, dropped as in a conversion's suffix
     return word[:1].lower() + word[1:] or "value"
 
 

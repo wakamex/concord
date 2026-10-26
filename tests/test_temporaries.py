@@ -29,6 +29,8 @@ class Names(unittest.TestCase):
             b"Config->getAttribute(L\"x\")": "attribute",
             b"isVisible()": "visible",
             b"ox::core::CString<char>(extension)": "extensionString",
+            b"ox::core::CRect<int>(corner, size)": "rect",
+            b"view.Widget<int>(a, b)": "widget",
             b"a + b": "a",  # a binary expression is named after its first operand
         }
         for expression, name in cases.items():
@@ -57,6 +59,11 @@ class Names(unittest.TestCase):
         types = {"concordTmp0": "ns::Box<char>"}
         self.assertIn(b"ns::Box<char> textBox(text);", rename(source, types, direct=True))
         self.assertIn(b"ns::Box<char> textBox = ns::Box<char>(text);", rename(source, types, direct=False))
+
+    def test_a_template_construction_of_several_arguments_gets_a_valid_name(self):
+        source = b"    __typeof__(ns::Box<char>(a, b)) concordTmp0 = ns::Box<char>(a, b);\n    use(concordTmp0);\n"
+        types = {"concordTmp0": "ns::Box<char>"}
+        self.assertIn(b"ns::Box<char> box(a, b);", rename(source, types, direct=True))
 
 
 @unittest.skipUnless(shutil.which("g++"), "needs g++")
