@@ -1,0 +1,1038 @@
+;; Function ox::TArray<daisy::scene::CXFileReader::SXAnimationSet>::~TArray() (_ZN2ox6TArrayIN5daisy5scene12CXFileReader14SXAnimationSetEED1Ev)
+
+starting the processing of deferred insns
+ending the processing of deferred insns
+df_analyze called
+scanning new insn with uid = 113.
+deleting insn with uid = 97.
+verify found no changes in insn with uid = 113.
+(note 1 0 4 NOTE_INSN_DELETED)
+
+(note 4 1 88 2 [bb 2] NOTE_INSN_BASIC_BLOCK)
+
+(insn/f 88 4 89 2 src/ox/TArray.h:14 (set (mem:DI (pre_dec:DI (reg/f:DI 7 sp)) [0 S8 A8])
+        (reg:DI 44 r15)) -1 (expr_list:REG_DEAD (reg:DI 44 r15)
+        (nil)))
+
+(insn/f 89 88 90 2 src/ox/TArray.h:14 (set (mem:DI (pre_dec:DI (reg/f:DI 7 sp)) [0 S8 A8])
+        (reg:DI 43 r14)) -1 (expr_list:REG_DEAD (reg:DI 43 r14)
+        (nil)))
+
+(insn/f 90 89 91 2 src/ox/TArray.h:14 (set (mem:DI (pre_dec:DI (reg/f:DI 7 sp)) [0 S8 A8])
+        (reg:DI 42 r13)) -1 (expr_list:REG_DEAD (reg:DI 42 r13)
+        (nil)))
+
+(insn/f 91 90 92 2 src/ox/TArray.h:14 (set (mem:DI (pre_dec:DI (reg/f:DI 7 sp)) [0 S8 A8])
+        (reg:DI 41 r12)) -1 (expr_list:REG_DEAD (reg:DI 41 r12)
+        (nil)))
+
+(insn/f 92 91 93 2 src/ox/TArray.h:14 (set (mem:DI (pre_dec:DI (reg/f:DI 7 sp)) [0 S8 A8])
+        (reg:DI 6 bp)) -1 (expr_list:REG_DEAD (reg:DI 6 bp)
+        (nil)))
+
+(insn/f 93 92 94 2 src/ox/TArray.h:14 (set (mem:DI (pre_dec:DI (reg/f:DI 7 sp)) [0 S8 A8])
+        (reg:DI 3 bx)) -1 (expr_list:REG_DEAD (reg:DI 3 bx)
+        (nil)))
+
+(insn/f 94 93 95 2 src/ox/TArray.h:14 (parallel [
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int -8 [0xfffffffffffffff8])))
+            (clobber (reg:CC 17 flags))
+            (clobber (mem:BLK (scratch) [0 A8]))
+        ]) -1 (expr_list:REG_UNUSED (reg:CC 17 flags)
+        (nil)))
+
+(note 95 94 2 2 NOTE_INSN_PROLOGUE_END)
+
+(insn 2 95 3 2 src/ox/TArray.h:14 (set (reg/f:DI 44 r15 [orig:68 this.111 ] [68])
+        (reg:DI 5 di [ this ])) 89 {*movdi_1_rex64} (expr_list:REG_DEAD (reg:DI 5 di [ this ])
+        (nil)))
+
+(note 3 2 7 2 NOTE_INSN_FUNCTION_BEG)
+
+(insn 7 3 8 2 /usr/include/c++/4.4/bits/stl_vector.h:313 (set (reg/f:DI 43 r14 [orig:61 D.56731 ] [61])
+        (mem/s/f:DI (plus:DI (reg/f:DI 44 r15 [orig:68 this.111 ] [68])
+                (const_int 8 [0x8])) [55 <variable>.D.41784._M_impl._M_finish+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 8 7 9 2 /usr/include/c++/4.4/bits/stl_vector.h:313 (set (reg/v/f:DI 41 r12 [orig:62 __first ] [62])
+        (mem/s/f:DI (reg/f:DI 44 r15 [orig:68 this.111 ] [68]) [55 <variable>.D.41784._M_impl._M_start+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 9 8 10 2 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 43 r14 [orig:61 D.56731 ] [61])
+            (reg/v/f:DI 41 r12 [orig:62 __first ] [62]))) 2 {cmpdi_1_insn_rex64} (nil))
+
+(jump_insn 10 9 79 2 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 60)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 300 [0x12c])
+            (nil))))
+
+(code_label 79 10 78 3 356 "" [1 uses])
+
+(note 78 79 87 3 [bb 3] NOTE_INSN_BASIC_BLOCK)
+
+(insn 87 78 13 3 src/ox/TArray.h:14 (set (reg/f:DI 42 r13 [orig:63 this.284 ] [63])
+        (plus:DI (reg/v/f:DI 41 r12 [orig:62 __first ] [62])
+            (const_int 16 [0x10]))) 273 {*lea_2_rex64} (nil))
+
+(insn 13 87 14 3 /usr/include/c++/4.4/bits/stl_vector.h:313 (set (reg/f:DI 6 bp [orig:66 D.56719 ] [66])
+        (mem/s/f:DI (plus:DI (reg/f:DI 42 r13 [orig:63 this.284 ] [63])
+                (const_int 8 [0x8])) [97 <variable>.D.41150._M_impl._M_finish+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 14 13 15 3 /usr/include/c++/4.4/bits/stl_vector.h:313 (set (reg/v/f:DI 3 bx [orig:65 __first ] [65])
+        (mem/s/f:DI (plus:DI (reg/v/f:DI 41 r12 [orig:62 __first ] [62])
+                (const_int 16 [0x10])) [97 <variable>.D.41150._M_impl._M_start+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 15 14 16 3 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 6 bp [orig:66 D.56719 ] [66])
+            (reg/v/f:DI 3 bx [orig:65 __first ] [65]))) 2 {cmpdi_1_insn_rex64} (nil))
+
+(jump_insn 16 15 81 3 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 38)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 450 [0x1c2])
+            (nil))))
+
+(code_label 81 16 80 4 357 "" [1 uses])
+
+(note 80 81 18 4 [bb 4] NOTE_INSN_BASIC_BLOCK)
+
+(insn 18 80 19 4 /usr/include/c++/4.4/bits/stl_vector.h:132 (set (reg/f:DI 5 di [orig:60 D.62065 ] [60])
+        (mem/s/f:DI (plus:DI (reg/v/f:DI 3 bx [orig:65 __first ] [65])
+                (const_int 16 [0x10])) [68 <variable>._M_impl._M_start+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 19 18 20 4 /usr/include/c++/4.4/bits/stl_vector.h:145 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 5 di [orig:60 D.62065 ] [60])
+            (const_int 0 [0x0]))) 0 {cmpdi_ccno_1_rex64} (nil))
+
+(jump_insn 20 19 21 4 /usr/include/c++/4.4/bits/stl_vector.h:145 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 24)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 3017 [0xbc9])
+            (nil))))
+
+(note 21 20 23 5 [bb 5] NOTE_INSN_BASIC_BLOCK)
+
+(call_insn 23 21 24 5 /usr/include/c++/4.4/ext/new_allocator.h:95 (call (mem:QI (symbol_ref:DI ("_ZdlPv") [flags 0x41] <function_decl 0x7ffff7cb5700 operator delete>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 24 23 25 6 348 "" [1 uses])
+
+(note 25 24 26 6 [bb 6] NOTE_INSN_BASIC_BLOCK)
+
+(insn 26 25 27 6 src/ox/core/CString.h:105 (set (reg/f:DI 5 di [orig:59 D.62083 ] [59])
+        (mem/s/f:DI (reg/v/f:DI 3 bx [orig:65 __first ] [65]) [26 <variable>.FrameName.array+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 27 26 28 6 src/ox/core/CString.h:105 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 5 di [orig:59 D.62083 ] [59])
+            (const_int 0 [0x0]))) 0 {cmpdi_ccno_1_rex64} (nil))
+
+(jump_insn 28 27 29 6 src/ox/core/CString.h:105 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 32)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 2165 [0x875])
+            (nil))))
+
+(note 29 28 31 7 [bb 7] NOTE_INSN_BASIC_BLOCK)
+
+(call_insn 31 29 32 7 src/ox/core/CString.h:105 (call (mem:QI (symbol_ref:DI ("_ZdaPv") [flags 0x41] <function_decl 0x7ffff7cb5800 operator delete []>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 32 31 33 8 349 "" [1 uses])
+
+(note 33 32 34 8 [bb 8] NOTE_INSN_BASIC_BLOCK)
+
+(insn 34 33 36 8 /usr/include/c++/4.4/bits/stl_construct.h:92 (parallel [
+            (set (reg/v/f:DI 3 bx [orig:65 __first ] [65])
+                (plus:DI (reg/v/f:DI 3 bx [orig:65 __first ] [65])
+                    (const_int 48 [0x30])))
+            (clobber (reg:CC 17 flags))
+        ]) 280 {*adddi_1_rex64} (expr_list:REG_UNUSED (reg:CC 17 flags)
+        (nil)))
+
+(insn 36 34 37 8 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 6 bp [orig:66 D.56719 ] [66])
+            (reg/v/f:DI 3 bx [orig:65 __first ] [65]))) 2 {cmpdi_1_insn_rex64} (nil))
+
+(jump_insn 37 36 38 8 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref:DI 81)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 9550 [0x254e])
+            (nil))))
+
+(code_label 38 37 39 9 347 "" [1 uses])
+
+(note 39 38 40 9 [bb 9] NOTE_INSN_BASIC_BLOCK)
+
+(insn 40 39 41 9 /usr/include/c++/4.4/bits/stl_vector.h:132 (set (reg/f:DI 5 di [orig:64 D.56724 ] [64])
+        (mem/s/f:DI (reg/f:DI 42 r13 [orig:63 this.284 ] [63]) [97 <variable>._M_impl._M_start+0 S8 A64])) 89 {*movdi_1_rex64} (expr_list:REG_DEAD (reg/f:DI 42 r13 [orig:63 this.284 ] [63])
+        (nil)))
+
+(insn 41 40 42 9 /usr/include/c++/4.4/bits/stl_vector.h:145 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 5 di [orig:64 D.56724 ] [64])
+            (const_int 0 [0x0]))) 0 {cmpdi_ccno_1_rex64} (nil))
+
+(jump_insn 42 41 43 9 /usr/include/c++/4.4/bits/stl_vector.h:145 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 46)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 3017 [0xbc9])
+            (nil))))
+
+(note 43 42 45 10 [bb 10] NOTE_INSN_BASIC_BLOCK)
+
+(call_insn 45 43 46 10 /usr/include/c++/4.4/ext/new_allocator.h:95 (call (mem:QI (symbol_ref:DI ("_ZdlPv") [flags 0x41] <function_decl 0x7ffff7cb5700 operator delete>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 46 45 47 11 351 "" [1 uses])
+
+(note 47 46 48 11 [bb 11] NOTE_INSN_BASIC_BLOCK)
+
+(insn 48 47 49 11 src/ox/core/CString.h:105 (set (reg/f:DI 5 di [orig:58 D.62086 ] [58])
+        (mem/s/f:DI (reg/v/f:DI 41 r12 [orig:62 __first ] [62]) [26 <variable>.AnimationName.array+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 49 48 50 11 src/ox/core/CString.h:105 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 5 di [orig:58 D.62086 ] [58])
+            (const_int 0 [0x0]))) 0 {cmpdi_ccno_1_rex64} (nil))
+
+(jump_insn 50 49 51 11 src/ox/core/CString.h:105 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 54)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 2165 [0x875])
+            (nil))))
+
+(note 51 50 53 12 [bb 12] NOTE_INSN_BASIC_BLOCK)
+
+(call_insn 53 51 54 12 src/ox/core/CString.h:105 (call (mem:QI (symbol_ref:DI ("_ZdaPv") [flags 0x41] <function_decl 0x7ffff7cb5800 operator delete []>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 54 53 55 13 352 "" [1 uses])
+
+(note 55 54 56 13 [bb 13] NOTE_INSN_BASIC_BLOCK)
+
+(insn 56 55 58 13 /usr/include/c++/4.4/bits/stl_construct.h:92 (parallel [
+            (set (reg/v/f:DI 41 r12 [orig:62 __first ] [62])
+                (plus:DI (reg/v/f:DI 41 r12 [orig:62 __first ] [62])
+                    (const_int 40 [0x28])))
+            (clobber (reg:CC 17 flags))
+        ]) 280 {*adddi_1_rex64} (expr_list:REG_UNUSED (reg:CC 17 flags)
+        (nil)))
+
+(insn 58 56 59 13 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 43 r14 [orig:61 D.56731 ] [61])
+            (reg/v/f:DI 41 r12 [orig:62 __first ] [62]))) 2 {cmpdi_1_insn_rex64} (nil))
+
+(jump_insn 59 58 60 13 /usr/include/c++/4.4/bits/stl_construct.h:92 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref:DI 79)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 9700 [0x25e4])
+            (nil))))
+
+(code_label 60 59 61 14 346 "" [1 uses])
+
+(note 61 60 62 14 [bb 14] NOTE_INSN_BASIC_BLOCK)
+
+(insn 62 61 63 14 /usr/include/c++/4.4/bits/stl_vector.h:132 (set (reg/f:DI 5 di [orig:67 D.56713 ] [67])
+        (mem/s/f:DI (reg/f:DI 44 r15 [orig:68 this.111 ] [68]) [55 <variable>._M_impl._M_start+0 S8 A64])) 89 {*movdi_1_rex64} (expr_list:REG_DEAD (reg/f:DI 44 r15 [orig:68 this.111 ] [68])
+        (nil)))
+
+(insn 63 62 64 14 /usr/include/c++/4.4/bits/stl_vector.h:145 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 5 di [orig:67 D.56713 ] [67])
+            (const_int 0 [0x0]))) 0 {cmpdi_ccno_1_rex64} (nil))
+
+(jump_insn 64 63 65 14 /usr/include/c++/4.4/bits/stl_vector.h:145 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref:DI 74)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 2165 [0x875])
+            (nil))))
+
+(note 65 64 106 15 [bb 15] NOTE_INSN_BASIC_BLOCK)
+
+(insn 106 65 107 15 src/ox/TArray.h:14 (parallel [
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+            (clobber (reg:CC 17 flags))
+            (clobber (mem:BLK (scratch) [0 A8]))
+        ]) -1 (expr_list:REG_UNUSED (reg:CC 17 flags)
+        (nil)))
+
+(insn 107 106 108 15 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 3 bx)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 108 107 109 15 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 6 bp)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 109 108 110 15 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 41 r12)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 110 109 111 15 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 42 r13)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 111 110 112 15 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 43 r14)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 112 111 67 15 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 44 r15)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(call_insn/j 67 112 68 15 /usr/include/c++/4.4/ext/new_allocator.h:95 (call (mem:QI (symbol_ref:DI ("_ZdlPv") [flags 0x41] <function_decl 0x7ffff7cb5700 operator delete>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(barrier 68 67 74)
+
+(code_label 74 68 77 16 355 "" [1 uses])
+
+(note 77 74 96 16 [bb 16] NOTE_INSN_BASIC_BLOCK)
+
+(note 96 77 113 16 NOTE_INSN_EPILOGUE_BEG)
+
+(insn 113 96 98 16 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 5 di)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+            (clobber (mem:BLK (scratch) [0 A8]))
+        ]) -1 (nil))
+
+(insn 98 113 99 16 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 3 bx)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 99 98 100 16 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 6 bp)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 100 99 101 16 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 41 r12)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 101 100 102 16 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 42 r13)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 102 101 103 16 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 43 r14)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 103 102 104 16 src/ox/TArray.h:14 (parallel [
+            (set (reg:DI 44 r15)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(jump_insn 104 103 105 16 src/ox/TArray.h:14 (return) -1 (nil))
+
+(barrier 105 104 86)
+
+(note 86 105 0 NOTE_INSN_DELETED)
+starting the processing of deferred insns
+ending the processing of deferred insns
+
+;; Function bool daisy::scene::CXFileReader::getNextTokenAsString(ox::core::CString<char>&) (_ZN5daisy5scene12CXFileReader20getNextTokenAsStringERN2ox4core7CStringIcEE)
+
+starting the processing of deferred insns
+ending the processing of deferred insns
+df_analyze called
+scanning new insn with uid = 237.
+deleting insn with uid = 133.
+verify found no changes in insn with uid = 237.
+scanning new insn with uid = 238.
+deleting insn with uid = 128.
+verify found no changes in insn with uid = 238.
+scanning new insn with uid = 239.
+deleting insn with uid = 77.
+verify found no changes in insn with uid = 239.
+scanning new insn with uid = 240.
+scanning new insn with uid = 241.
+deleting insn with uid = 73.
+verify found no changes in insn with uid = 241.
+verify found no changes in insn with uid = 240.
+(note 13 0 17 NOTE_INSN_DELETED)
+
+(note 17 13 217 2 [bb 2] NOTE_INSN_BASIC_BLOCK)
+
+(insn/f 217 17 218 2 src/daisy/scene/CXFileReader.cpp:345 (set (mem:DI (pre_dec:DI (reg/f:DI 7 sp)) [0 S8 A8])
+        (reg:DI 41 r12)) -1 (expr_list:REG_DEAD (reg:DI 41 r12)
+        (nil)))
+
+(insn/f 218 217 219 2 src/daisy/scene/CXFileReader.cpp:345 (set (mem:DI (pre_dec:DI (reg/f:DI 7 sp)) [0 S8 A8])
+        (reg:DI 6 bp)) -1 (expr_list:REG_DEAD (reg:DI 6 bp)
+        (nil)))
+
+(insn/f 219 218 220 2 src/daisy/scene/CXFileReader.cpp:345 (set (mem:DI (pre_dec:DI (reg/f:DI 7 sp)) [0 S8 A8])
+        (reg:DI 3 bx)) -1 (expr_list:REG_DEAD (reg:DI 3 bx)
+        (nil)))
+
+(insn/f 220 219 221 2 src/daisy/scene/CXFileReader.cpp:345 (parallel [
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int -32 [0xffffffffffffffe0])))
+            (clobber (reg:CC 17 flags))
+            (clobber (mem:BLK (scratch) [0 A8]))
+        ]) -1 (expr_list:REG_UNUSED (reg:CC 17 flags)
+        (nil)))
+
+(note 221 220 15 2 NOTE_INSN_PROLOGUE_END)
+
+(insn 15 221 16 2 src/daisy/scene/CXFileReader.cpp:345 (set (reg/v/f:DI 3 bx [orig:82 out ] [82])
+        (reg:DI 4 si [ out ])) 89 {*movdi_1_rex64} (expr_list:REG_DEAD (reg:DI 4 si [ out ])
+        (nil)))
+
+(note 16 15 215 2 NOTE_INSN_FUNCTION_BEG)
+
+(insn 215 16 20 2 src/daisy/scene/CXFileReader.cpp:346 (set (reg/f:DI 6 bp [101])
+        (plus:DI (reg/f:DI 7 sp)
+            (const_int 16 [0x10]))) 273 {*lea_2_rex64} (nil))
+
+(insn 20 215 21 2 src/daisy/scene/CXFileReader.cpp:346 (set (reg:DI 4 si)
+        (reg/f:DI 5 di [orig:81 this ] [81])) 89 {*movdi_1_rex64} (expr_list:REG_DEAD (reg/f:DI 5 di [orig:81 this ] [81])
+        (nil)))
+
+(insn 21 20 22 2 src/daisy/scene/CXFileReader.cpp:346 (set (reg:DI 5 di)
+        (reg/f:DI 6 bp [101])) 89 {*movdi_1_rex64} (expr_list:REG_EQUAL (plus:DI (reg/f:DI 20 frame)
+            (const_int -16 [0xfffffffffffffff0]))
+        (nil)))
+
+(call_insn 22 21 23 2 src/daisy/scene/CXFileReader.cpp:346 (call (mem:QI (symbol_ref:DI ("_ZN5daisy5scene12CXFileReader12getNextTokenEv") [flags 0x3] <function_decl 0x7ffff4d39300 getNextToken>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_DEAD (reg:DI 4 si)
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (expr_list:REG_DEP_TRUE (use (reg:DI 4 si))
+            (nil))))
+
+(insn 23 22 216 2 src/ox/core/CString.h:201 (set (reg:SI 0 ax [orig:84 s.used ] [84])
+        (mem/s/c:SI (plus:DI (reg/f:DI 7 sp)
+                (const_int 28 [0x1c])) [5 s.used+0 S4 A32])) 47 {*movsi_1} (nil))
+
+(insn 216 23 25 2 src/ox/core/CString.h:201 (set (reg/v:SI 1 dx [orig:78 sl ] [78])
+        (subreg:SI (plus:DI (reg:DI 0 ax [orig:84 s.used ] [84])
+                (const_int -1 [0xffffffffffffffff])) 0)) 271 {*lea_1_rex64} (nil))
+
+(insn 25 216 26 2 src/daisy/scene/CXFileReader.cpp:349 (set (reg:CCGC 17 flags)
+        (compare:CCGC (reg/v:SI 1 dx [orig:78 sl ] [78])
+            (const_int 2 [0x2]))) 5 {*cmpsi_1_insn} (expr_list:REG_DEAD (reg/v:SI 1 dx [orig:78 sl ] [78])
+        (nil)))
+
+(jump_insn 26 25 27 2 src/daisy/scene/CXFileReader.cpp:349 (set (pc)
+        (if_then_else (le (reg:CCGC 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 125)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCGC 17 flags)
+        (expr_list:REG_BR_PROB (const_int 2071 [0x817])
+            (nil))))
+
+(note 27 26 28 3 [bb 3] NOTE_INSN_BASIC_BLOCK)
+
+(insn 28 27 29 3 src/ox/core/CString.h:169 (set (reg/f:DI 5 di [orig:70 prephitmp.2738 ] [70])
+        (mem/s/f/c:DI (plus:DI (reg/f:DI 7 sp)
+                (const_int 16 [0x10])) [26 s.array+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 29 28 30 3 src/daisy/scene/CXFileReader.cpp:352 (set (reg:CCZ 17 flags)
+        (compare:CCZ (mem:QI (reg/f:DI 5 di [orig:70 prephitmp.2738 ] [70]) [0 S1 A8])
+            (const_int 34 [0x22]))) 10 {*cmpqi_1} (nil))
+
+(jump_insn 30 29 31 3 src/daisy/scene/CXFileReader.cpp:352 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 131)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 7200 [0x1c20])
+            (nil))))
+
+(note 31 30 214 4 [bb 4] NOTE_INSN_BASIC_BLOCK)
+
+(insn 214 31 33 4 src/daisy/scene/CXFileReader.cpp:352 (set (reg:SI 1 dx [85])
+        (subreg:SI (plus:DI (reg:DI 0 ax [orig:84 s.used ] [84])
+                (const_int -2 [0xfffffffffffffffe])) 0)) 271 {*lea_1_rex64} (nil))
+
+(insn 33 214 34 4 src/daisy/scene/CXFileReader.cpp:352 (set (reg:DI 1 dx [86])
+        (sign_extend:DI (reg:SI 1 dx [85]))) 126 {extendsidi2_rex64} (nil))
+
+(insn 34 33 35 4 src/daisy/scene/CXFileReader.cpp:352 (set (reg:CCZ 17 flags)
+        (compare:CCZ (mem:QI (plus:DI (reg/f:DI 5 di [orig:70 prephitmp.2738 ] [70])
+                    (reg:DI 1 dx [86])) [0 S1 A8])
+            (const_int 59 [0x3b]))) 10 {*cmpqi_1} (expr_list:REG_DEAD (reg:DI 1 dx [86])
+        (nil)))
+
+(jump_insn 35 34 36 4 src/daisy/scene/CXFileReader.cpp:352 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 131)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 7200 [0x1c20])
+            (nil))))
+
+(note 36 35 213 5 [bb 5] NOTE_INSN_BASIC_BLOCK)
+
+(insn 213 36 38 5 src/daisy/scene/CXFileReader.cpp:352 (set (reg:SI 1 dx [87])
+        (subreg:SI (plus:DI (reg:DI 0 ax [orig:84 s.used ] [84])
+                (const_int -3 [0xfffffffffffffffd])) 0)) 271 {*lea_1_rex64} (nil))
+
+(insn 38 213 39 5 src/daisy/scene/CXFileReader.cpp:352 (set (reg:DI 1 dx [88])
+        (sign_extend:DI (reg:SI 1 dx [87]))) 126 {extendsidi2_rex64} (nil))
+
+(insn 39 38 40 5 src/daisy/scene/CXFileReader.cpp:352 (set (reg:CCZ 17 flags)
+        (compare:CCZ (mem:QI (plus:DI (reg/f:DI 5 di [orig:70 prephitmp.2738 ] [70])
+                    (reg:DI 1 dx [88])) [0 S1 A8])
+            (const_int 34 [0x22]))) 10 {*cmpqi_1} (expr_list:REG_DEAD (reg:DI 1 dx [88])
+        (nil)))
+
+(jump_insn 40 39 190 5 src/daisy/scene/CXFileReader.cpp:352 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 131)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 7200 [0x1c20])
+            (nil))))
+
+(note 190 40 192 6 [bb 6] NOTE_INSN_BASIC_BLOCK)
+
+(jump_insn 192 190 193 6 (set (pc)
+        (label_ref 191)) 639 {jump} (nil))
+
+(barrier 193 192 207)
+
+(code_label 207 193 44 7 508 "" [1 uses])
+
+(note 44 207 46 7 [bb 7] NOTE_INSN_BASIC_BLOCK)
+
+(insn 46 44 47 7 src/ox/core/CString.h:111 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/v/f:DI 3 bx [orig:82 out ] [82])
+            (reg/f:DI 41 r12 [102]))) 2 {cmpdi_1_insn_rex64} (expr_list:REG_DEAD (reg/f:DI 41 r12 [102])
+        (nil)))
+
+(jump_insn 47 46 48 7 src/ox/core/CString.h:111 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 52)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 8986 [0x231a])
+            (nil))))
+
+(note 48 47 230 8 [bb 8] NOTE_INSN_BASIC_BLOCK)
+
+(jump_insn 230 48 231 8 (set (pc)
+        (label_ref 91)) -1 (nil))
+
+(barrier 231 230 52)
+
+(code_label 52 231 53 9 493 "" [1 uses])
+
+(note 53 52 54 9 [bb 9] NOTE_INSN_BASIC_BLOCK)
+
+(insn 54 53 55 9 src/ox/core/CString.h:114 (set (reg/f:DI 5 di [orig:73 D.62989 ] [73])
+        (mem/s/f:DI (reg/v/f:DI 3 bx [orig:82 out ] [82]) [26 <variable>.array+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 55 54 56 9 src/ox/core/CString.h:114 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 5 di [orig:73 D.62989 ] [73])
+            (const_int 0 [0x0]))) 0 {cmpdi_ccno_1_rex64} (nil))
+
+(jump_insn 56 55 57 9 src/ox/core/CString.h:114 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 60)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 3017 [0xbc9])
+            (nil))))
+
+(note 57 56 59 10 [bb 10] NOTE_INSN_BASIC_BLOCK)
+
+(call_insn 59 57 60 10 src/ox/core/CString.h:114 (call (mem:QI (symbol_ref:DI ("_ZdaPv") [flags 0x41] <function_decl 0x7ffff7cb5800 operator delete []>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 60 59 61 11 495 "" [1 uses])
+
+(note 61 60 62 11 [bb 11] NOTE_INSN_BASIC_BLOCK)
+
+(insn 62 61 63 11 src/ox/core/CString.h:115 (set (reg:DI 5 di [orig:74 D.62988 ] [74])
+        (sign_extend:DI (mem/s/c:SI (plus:DI (reg/f:DI 7 sp)
+                    (const_int 12 [0xc])) [5 D.43798.used+0 S4 A32]))) 126 {extendsidi2_rex64} (nil))
+
+(insn 63 62 64 11 src/ox/core/CString.h:115 (set (mem/s:SI (plus:DI (reg/v/f:DI 3 bx [orig:82 out ] [82])
+                (const_int 12 [0xc])) [5 <variable>.used+0 S4 A32])
+        (reg:SI 5 di [orig:74 D.62988 ] [74])) 47 {*movsi_1} (nil))
+
+(insn 64 63 67 11 src/ox/core/CString.h:115 (set (mem/s:SI (plus:DI (reg/v/f:DI 3 bx [orig:82 out ] [82])
+                (const_int 8 [0x8])) [5 <variable>.allocated+0 S4 A64])
+        (reg:SI 5 di [orig:74 D.62988 ] [74])) 47 {*movsi_1} (nil))
+
+(call_insn 67 64 168 11 src/ox/core/CString.h:116 (set (reg:DI 0 ax)
+        (call (mem:QI (symbol_ref:DI ("_Znam") [flags 0x41] <function_decl 0x7ffff7cb5600 operator new []>) [0 S1 A8])
+            (const_int 0 [0x0]))) 908 {*call_value_0_rex64} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 2 [0x2])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(note 168 67 71 12 [bb 12] NOTE_INSN_BASIC_BLOCK)
+
+(insn 71 168 72 12 src/ox/core/CString.h:116 (set (mem/s/f:DI (reg/v/f:DI 3 bx [orig:82 out ] [82]) [26 <variable>.array+0 S8 A64])
+        (reg/f:DI 0 ax [orig:72 prephitmp.2716 ] [72])) 89 {*movdi_1_rex64} (nil))
+
+(insn 72 71 240 12 src/ox/core/CString.h:207 (set (reg/v/f:DI 5 di [orig:76 p ] [76])
+        (mem/s/f/c:DI (reg/f:DI 7 sp) [26 D.43798.array+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 240 72 241 12 src/ox/core/CString.h:119 (set (reg:SI 41 r12)
+        (mem/s:SI (plus:DI (reg/v/f:DI 3 bx [orig:82 out ] [82])
+                (const_int 12 [0xc])) [5 <variable>.used+0 S4 A32])) -1 (nil))
+
+(insn 241 240 74 12 src/ox/core/CString.h:119 (set (reg:CCNO 17 flags)
+        (compare:CCNO (reg:SI 41 r12)
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 74 241 75 12 src/ox/core/CString.h:119 (set (pc)
+        (if_then_else (le (reg:CCNO 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 94)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCNO 17 flags)
+        (expr_list:REG_BR_PROB (const_int 900 [0x384])
+            (nil))))
+
+(note 75 74 76 13 [bb 13] NOTE_INSN_BASIC_BLOCK)
+
+(insn 76 75 239 13 src/ox/core/CString.h:119 (set (reg/v/f:DI 1 dx [orig:71 p.2737 ] [71])
+        (reg/v/f:DI 5 di [orig:76 p ] [76])) 89 {*movdi_1_rex64} (nil))
+
+(insn 239 76 88 13 src/ox/core/CString.h:119 (parallel [
+            (set (reg:DI 2 cx [orig:77 i ] [77])
+                (const_int 0 [0x0]))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(code_label 88 239 78 14 497 "" [1 uses])
+
+(note 78 88 211 14 [bb 14] NOTE_INSN_BASIC_BLOCK)
+
+(insn 211 78 79 14 src/ox/core/CString.h:120 (set (reg:DI 4 si [91])
+        (reg/v/f:DI 1 dx [orig:71 p.2737 ] [71])) 89 {*movdi_1_rex64} (nil))
+
+(insn 79 211 80 14 src/ox/core/CString.h:120 (parallel [
+            (set (reg:DI 4 si [91])
+                (minus:DI (reg:DI 4 si [91])
+                    (reg/v/f:DI 5 di [orig:76 p ] [76])))
+            (clobber (reg:CC 17 flags))
+        ]) 312 {*subdi_1_rex64} (expr_list:REG_UNUSED (reg:CC 17 flags)
+        (nil)))
+
+(insn 80 79 81 14 src/ox/core/CString.h:120 (set (reg:QI 6 bp [92])
+        (mem:QI (reg/v/f:DI 1 dx [orig:71 p.2737 ] [71]) [0 S1 A8])) 62 {*movqi_1} (expr_list:REG_EQUIV (mem:QI (reg/v/f:DI 1 dx [orig:71 p.2737 ] [71]) [0 S1 A8])
+        (nil)))
+
+(insn 81 80 82 14 src/ox/core/CString.h:120 (set (mem:QI (plus:DI (reg/f:DI 0 ax [orig:72 prephitmp.2716 ] [72])
+                (reg:DI 4 si [91])) [0 S1 A8])
+        (reg:QI 6 bp [92])) 62 {*movqi_1} (expr_list:REG_DEAD (reg:QI 6 bp [92])
+        (expr_list:REG_DEAD (reg:DI 4 si [91])
+            (expr_list:REG_DEAD (reg/f:DI 0 ax [orig:72 prephitmp.2716 ] [72])
+                (nil)))))
+
+(insn 82 81 83 14 src/ox/core/CString.h:119 (parallel [
+            (set (reg/v:SI 2 cx [orig:77 i ] [77])
+                (plus:SI (reg/v:SI 2 cx [orig:77 i ] [77])
+                    (const_int 1 [0x1])))
+            (clobber (reg:CC 17 flags))
+        ]) 285 {*addsi_1} (expr_list:REG_UNUSED (reg:CC 17 flags)
+        (nil)))
+
+(insn 83 82 84 14 src/ox/core/CString.h:119 (parallel [
+            (set (reg/v/f:DI 1 dx [orig:71 p.2737 ] [71])
+                (plus:DI (reg/v/f:DI 1 dx [orig:71 p.2737 ] [71])
+                    (const_int 1 [0x1])))
+            (clobber (reg:CC 17 flags))
+        ]) 280 {*adddi_1_rex64} (expr_list:REG_UNUSED (reg:CC 17 flags)
+        (nil)))
+
+(insn 84 83 85 14 src/ox/core/CString.h:119 (set (reg:CCGC 17 flags)
+        (compare:CCGC (reg/v:SI 2 cx [orig:77 i ] [77])
+            (mem/s:SI (plus:DI (reg/v/f:DI 3 bx [orig:82 out ] [82])
+                    (const_int 12 [0xc])) [5 <variable>.used+0 S4 A32]))) 5 {*cmpsi_1_insn} (nil))
+
+(jump_insn 85 84 86 14 src/ox/core/CString.h:119 (set (pc)
+        (if_then_else (ge (reg:CCGC 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 91)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCGC 17 flags)
+        (expr_list:REG_BR_PROB (const_int 900 [0x384])
+            (nil))))
+
+(note 86 85 87 15 [bb 15] NOTE_INSN_BASIC_BLOCK)
+
+(insn 87 86 196 15 src/ox/core/CString.h:119 (set (reg/f:DI 0 ax [orig:72 prephitmp.2716 ] [72])
+        (mem/s/f:DI (reg/v/f:DI 3 bx [orig:82 out ] [82]) [26 <variable>.array+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(jump_insn 196 87 197 15 (set (pc)
+        (label_ref 88)) 639 {jump} (nil))
+
+(barrier 197 196 91)
+
+(code_label 91 197 92 16 496 "" [2 uses])
+
+(note 92 91 93 16 [bb 16] NOTE_INSN_BASIC_BLOCK)
+
+(insn 93 92 94 16 src/ox/core/CString.h:119 (set (reg/v/f:DI 5 di [orig:76 p ] [76])
+        (mem/s/f/c:DI (reg/f:DI 7 sp) [26 D.43798.array+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(code_label 94 93 95 17 494 "" [1 uses])
+
+(note 95 94 96 17 [bb 17] NOTE_INSN_BASIC_BLOCK)
+
+(insn 96 95 97 17 src/ox/core/CString.h:105 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/v/f:DI 5 di [orig:76 p ] [76])
+            (const_int 0 [0x0]))) 0 {cmpdi_ccno_1_rex64} (nil))
+
+(jump_insn 97 96 98 17 src/ox/core/CString.h:105 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 110)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 7835 [0x1e9b])
+            (nil))))
+
+(note 98 97 235 18 [bb 18] NOTE_INSN_BASIC_BLOCK)
+
+(jump_insn 235 98 236 18 (set (pc)
+        (label_ref 234)) -1 (nil))
+
+(barrier 236 235 177)
+
+(code_label/s 177 236 180 19 505 "" [1 uses])
+
+(note 180 177 178 19 [bb 19] NOTE_INSN_BASIC_BLOCK)
+
+(insn 178 180 103 19 (set (reg:DI 3 bx [94])
+        (reg:DI 0 ax)) 89 {*movdi_1_rex64} (expr_list:REG_DEAD (reg:DI 0 ax)
+        (nil)))
+
+(note/s 103 178 106 19 "" NOTE_INSN_DELETED_LABEL 500)
+
+(insn 106 103 107 19 src/daisy/scene/CXFileReader.cpp:355 (set (reg:DI 5 di)
+        (reg/f:DI 7 sp)) 89 {*movdi_1_rex64} (expr_list:REG_EQUAL (plus:DI (reg/f:DI 7 sp)
+            (const_int 0 [0x0]))
+        (nil)))
+
+(call_insn 107 106 200 19 src/daisy/scene/CXFileReader.cpp:355 (call (mem:QI (symbol_ref/i:DI ("_ZN2ox4core7CStringIcED1Ev") [flags 0x1] <function_decl 0x7ffff51dd300 __comp_dtor >) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(jump_insn 200 107 201 19 (set (pc)
+        (label_ref 118)) 639 {jump} (nil))
+
+(barrier 201 200 110)
+
+(code_label 110 201 111 20 498 "" [1 uses])
+
+(note 111 110 113 20 [bb 20] NOTE_INSN_BASIC_BLOCK)
+
+(call_insn 113 111 234 20 src/ox/core/CString.h:105 (call (mem:QI (symbol_ref:DI ("_ZdaPv") [flags 0x41] <function_decl 0x7ffff7cb5800 operator delete []>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 234 113 232 31 509 "" [1 uses])
+
+(note 232 234 114 31 [bb 31] NOTE_INSN_BASIC_BLOCK)
+
+(insn 114 232 115 31 src/ox/core/CString.h:105 (set (reg/f:DI 5 di [orig:70 prephitmp.2738 ] [70])
+        (mem/s/f/c:DI (plus:DI (reg/f:DI 7 sp)
+                (const_int 16 [0x10])) [26 s.array+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 115 114 202 31 src/ox/core/CString.h:105 (set (reg:QI 3 bx [orig:79 D.43802 ] [79])
+        (const_int 1 [0x1])) 62 {*movqi_1} (expr_list:REG_EQUAL (const_int 1 [0x1])
+        (nil)))
+
+(jump_insn 202 115 203 31 (set (pc)
+        (label_ref 134)) 639 {jump} (nil))
+
+(barrier 203 202 181)
+
+(code_label/s 181 203 184 21 506 "" [1 uses])
+
+(note 184 181 182 21 [bb 21] NOTE_INSN_BASIC_BLOCK)
+
+(insn 182 184 118 21 (set (reg:DI 3 bx [94])
+        (reg:DI 0 ax)) 89 {*movdi_1_rex64} (expr_list:REG_DEAD (reg:DI 0 ax)
+        (nil)))
+
+(code_label/s 118 182 119 22 501 "" [2 uses])
+
+(note 119 118 121 22 [bb 22] NOTE_INSN_BASIC_BLOCK)
+
+(insn 121 119 122 22 src/daisy/scene/CXFileReader.cpp:356 (set (reg:DI 5 di)
+        (reg/f:DI 6 bp [101])) 89 {*movdi_1_rex64} (expr_list:REG_DEAD (reg/f:DI 6 bp [101])
+        (expr_list:REG_EQUAL (plus:DI (reg/f:DI 20 frame)
+                (const_int -16 [0xfffffffffffffff0]))
+            (nil))))
+
+(call_insn 122 121 174 22 src/daisy/scene/CXFileReader.cpp:356 (call (mem:QI (symbol_ref/i:DI ("_ZN2ox4core7CStringIcED1Ev") [flags 0x1] <function_decl 0x7ffff51dd300 __comp_dtor >) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(insn 174 122 175 22 src/daisy/scene/CXFileReader.cpp:356 (set (reg:DI 5 di)
+        (reg:DI 3 bx [94])) 89 {*movdi_1_rex64} (expr_list:REG_DEAD (reg:DI 3 bx [94])
+        (nil)))
+
+(call_insn 175 174 124 22 src/daisy/scene/CXFileReader.cpp:356 (call (mem:QI (symbol_ref:DI ("_Unwind_Resume") [flags 0x41]) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_NORETURN (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(barrier 124 175 125)
+
+(code_label 125 124 126 23 490 "" [1 uses])
+
+(note 126 125 127 23 [bb 23] NOTE_INSN_BASIC_BLOCK)
+
+(insn 127 126 238 23 src/daisy/scene/CXFileReader.cpp:356 (set (reg/f:DI 5 di [orig:70 prephitmp.2738 ] [70])
+        (mem/s/f/c:DI (plus:DI (reg/f:DI 7 sp)
+                (const_int 16 [0x10])) [26 s.array+0 S8 A64])) 89 {*movdi_1_rex64} (nil))
+
+(insn 238 127 204 23 src/daisy/scene/CXFileReader.cpp:356 (parallel [
+            (set (reg:DI 3 bx [orig:79 D.43802 ] [79])
+                (const_int 0 [0x0]))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(jump_insn 204 238 205 23 (set (pc)
+        (label_ref 134)) 639 {jump} (nil))
+
+(barrier 205 204 131)
+
+(code_label 131 205 132 24 491 "" [3 uses])
+
+(note 132 131 237 24 [bb 24] NOTE_INSN_BASIC_BLOCK)
+
+(insn 237 132 134 24 src/daisy/scene/CXFileReader.cpp:356 (parallel [
+            (set (reg:DI 3 bx [orig:79 D.43802 ] [79])
+                (const_int 0 [0x0]))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(code_label 134 237 135 25 499 "" [2 uses])
+
+(note 135 134 136 25 [bb 25] NOTE_INSN_BASIC_BLOCK)
+
+(insn 136 135 137 25 src/ox/core/CString.h:105 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg/f:DI 5 di [orig:70 prephitmp.2738 ] [70])
+            (const_int 0 [0x0]))) 0 {cmpdi_ccno_1_rex64} (nil))
+
+(jump_insn 137 136 138 25 src/ox/core/CString.h:105 (set (pc)
+        (if_then_else (eq (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 141)
+            (pc))) 618 {*jcc_1} (expr_list:REG_DEAD (reg:CCZ 17 flags)
+        (expr_list:REG_BR_PROB (const_int 2165 [0x875])
+            (nil))))
+
+(note 138 137 140 26 [bb 26] NOTE_INSN_BASIC_BLOCK)
+
+(call_insn 140 138 141 26 src/ox/core/CString.h:105 (call (mem:QI (symbol_ref:DI ("_ZdaPv") [flags 0x41] <function_decl 0x7ffff7cb5800 operator delete []>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_EH_REGION (const_int 0 [0x0])
+            (nil)))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (nil)))
+
+(code_label 141 140 142 27 502 "" [1 uses])
+
+(note 142 141 160 27 [bb 27] NOTE_INSN_BASIC_BLOCK)
+
+(insn 160 142 166 27 src/daisy/scene/CXFileReader.cpp:357 (set (reg/i:QI 0 ax)
+        (reg:QI 3 bx [orig:79 D.43802 ] [79])) 62 {*movqi_1} (expr_list:REG_DEAD (reg:QI 3 bx [orig:79 D.43802 ] [79])
+        (nil)))
+
+(insn 166 160 222 27 src/daisy/scene/CXFileReader.cpp:357 (use (reg/i:QI 0 ax)) -1 (nil))
+
+(note 222 166 223 27 NOTE_INSN_EPILOGUE_BEG)
+
+(insn 223 222 224 27 src/daisy/scene/CXFileReader.cpp:357 (parallel [
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 32 [0x20])))
+            (clobber (reg:CC 17 flags))
+            (clobber (mem:BLK (scratch) [0 A8]))
+        ]) -1 (expr_list:REG_UNUSED (reg:CC 17 flags)
+        (nil)))
+
+(insn 224 223 225 27 src/daisy/scene/CXFileReader.cpp:357 (parallel [
+            (set (reg:DI 3 bx)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 225 224 226 27 src/daisy/scene/CXFileReader.cpp:357 (parallel [
+            (set (reg:DI 6 bp)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(insn 226 225 227 27 src/daisy/scene/CXFileReader.cpp:357 (parallel [
+            (set (reg:DI 41 r12)
+                (mem:DI (reg/f:DI 7 sp) [0 S8 A8]))
+            (set (reg/f:DI 7 sp)
+                (plus:DI (reg/f:DI 7 sp)
+                    (const_int 8 [0x8])))
+        ]) -1 (nil))
+
+(jump_insn 227 226 228 27 src/daisy/scene/CXFileReader.cpp:357 (return) -1 (nil))
+
+(barrier 228 227 191)
+
+(code_label 191 228 147 28 507 "" [1 uses])
+
+(note 147 191 148 28 [bb 28] NOTE_INSN_BASIC_BLOCK)
+
+(insn 148 147 212 28 src/daisy/scene/CXFileReader.cpp:355 (set (reg/f:DI 41 r12 [102])
+        (reg/f:DI 7 sp)) 89 {*movdi_1_rex64} (expr_list:REG_EQUIV (plus:DI (reg/f:DI 7 sp)
+            (const_int 0 [0x0]))
+        (nil)))
+
+(insn 212 148 152 28 src/daisy/scene/CXFileReader.cpp:355 (set (reg:SI 2 cx [99])
+        (subreg:SI (plus:DI (reg:DI 0 ax [orig:84 s.used ] [84])
+                (const_int -4 [0xfffffffffffffffc])) 0)) 271 {*lea_1_rex64} (expr_list:REG_DEAD (reg:DI 0 ax [orig:84 s.used ] [84])
+        (nil)))
+
+(insn 152 212 153 28 src/daisy/scene/CXFileReader.cpp:355 (set (reg:SI 1 dx)
+        (const_int 1 [0x1])) 47 {*movsi_1} (nil))
+
+(insn 153 152 154 28 src/daisy/scene/CXFileReader.cpp:355 (set (reg:DI 4 si)
+        (reg/f:DI 6 bp [101])) 89 {*movdi_1_rex64} (expr_list:REG_EQUAL (plus:DI (reg/f:DI 20 frame)
+            (const_int -16 [0xfffffffffffffff0]))
+        (nil)))
+
+(insn 154 153 155 28 src/daisy/scene/CXFileReader.cpp:355 (set (reg:DI 5 di)
+        (reg/f:DI 7 sp)) 89 {*movdi_1_rex64} (expr_list:REG_EQUAL (plus:DI (reg/f:DI 7 sp)
+            (const_int 0 [0x0]))
+        (nil)))
+
+(call_insn 155 154 206 28 src/daisy/scene/CXFileReader.cpp:355 (call (mem:QI (symbol_ref/i:DI ("_ZNK2ox4core7CStringIcE9subStringEii") [flags 0x1] <function_decl 0x7ffff51d7200 subString>) [0 S1 A8])
+        (const_int 0 [0x0])) 647 {*call_0} (expr_list:REG_DEAD (reg:DI 5 di)
+        (expr_list:REG_DEAD (reg:DI 4 si)
+            (expr_list:REG_DEAD (reg:SI 2 cx)
+                (expr_list:REG_DEAD (reg:SI 1 dx)
+                    (expr_list:REG_EH_REGION (const_int 1 [0x1])
+                        (nil))))))
+    (expr_list:REG_DEP_TRUE (use (reg:DI 5 di))
+        (expr_list:REG_DEP_TRUE (use (reg:DI 4 si))
+            (expr_list:REG_DEP_TRUE (use (reg:SI 1 dx))
+                (expr_list:REG_DEP_TRUE (use (reg:SI 2 cx))
+                    (nil))))))
+
+(note 206 155 208 29 [bb 29] NOTE_INSN_BASIC_BLOCK)
+
+(jump_insn 208 206 209 29 (set (pc)
+        (label_ref 207)) 639 {jump} (nil))
+
+(barrier 209 208 210)
+
+(note 210 209 0 NOTE_INSN_DELETED)
+starting the processing of deferred insns
+ending the processing of deferred insns

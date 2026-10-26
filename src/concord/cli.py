@@ -28,6 +28,7 @@ from concord import (
     place,
     results,
     scores,
+    scratch,
     symbol_audit,
     symbol_table,
 )
@@ -376,6 +377,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_trial.add_argument("--unit", action="append", help="measure these including units first (default: every including unit)")
     p_trial.add_argument("--save", type=Path, required=True)
 
+    p_scratch = sub.add_parser("scratch-history", help="trace actual pinned-compiler scratch searches, including failures")
+    p_scratch.add_argument("--harvest", type=Path, required=True)
+    p_scratch.add_argument("--unit", required=True)
+    p_scratch.add_argument("--symbol", action="append", default=[])
+    p_scratch.add_argument("--directory", type=Path, help="reuse an unchanged collected trace")
+    p_scratch.add_argument("--reference", type=Path, help="compare an earlier structured report")
+    p_scratch.add_argument("--save", type=Path, required=True)
+
     p_survey = sub.add_parser("survey", help="count attributed causes over every inexact Harvest function")
     p_survey.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_survey.add_argument(
@@ -396,6 +405,15 @@ def main(argv: list[str] | None = None) -> int:
         return _seed(args)
     if args.command == "diff":
         return _diff(parser, args)
+    if args.command == "scratch-history":
+        harvest = Harvest(args.harvest)
+        directory = args.directory or scratch.collect(harvest, args.unit)
+        report = scratch.report(harvest, args.unit, directory, args.symbol, args.reference)
+        args.save.write_text(json.dumps(report, indent=2) + "\n")
+        print(f"{report['searches']} actual scratch searches, {report['failed_searches']} failed resets")
+        for event in report['targets']:
+            print(f"{event['function']} uid {event['uid']}: {event['before']} -> {event['after']}, {event['register']}; last reset {event['last_reset']}")
+        return 0
     if args.command == "survey":
         return _survey(args)
     if args.command == "match":
