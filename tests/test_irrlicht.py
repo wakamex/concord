@@ -310,6 +310,20 @@ class Translate(unittest.TestCase):
         self.assertIn("ox::core::CStringFunctions::wideToAnsi(attr->Value.c_str())", out)
         self.assertIn("fast_atof(c.c_str())", out)
 
+    def test_the_x_reader_compares_the_material_token_case_sensitively(self):
+        source = (
+            "bool CXFileReader::parseDataObjectMaterial(SXMaterial& material)\n"
+            "{\n\tcore::stringc objectName = getNextToken();\n"
+            '\tif (objectName.equals_ignore_case("TextureFilename"))\n'
+            '\t{\n\t\tparseDataObjectTextureFilename(material.TextureFileName);\n\t}\n'
+            "\tif (objectName.size())\n\t\treturn false;\n}\n"
+        )
+        out = translate(source)
+        self.assertIn('objectName == "TextureFilename"', out)
+        self.assertNotIn("equals_ignore_case", out)
+        self.assertIn("parseDataObjectTextureFilename(material.TextureFileName);", out)
+        self.assertEqual(translate(out), out)
+
     def test_the_tga_header_is_read_field_by_field(self):
         source = "IImage* CImageLoaderTGA::loadImage(io::IReadFile* file)\n{\n\tSTGAHeader header;\n\tfile->seek(0);\n\tfile->read(&header, sizeof(STGAHeader));\n}\n"
         out = translate(source)

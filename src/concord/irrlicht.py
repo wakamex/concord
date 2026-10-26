@@ -382,6 +382,17 @@ def _translate(source: str, namespace: str) -> str:
         ),
         source, flags=re.MULTILINE | re.DOTALL,
     )
+    # The x-reader's material parser compares the token case-sensitively: the
+    # target constructs a CString and runs its byte loop where the ancestor
+    # calls equals_ignore_case (0x58e68f).
+    source = re.sub(
+        r"^bool CXFileReader::parseDataObjectMaterial\([^)]*\)\s*\{.*?^\}",
+        lambda match: re.sub(
+            r"objectName\.equals_ignore_case\((__concord_literal_\d+__)\)",
+            r"objectName == \1", match[0],
+        ),
+        source, flags=re.MULTILINE | re.DOTALL,
+    )
     # Daisy reads the TGA header field by field, the 16-bit fields through
     # CHelpIO::readShort, as CZipReader reads its packed headers; one read of
     # the packed struct would compile to a single call.
