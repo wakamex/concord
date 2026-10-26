@@ -20,7 +20,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Codex `gpt-6.1-sol` | diagnosis | 2 | 2 of 2 | 2 of 2 | 0 | included above |
 | Codex `gpt-6.1-sol` | rule | 1 | 1 of 1 | 1 of 1 | not applied | $0.74 |
 | Devin `swe-2-high` | capability | 4 | 4 of 4 | 4 of 4 | 1 | $1.88 where recorded |
-| Devin `swe-2-high` | diagnosis | 5 | 5 of 5 | 5 of 5 | 8 | $0.50 to $3.92, mean $2.06 where recorded |
+| Devin `swe-2-high` | diagnosis | 6 | 6 of 6 | 6 of 6 | 8 | $0.50 to $3.92, mean $2.06 where recorded |
 | Devin `swe-2-high` | search | 1 | 1 of 1 | 1 of 1 | 3 | not recorded |
 | Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
@@ -70,3 +70,4 @@ Gaps: Cursor has no search or diagnosis row; Muse has no capability, diagnosis o
 | 2026-10-25 | frame layout | capability | Codex `gpt-6.1-sol` | 0 | clean | holds | | `frames`; class far smaller than assumed |
 | 2026-10-26 | CAlienEntity neighbours | search | Muse `muse-wonder-full-1.0` | 0 | clean | holds | subscription | one partial gain; quota stop and resume |
 | 2026-10-26 | CXFileReader comparison and blockers | diagnosis | Codex `gpt-6.1-sol` | 0 | clean | holds | | 28 newly matched blocked by 2 peephole2 scratch choices |
+| 2026-10-26 | CLuaManager and CVideoNull register-only | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | both units stopped at two interventions; `find_function` now resolves namespace-nested free functions |
