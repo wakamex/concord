@@ -393,3 +393,17 @@ limits = "Two placements tried; both regressed the unit identically. The line is
 evidence = [
   { function = "daisy::io::CXMLReader::getAttributeValueAsFloat", note = "Target 847 bytes with wcstombs inlined; ours 408 with the per-character CString<char> construction. Refresh carries the include; both placements leave setText, replaceSpecialCharacters and the 0x534050 extent inexact at harvest c5d2e4c" },
 ]
+
+
+[[idiom]]
+id = "xreader-material-token-comparison"
+cause = "inlining"
+status = "confirmed"
+symptom = "the ancestor material parser uses a case-insensitive token check while the target constructs and compares a CString"
+fix = "The target's TextureFilename check is objectName == \"TextureFilename\". An authored translation of that check changes the unit's inline budget as well as the parser body. Equal target sizes do not prove byte equality or preserve existing matches; accept a restored body only after the normalized whole-build gate."
+limits = "At Harvest c5d2e4c, restoring all seven bodies with the authored comparison produces Material/SkinWeights/animation-set-destructor sizes 1184/1046/168, matching their target extents. Five existing unit scores still decrease. Restoring only Material with the same comparison also lowers existing scores. Normalized whole-build gates report 28 newly matched, 4 worse, data +1598/-0 bytes for all seven, and 1 newly matched, 3 worse, data +442/-44 bytes for Material alone. Both source interventions are rejected; the translation rule is not enabled, all seven stubs remain, and source experiments stop at this gate. No shared ox header is changed."
+evidence = [
+  { commit = "c5d2e4c", function = "daisy::scene::CXFileReader::parseDataObjectMaterial", note = "At target 0x58e68f the TextureFilename literal is passed to CString construction at 0x416760, followed by a case-sensitive byte loop and destruction. The seven-body ancestor candidate emits sizes 1257/806/169 for Material/SkinWeights/TArray<SXAnimationSet> D1. The authored comparison alone gives 1184/1046/168, confirming the source distinction and its unit-context effect, but neither parser nor destructor is thereby exact." },
+  { commit = "c5d2e4c", function = "daisy::scene::CXFileReader existing matches", note = "With all seven bodies and the corrected comparison, getNextTokenAsString falls 100 to 99.166664, readHeadOfDataObject to 99.104805, MeshTextureCoords to 99.48198, TArray<SXAnimationSet> D1 to 99.916664 and vector<int>::_M_fill_insert to 99.8366. Material alone lowers the first three to 99.833336/99.104805/99.932434. These unit results separate target-sized code from preserved generated code." },
+  { commit = "c5d2e4c", function = "daisy::scene::CXFileReader semantic screen", note = "After the corrected seven-body restoration, inlines --semantic still flags MeshNormals and synthesized vector/SXMesh copies. MeshNormals emits 1561 against 1801 bytes, with one extra out-of-line fast_atof_move call. Several synthesized copies inline CString assignment where the target calls it. The screen identifies source/context candidates rather than proving an additional parser semantic difference. Existing peephole2 scratch rotation and inline-edge ordering remain unresolved." },
+]
