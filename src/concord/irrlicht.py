@@ -472,6 +472,15 @@ def _translate(source: str, namespace: str) -> str:
     # daisy's logger takes the level explicitly where Irrlicht's defaulted it
     source = re.sub(r"\bos::Printer::log\(([^,()]+)\);", r"os::Printer::log(\1, ELL_INFORMATION);", source)
     source = re.sub(r"\bos::Printer::log\(([^,;()]+,(?!\s*ELL_)[^,;]+)\);", r"os::Printer::log(\1, ELL_INFORMATION);", source, flags=re.DOTALL)  # a hint is not a level
+    # daisy re-sorts a deduped index-size array after each push_back, the order
+    # binarySearchPos assumes; the target's createIndexBuffers calls
+    # ox::algo::sort once for widths and once for heights, each in the taken
+    # branch. Authored: Irrlicht's core::array had no such call.
+    source = re.sub(
+        r"if \((widths|heights)\.binary_search\(((?:[^()]|\([^()]*\))+)\)==-1\)\s*\n(\s*)\1\.push_back\(\2\);",
+        r"if (ox::algo::binarySearchPos(\1.begin(), \1.end(), \2)==-1)\n\3{\n\3\t\1.push_back(\2);\n\3\tox::algo::sort(\1.begin(), \1.end());\n\3}",
+        source,
+    )
     for pattern, replacement in CONTAINER_CALLS:
         source = re.sub(pattern, replacement, source)
     # ox's ISceneManager::registerNodeForRendering takes the render time Irrlicht defaulted

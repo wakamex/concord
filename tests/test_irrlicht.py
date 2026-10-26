@@ -6,6 +6,13 @@ from concord.irrlicht import bare, helper_names, name_helpers, translate
 
 
 class Translate(unittest.TestCase):
+    def test_deduped_index_arrays_are_resorted_after_each_push(self):
+        source = "\tif (widths.binary_search(w)==-1)\n\t\twidths.push_back(w);\n"
+        out = translate(source)
+        self.assertIn("ox::algo::binarySearchPos(widths.begin(), widths.end(), w)==-1", out)
+        self.assertIn("\t\t\twidths.push_back(w);\n\t\t\tox::algo::sort(widths.begin(), widths.end());", out)
+        self.assertEqual(translate(out), out)
+
     def test_maya_post_render_sets_the_base_position(self):
         source = "void CCameraMayaSceneNode::OnPostRender(u32 timeMs)\n{\n    animate();\n    setPosition(Pos);\n    updateAbsolutePosition();\n}\n"
         out = translate(source)

@@ -138,6 +138,7 @@ limits = "Verified on CAlienEntity.cpp at harvest 048e50d (unit starts at 22513 
 evidence = [
   { function = "harvest::entity::CAlienEntity replaceWith{Magneto,Looker,Tiny}Sprites", note = "ours 14005/7045/4549 bytes against targets 12437/8485/4741; the 042i.inline dump shows 57 CString-ctor copies popped for Magneto first; same 227 call sites on both sides" },
   { function = "harvest::entity::CDefenseTowerEntity C1/C2 and harvest::states::CPlayState::OnEvent", note = "same cause family per the second reader: C2 target 24437 vs 24325, C1 15365 vs 15573, OnEvent 13607 vs 13263, equal call counts on both sides" },
+  { function = "daisy::scene::CTerrainSceneNode destructors", note = "The sort calls' new edges flipped which equal-badness clone got the one affordable ~ISceneNode inline; defining the destructor after createIndexBuffers instead of after the constructor puts it back on D0. hv search verified 80 exact, no losses." },
 ]
 
 [[idiom]]
@@ -368,4 +369,27 @@ fix = "Group traces by their first observed decision before trying declaration p
 limits = "At Harvest c5d2e4c the 39 register-only candidates cover 31859 bytes. The largest unit groups are CLuaManager (7 functions, 6619 bytes) and CVideoNull (9, 6278). Among their 16 functions, 14 (12115 bytes) have a traced differing instruction first introduced in peephole2; some also have IRA differences. The remaining mechanisms are mixed, so one declaration-order fix for all 39 is unsupported. No shared ox header or source in these units was changed."
 evidence = [
   { commit = "c5d2e4c", function = "harvest::game::CLuaManager and daisy::video::CVideoNull", note = "Traces sampled the first three differences per function: peephole2 introductions occur in six Lua-manager functions and eight video-null functions, including CString loops and vector insertion/sort helpers. harvest_getSelectedBuildings and runPPShader also expose expand or IRA decisions. These are observed stages, not proof that the target compiler followed the same history." },
+]
+
+[[idiom]]
+id = "sorted-array-dedup"
+cause = "inlining"
+status = "confirmed"
+symptom = "a unit's destructors inline a base body the target keeps out of line, and the unit is missing template instantiations the Mac map credits to it"
+fix = "Recover the missing instantiations from the target's call evidence; a bigger unit spends the inline-unit-growth budget the way the original did. daisy re-sorts a deduped array after each push_back inside the taken branch, which binarySearchPos requires; write ox::algo::sort(begin, end) inside the if when the target calls it there."
+limits = "Emitting more functions does not itself undo inlining; the added calls and their instantiation tree must also make the unit's inlining spend match. After the sort calls the inliner could afford ~ISceneNode in only one destructor clone and put it in D1; hv search found the order with the destructor defined after createIndexBuffers that spends it on D0, restoring the target's D0=661/D1=345/D2=345 split and vector<SIndexBuffer>::operator=. calculateNormals stays inexact."
+evidence = [
+  { function = "daisy::scene::CTerrainSceneNode::createIndexBuffers", note = "The target calls ox::algo::sort twice at 0x4d3760 (170 bytes) from inside the binarySearchPos dedup branches; adding the two calls makes the body byte-identical once sort and vector<SIndexBuffer>::_M_insert_aux are placed by learn-calls, and emits the four sort-tree extents 0x4d2fc0, 0x4d30b0, 0x4d36c0, 0x4d3760. ITerrainSceneNode's deleting destructor goes from 373 to the exact 25 bytes." },
+  { commit = "16deaab", function = "daisy::scene::CTerrainSceneNode D0/D1/D2", note = "Definition-order search within the dtor-to-calculateNormals region found an order giving all three clones the target sizes; verified with no unit losses, 80 exact of 81." },
+]
+
+[[idiom]]
+id = "carried-include-context"
+cause = "inlining"
+status = "hypothesis"
+symptom = "an include a refreshed body needs loses exact functions in the same unit wherever in the include block it is added"
+fix = "No working form found. CXMLReader::getAttributeValueAsFloat needs CStringFunctions::wideToAnsi declared for its inlined wcstombs body; adding the header after the first include or after the last both slip setText's frame record by 16 bytes (the unit's replaceSpecialCharacters is 3067 bytes against the target's unnamed 3051-byte clone at 0x534050) and the function still differs. The blocker is the unit's existing inexactness, not the include's position: the original never emitted a wideToAnsi copy (the Mac map credits only ox/game/CConfiguration.cpp), so the declaration reached this unit some other way or the clone-split layout differs first."
+limits = "Two placements tried; both regressed the unit identically. The line is open only if replaceSpecialCharacters' 177-byte-named/3051-byte-clone split is recovered first."
+evidence = [
+  { function = "daisy::io::CXMLReader::getAttributeValueAsFloat", note = "Target 847 bytes with wcstombs inlined; ours 408 with the per-character CString<char> construction. Refresh carries the include; both placements leave setText, replaceSpecialCharacters and the 0x534050 extent inexact at harvest c5d2e4c" },
 ]
