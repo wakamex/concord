@@ -316,9 +316,26 @@ def _translate(source: str, namespace: str) -> str:
     # for every blended field: all 36 nonzero mulss displacements are zero in
     # the target. Preserve that port's behavior, rather than repairing Irrlicht's
     # 32-bit field-offset arithmetic (Goal 3 permits target-proven behavior).
+    def _q3_blend_body(match: re.Match[str]) -> str:
+        body = re.sub(
+            r"\(float\*\)\(\(char\*\)(v\[[^\]\n]+\])\s*\+\s*offset\)",
+            r"(float*)\1",
+            match[0],
+        )
+        comment = "\t// The original 1.18 body ignores offset; see docs/port/original-bugs.md.\n"
+        if comment not in body:
+            body = re.sub(
+                r"^((?:inline\s+)?float\s+CQ3LevelMesh::Blend\([^;{]*\)\s*\{\n)",
+                r"\1" + comment,
+                body,
+                count=1,
+                flags=re.MULTILINE,
+            )
+        return body
+
     source = re.sub(
         r"^(?:inline\s+)?float\s+CQ3LevelMesh::Blend\([^;{]*\)\s*\{.*?^\}",
-        lambda match: re.sub(r"\(float\*\)\(\(char\*\)(v\[[^\]\n]+\])\s*\+\s*offset\)", r"(float*)\1", match[0]),
+        _q3_blend_body,
         source, flags=re.MULTILINE | re.DOTALL,
     )
     # Daisy updates an animated mesh's absolute transform during OnPreRender.

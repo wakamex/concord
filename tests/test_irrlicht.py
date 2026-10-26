@@ -268,6 +268,16 @@ class Translate(unittest.TestCase):
         self.assertNotIn("+ offset", out)
         self.assertIn("int offset", out)
 
+    def test_q3_blend_documents_that_the_port_ignores_offset(self):
+        source = "inline f32 CQ3LevelMesh::Blend(f32 s[3], f32 t[3], tBSPVertex *v[9], int offset)\n{\nptr = (f32 *)( (int)v[i*3+j] + offset );\n}\n"
+        out = translate(source)
+        brace = out.index("{", out.index("CQ3LevelMesh::Blend"))
+        first_body_line = out[brace + 1 :].lstrip("\n").split("\n", 1)[0]
+        self.assertEqual(
+            first_body_line,
+            "\t// The original 1.18 body ignores offset; see docs/port/original-bugs.md.",
+        )
+
     def test_only_animated_mesh_post_render_loses_its_duplicate_update(self):
         source = "void CAnimatedMeshSceneNode::OnPostRender(u32 timeMs)\n{\n\t// update absolute position\n\tupdateAbsolutePosition();\n\trenderChildren();\n}\nvoid CCameraFPSSceneNode::OnPostRender(u32 timeMs)\n{\n\tupdateAbsolutePosition();\n}\n"
         out = translate(source)
