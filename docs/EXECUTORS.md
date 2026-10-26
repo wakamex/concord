@@ -23,7 +23,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Devin `swe-2-high` | diagnosis | 11 | 11 of 11 | 11 of 11 | 9 | $0.50 to $3.92, mean $2.06 where recorded |
 | Devin `swe-2-high` | search | 1 | 1 of 1 | 1 of 1 | 3 | not recorded |
 | Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
-| Codex `gpt-6.1-terra` | diagnosis | 1 | 1 of 1 | 1 of 1 | 0 | $0.19 |
+| Codex `gpt-6.1-terra` | diagnosis | 2 | 2 of 2 | 2 of 2 | 0 | $0.17 to $0.19 |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
 | Muse `muse-wonder-full-1.0` | capability | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 29.6M input tokens |
 | Cursor `composer-2.5` | search | 1 | 1 of 1 | 1 of 1 | 0 | 1.66M input tokens, a fraction of a percent of the month |
@@ -86,3 +86,4 @@ Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a ch
 | 2026-10-26 | CXFileReader's extra template copies | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | falsified its own earlier claim: all seven copies exist in the target; the difference is inlining inside them, not a source construct; spent neither intervention |
 | 2026-10-26 | hand-solve CXFileReader's size mismatches | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | both size differences are inliner choices of which calls stay out of line; no source difference; four variants rejected |
 | 2026-10-26 | CXFileReader's inlined callees against the original's copies | diagnosis | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.19 | both header definitions compile to the original's code; `operator=` copies differ only by peephole2 registers; 2 minutes |
+| 2026-10-26 | IGUIElement::updateAbsolutePosition header candidate | diagnosis | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.17 | all 22 copies identical, differing from the target by two reversed clipping comparisons; Irrlicht calls `clipAgainst` where the translation expands it; trial blocked by a missing objdiff-cli |
