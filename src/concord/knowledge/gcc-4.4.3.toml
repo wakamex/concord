@@ -314,6 +314,17 @@ evidence = [
 ]
 
 [[idiom]]
+id = "gui-clipping-comparison-order"
+cause = "operand-order"
+status = "hypothesis"
+symptom = "All 22 emitted copies of IGUIElement::updateAbsolutePosition have the target size and calls, but reverse the operands and branch conditions of the two lower-right clipping comparisons."
+fix = "Investigate the source structure that computes the clipping rectangle before changing comparisons. Irrlicht 0.7 calls rect::clipAgainst, whose body contains the same comparisons; whether that call structure produces the target bytes remains untested."
+limits = "Identical copies show a shared difference but do not rule out a declaration context shared by the units or prove the original source. GCC 4.4 can fold equivalent relational spellings to the same comparison. A source counterfactual and whole-build validation are needed."
+evidence = [
+  { function = "ox::gui::IGUIElement::updateAbsolutePosition", note = "Harvest seed/terra-read 9dff9df: target 0x4fe810, 233 bytes. All 22 emitted sections are byte-identical and 233 bytes. concord diff identifies reversed cmp and branch pairs at target offsets 0x80 and 0x89; causal traces them to IGUIElement.h lines 110 and 112. Both versions have two indirect calls. The available causal-trial could not score candidates because objdiff-cli was absent." },
+]
+
+[[idiom]]
 id = "address-arithmetic"
 cause = "struct-layout"
 status = "hypothesis"
