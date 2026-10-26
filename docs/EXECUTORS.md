@@ -19,7 +19,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Codex `gpt-6.1-sol` | search | 1 | 1 of 1 | 1 of 1 | 17 | included above |
 | Codex `gpt-6.1-sol` | diagnosis | 2 | 2 of 2 | 2 of 2 | 0 | included above |
 | Codex `gpt-6.1-sol` | rule | 1 | 1 of 1 | 1 of 1 | not applied | $0.74 |
-| Devin `swe-2-high` | capability | 4 | 4 of 4 | 4 of 4 | 1 | $1.88 where recorded |
+| Devin `swe-2-high` | capability | 5 | 5 of 5 | 5 of 5 | 1 | $1.88 where recorded |
 | Devin `swe-2-high` | diagnosis | 7 | 7 of 7 | 7 of 7 | 9 | $0.50 to $3.92, mean $2.06 where recorded |
 | Devin `swe-2-high` | search | 1 | 1 of 1 | 1 of 1 | 3 | not recorded |
 | Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
@@ -76,3 +76,4 @@ Gaps: Cursor has no diagnosis row; Muse has no diagnosis or rule row.
 | 2026-10-26 | stable progress report names (Harvest tooling) | capability | Muse `muse-wonder-full-1.0` | 0 | clean | holds | subscription; 29.6M input tokens | simulated bot diff on #38: 6 broken matches to 0, 34 regressions to 2; measures identical; toolchain tests run by the master session |
 | 2026-10-26 | `runPPShader` one-byte difference | diagnosis | Devin `swe-2-high` | 1 | clean | holds | | a missing `BilinearFilter = false;`, not register allocation; `concord author` for authored source in units with no Irrlicht ancestor |
 | 2026-10-26 | CAlienEntity `render` and `updateMinerMovement` | search | Cursor `composer-2.5` | 0 | clean | holds | 0.3% of the month | 12 numbered rules, all kept; `updateMinerMovement` 94.28 to 95.96; `render` reached 97.97 in permute but `finish` could not type its temporaries |
+| 2026-10-26 | `finish` names template-id temporaries | capability | Devin `swe-2-high` | 0 | clean | holds | | `CRect<int>` temporaries were named `cRect<int>`; `render` written at 97.97 in its unit, whole-build fuzzy 95.85 to 96.66 |
