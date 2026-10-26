@@ -168,6 +168,19 @@ class KnowledgeBase(unittest.TestCase):
                 self.assertTrue(i.fix and i.symptom)
                 self.assertTrue(all("commit" in e or "note" in e for e in i.evidence), i.id)
 
+    def test_the_reader_size_diagnosis_is_recorded(self):
+        from concord import knowledge
+
+        entries = [
+            e for i in knowledge.load("gcc-4.4.3")
+            for e in i.evidence
+            if e.get("function") == "CXFileReader MeshNormals and AnimationSet restored sizes"
+        ]
+        self.assertEqual(len(entries), 1)
+        note = entries[0]["note"]
+        self.assertIn("fast_atof_move", note)
+        self.assertIn("operator=", note)
+
 
 if __name__ == "__main__":
     unittest.main()
