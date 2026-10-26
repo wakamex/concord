@@ -11,6 +11,7 @@ from pathlib import Path
 
 from concord import (
     __version__,
+    authored,
     bench,
     blockers,
     calls,
@@ -292,6 +293,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_calls.add_argument("--object", type=Path, help="use one compiled candidate instead of its canonical object")
     p_calls.add_argument("--constructor-aliases", action="store_true", help="instead reconcile named constructor copies whose exact code and relocations are identical")
 
+    p_author = sub.add_parser("author", help="prove registered authored source exact for one function, then write it")
+    p_author.add_argument("function", help="target function symbol")
+    p_author.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_author.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
+    p_author.add_argument("--apply", action="store_true", help="write a proven candidate over the unit's file")
+    p_author.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
+
     p_place = sub.add_parser("place", help="learn references and place called templates without re-seeding source")
     p_place.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_place.add_argument("units", nargs="+", help="units to refresh")
@@ -565,6 +573,30 @@ def main(argv: list[str] | None = None) -> int:
         removed, freed = Harvest(args.harvest).clean(args.older_than * 3600)
         print(f"removed {removed} work directories, {freed / 1e9:.1f} GB")
         return 0
+    if args.command == "author":
+        harvest = Harvest(args.harvest)
+        unit = harvest.source(args.unit)
+        report = authored.apply(harvest, unit, args.function, write=args.apply)
+        patch = (
+            results.save_patch(args.results, unit, report["original"], report["source"]) if report["applied"] else None
+        )
+        results.record(
+            args.results,
+            {
+                "command": "author",
+                "harvest": results.commit(harvest.root),
+                "unit": unit,
+                "symbol": args.function,
+                "chosen": report["chosen"],
+                "applied": report["applied"],
+                "patch": patch,
+            },
+        )
+        for name, row in report["candidates"].items():
+            flags = ", ".join(k for k in ("error" if row["error"] else None, "exact" if row["exact"] else None, "kept" if row["kept"] else None) if k)
+            print(f"  {name}: {flags or 'rejected'} (score {row['score']})")
+        print(f"author {unit} {args.function}: {report['chosen'] or 'no candidate proven'}{' (applied)' if report['applied'] else ''}")
+        return 0 if report["chosen"] else 1
     if args.command == "place":
         harvest = Harvest(args.harvest)
         if args.object and (len(args.units) != 1 or args.restore_literals):
