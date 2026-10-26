@@ -51,15 +51,32 @@ def _name_and_arity(demangled: str) -> tuple[str, int]:
     return "::".join(parts[-2:]), arity
 
 
-def _declarator_name(node: Node) -> str:
-    """Qualified name of a function_definition's declarator, without templates."""
+def _declarator_parts(node: Node) -> list[str]:
+    """A function_definition declarator's name as qualification parts, without templates."""
     d = node.child_by_field_name("declarator")
     while d is not None and d.type != "function_declarator":
         d = d.child_by_field_name("declarator")
     if d is None:
-        return ""
+        return []
     name = d.child_by_field_name("declarator").text.decode()
-    return "::".join(re.sub(r"<[^<>]*>", "", name).replace(" ", "").split("::")[-2:])
+    return re.sub(r"<[^<>]*>", "", name).replace(" ", "").split("::")
+
+
+def _declarator_name(node: Node) -> str:
+    """Qualified name of a function_definition's declarator, without templates."""
+    return "::".join(_declarator_parts(node)[-2:])
+
+
+def _namespace_path(node: Node) -> list[str]:
+    """The names of the namespaces enclosing a node, outermost first."""
+    path, ancestor = [], node.parent
+    while ancestor is not None:
+        if ancestor.type == "namespace_definition":
+            name = ancestor.child_by_field_name("name")
+            if name is not None:
+                path[:0] = name.text.decode().split("::")
+        ancestor = ancestor.parent
+    return path
 
 
 def _arity(node: Node) -> int:
@@ -77,15 +94,20 @@ def _arity(node: Node) -> int:
 
 def find_function(source: bytes, symbol: str) -> Node:
     """The definition of the symbol's function in source, matched by class,
-    name and parameter count."""
-    name, arity = _name_and_arity(demangle(symbol))
+    name and parameter count. An unqualified declarator is also found by the
+    namespaces enclosing it, such as `f` inside `namespace a { namespace b {`."""
+    demangled = demangle(symbol)
+    name, arity = _name_and_arity(demangled)
+    parts = re.sub(r"<[^<>]*>", "", demangled.partition("(")[0]).replace(" ", "").split("::")
     tree = Parser(CPP).parse(source)
     found = []
     stack = [tree.root_node]
     while stack:
         node = stack.pop()
-        if node.type == "function_definition" and _declarator_name(node) == name and _arity(node) == arity:
-            found.append(node)
+        if node.type == "function_definition" and _arity(node) == arity:
+            declarator = _declarator_parts(node)
+            if "::".join(declarator[-2:]) == name or _namespace_path(node) + declarator == parts:
+                found.append(node)
         stack.extend(node.children)
     if not found:
         raise KeyError(f"no definition of {name} in the source")

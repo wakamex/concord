@@ -57,6 +57,26 @@ class SwapOperands(unittest.TestCase):
         self.assertIn(b"return a == 2;", first)
 
 
+NESTED = b"""namespace a {
+namespace b {
+int f(int x) { return x + 1; }
+int g() { return f(0); }
+}
+}
+"""
+
+
+@unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
+class FindFunction(unittest.TestCase):
+    def test_finds_an_unqualified_definition_by_its_enclosing_namespaces(self):
+        function = find_function(NESTED, "_ZN1a1b1fEi")  # a::b::f(int)
+        self.assertIn(b"x + 1", function.text)
+
+    def test_rejects_a_definition_in_other_namespaces(self):
+        with self.assertRaises(KeyError):
+            find_function(NESTED, "_ZN4game1fEi")  # game::f()
+
+
 BRANCHES = b"""int Board::pick(int a)
 {
     if (!a) return 1; else { a++; }
