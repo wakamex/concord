@@ -1,0 +1,20 @@
+{
+  "compiler": "GCC 4.4.3",
+  "harvest_base": "63bf9dc",
+  "unit": "daisy/scene/CXFileReader.cpp",
+  "scope": "Unedited function dump sections for the two unchanged reader functions in the seven-body restored unit.",
+  "inputs": {
+    "181r.csa": {
+      "source_sha256": "7a81bc90e64becb5ce3b99dbcd9d778f6e417237bc3ae7ced37723d5f28a7ba0",
+      "fixture_sha256": "9c8e550454e8fd90dfb8c902f0e46912ecd2387f44a4998b002f49d13c1ba5f9"
+    },
+    "182r.peephole2": {
+      "source_sha256": "97002e0075e8d0ccf729ad8459a1e98f8c3801a4fc5ae307c703b4304af1b8f9",
+      "fixture_sha256": "e2d1cf0186a2b1bdecbcf03bd3ce5daff6d6f3c4d498f4cb2f939aba8bfd7dea"
+    }
+  },
+  "instructions": {
+    "_ZN5daisy5scene12CXFileReader20getNextTokenAsStringERN2ox4core7CStringIcEE": 240,
+    "_ZN2ox6TArrayIN5daisy5scene12CXFileReader14SXAnimationSetEED1Ev": 113
+  }
+}

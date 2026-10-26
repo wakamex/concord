@@ -37,7 +37,7 @@ from concord.harvest import BUILD, Harvest
 from concord.irrlicht import helper_names, name_helpers
 from concord.lines import editable, inline_chains
 from concord.model import Cause, DiffResult
-from concord.order import apply_order, search_order
+from concord.order import apply_order, measure_placements, search_order
 from concord.permute import near_misses, permute
 from concord.phase import PHASES, scan, spans
 from concord.repair import repair
@@ -134,6 +134,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_sweep.add_argument("--seed", type=int, default=0)
     p_sweep.add_argument("--apply", action="store_true", help="write verified pure-reorder gains into the sources")
     p_sweep.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
+
+    p_placement = sub.add_parser("definition-placement", help="measure one definition's positions against reference source")
+    p_placement.add_argument("--harvest", type=Path, required=True)
+    p_placement.add_argument("--unit", required=True)
+    p_placement.add_argument("--method", required=True)
+    p_placement.add_argument("--reference-source", type=Path, required=True)
+    p_placement.add_argument("--budget", type=int, default=72)
+    p_placement.add_argument("--save", type=Path, required=True)
 
     p_rerun = sub.add_parser(
         "rerun", help="repeat every logged search that improved a function without matching it, and write the gains"
@@ -386,6 +394,11 @@ def main(argv: list[str] | None = None) -> int:
         return _match(args)
     if args.command == "permute":
         return _permute(parser, args)
+    if args.command == "definition-placement":
+        report = measure_placements(Harvest(args.harvest), args.unit, args.method,
+                                    args.reference_source, args.save, args.budget)
+        print(f"{report['selected']}: {len(report['verification']['worse'])} lower unit scores; {report['evaluated']} placements")
+        return 0
     if args.command == "sweep":
         return _sweep(args)
     if args.command == "layout":

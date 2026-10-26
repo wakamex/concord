@@ -29,6 +29,29 @@ class CompilerDecisions(unittest.TestCase):
         records = causal.listing_instructions(listing, symbol, 0, b'\xc3')
         self.assertEqual(records[0]['uid'], 12)
 
+    def test_real_reader_scratch_choices_are_introduced_in_peephole2(self):
+        directory = FIXTURE.parent / 'gcc-4.4.3-reader-scratch'
+        metadata = json.loads((directory / 'provenance.json').read_text())
+        wanted = {symbol: {uid} for symbol, uid in metadata['instructions'].items()}
+        histories = causal.histories_many(directory, wanted)
+        for symbol, uid in metadata['instructions'].items():
+            decision = causal.decision(histories[symbol][uid], Cause.REGISTER_ALLOCATION)
+            self.assertEqual(decision['kind'], 'instruction-introduction')
+            self.assertEqual(decision['after']['pass'], 'peephole2')
+            self.assertEqual(decision['after']['pass_number'], 182)
+            pattern = decision['after']['pattern']
+            if 'getNextTokenAsString' in symbol:
+                self.assertIn('<variable>.used', pattern)
+                self.assertEqual(decision['after']['source']['path'], 'src/ox/core/CString.h')
+                self.assertIn('r9', pattern)
+            else:
+                self.assertIn('(reg:DI 6 bp)', pattern)
+                self.assertIn('(const_int 8', pattern)
+                self.assertEqual(decision['after']['source']['path'], 'src/ox/TArray.h')
+        for stage, evidence in metadata['inputs'].items():
+            self.assertEqual(hashlib.sha256((directory / ('trace.' + stage)).read_bytes()).hexdigest(),
+                             evidence['fixture_sha256'])
+
     def test_ira_assigns_real_registers_to_the_expression(self):
         history = causal.histories(FIXTURE, '_Z1fii', {8})[8]
         decision = causal.decision(history, Cause.REGISTER_ALLOCATION)
