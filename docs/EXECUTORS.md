@@ -15,7 +15,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 
 | Executor | Kind | Tasks | Gates clean | Diff holds | Newly exact functions | Cost per task |
 | --- | --- | ---: | --- | --- | ---: | --- |
-| Codex `gpt-6.1-sol` | capability | 7 | 7 of 7 | 7 of 7 | 39 | about $39 for all its tasks since 2026-10-24 |
+| Codex `gpt-6.1-sol` | capability | 8 | 8 of 8 | 8 of 8 | 39 | about $39 for all its tasks since 2026-10-24 |
 | Codex `gpt-6.1-sol` | search | 1 | 1 of 1 | 1 of 1 | 17 | included above |
 | Codex `gpt-6.1-sol` | diagnosis | 2 | 2 of 2 | 2 of 2 | 0 | included above |
 | Codex `gpt-6.1-sol` | rule | 1 | 1 of 1 | 1 of 1 | not applied | $0.74 |
@@ -79,3 +79,4 @@ Gaps: Cursor has no diagnosis row; Muse has no diagnosis or rule row.
 | 2026-10-26 | `finish` names template-id temporaries | capability | Devin `swe-2-high` | 0 | clean | holds | | `CRect<int>` temporaries were named `cRect<int>`; `render` written at 97.97 in its unit, whole-build fuzzy 95.85 to 96.66 |
 | 2026-10-26 | keep the maintainer's `Blend` comment in translation | rule | Cursor `composer-2.5` | 0 | clean | holds | | 10 numbered rules, all kept; one minute; translation equals the file byte for byte |
 | 2026-10-26 | complete peephole scratch-search history | capability | Codex `gpt-6.1-sol` | 0 | concord checks; no Harvest change | pending master review | | Four observed compiles equal canonical objects; reader blockers named by their incoming positions and predecessors; source correction remains unresolved |
+| 2026-10-26 | peephole2 scratch-search replay | capability | Codex `gpt-6.1-sol` | 0 | clean | holds | | `scratch-history` traces the pinned compiler; four traced objects identical to canonical; names both CXFileReader blockers' search positions |
