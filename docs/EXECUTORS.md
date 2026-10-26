@@ -26,7 +26,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
 | Muse `muse-wonder-full-1.0` | capability | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 29.6M input tokens |
 | Cursor `composer-2.5` | search | 1 | 1 of 1 | 1 of 1 | 0 | 1.66M input tokens, a fraction of a percent of the month |
-| Cursor `composer-2.5` | rule | 1 | 0 of 1 | 0 of 1 | 0 | not recorded |
+| Cursor `composer-2.5` | rule | 2 | 1 of 2 | 1 of 2 | 0 | not recorded |
 | Claude `claude-haiku-5-5` | rule | 1 | 0 of 1 | 0 of 1 | 0 | $0.67 |
 | Codex `gpt-6-luna` | rule | 1 | 0 of 1 | 0 of 1 | 0 | $0.01 |
 
@@ -77,3 +77,4 @@ Gaps: Cursor has no diagnosis row; Muse has no diagnosis or rule row.
 | 2026-10-26 | `runPPShader` one-byte difference | diagnosis | Devin `swe-2-high` | 1 | clean | holds | | a missing `BilinearFilter = false;`, not register allocation; `concord author` for authored source in units with no Irrlicht ancestor |
 | 2026-10-26 | CAlienEntity `render` and `updateMinerMovement` | search | Cursor `composer-2.5` | 0 | clean | holds | 0.3% of the month | 12 numbered rules, all kept; `updateMinerMovement` 94.28 to 95.96; `render` reached 97.97 in permute but `finish` could not type its temporaries |
 | 2026-10-26 | `finish` names template-id temporaries | capability | Devin `swe-2-high` | 0 | clean | holds | | `CRect<int>` temporaries were named `cRect<int>`; `render` written at 97.97 in its unit, whole-build fuzzy 95.85 to 96.66 |
+| 2026-10-26 | keep the maintainer's `Blend` comment in translation | rule | Cursor `composer-2.5` | 0 | clean | holds | | 10 numbered rules, all kept; one minute; translation equals the file byte for byte |
