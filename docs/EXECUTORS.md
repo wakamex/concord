@@ -20,7 +20,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Codex `gpt-6.1-sol` | diagnosis | 2 | 2 of 2 | 2 of 2 | 0 | included above |
 | Codex `gpt-6.1-sol` | rule | 1 | 1 of 1 | 1 of 1 | not applied | $0.74 |
 | Devin `swe-2-high` | capability | 5 | 5 of 5 | 5 of 5 | 1 | $1.88 where recorded |
-| Devin `swe-2-high` | diagnosis | 10 | 10 of 10 | 10 of 10 | 9 | $0.50 to $3.92, mean $2.06 where recorded |
+| Devin `swe-2-high` | diagnosis | 11 | 11 of 11 | 11 of 11 | 9 | $0.50 to $3.92, mean $2.06 where recorded |
 | Devin `swe-2-high` | search | 1 | 1 of 1 | 1 of 1 | 3 | not recorded |
 | Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
@@ -83,3 +83,4 @@ Gaps: Cursor has no diagnosis row; Muse has no diagnosis or rule row.
 | 2026-10-26 | CPlayState::render | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | no source difference: identical calls and immediates; ordering differences from unit context; two searches stopped |
 | 2026-10-26 | CXFileReader blockers by scratch position | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | definition order cannot move the emit slots; the restoration emits seven template copies the target never did, so the lever is the parser bodies |
 | 2026-10-26 | CXFileReader's extra template copies | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | falsified its own earlier claim: all seven copies exist in the target; the difference is inlining inside them, not a source construct; spent neither intervention |
+| 2026-10-26 | hand-solve CXFileReader's size mismatches | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | both size differences are inliner choices of which calls stay out of line; no source difference; four variants rejected |
