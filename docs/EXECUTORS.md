@@ -24,6 +24,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Devin `swe-2-high` | search | 1 | 1 of 1 | 1 of 1 | 3 | not recorded |
 | Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
+| Muse `muse-wonder-full-1.0` | capability | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 29.6M input tokens |
 | Cursor `composer-2.5` | rule | 1 | 0 of 1 | 0 of 1 | 0 | not recorded |
 | Claude `claude-haiku-5-5` | rule | 1 | 0 of 1 | 0 of 1 | 0 | $0.67 |
 | Codex `gpt-6-luna` | rule | 1 | 0 of 1 | 0 of 1 | 0 | $0.01 |
@@ -35,7 +36,7 @@ Evaluation:
 - Muse `muse-wonder-full-1.0`: one search task, precise and honest, but its 5-hour and weekly subscription windows run out quickly (3.13x pace after one day on 2026-10-26); aop's resume continues a run after the window resets.
 - Cursor `composer-2.5`: its only concord task wrote C++11 lambdas, which GCC 4.4 rejects, against a constraint stated in prose; elsewhere it keeps constraints written as numbered checkable rules, so briefs for it list them that way, and its process may not exit after its report, so its job is stopped once the report exists.
 
-Gaps: Cursor has no search or diagnosis row; Muse has no capability, diagnosis or rule row.
+Gaps: Cursor has no search or diagnosis row; Muse has no diagnosis or rule row.
 
 ## Log
 
@@ -71,3 +72,4 @@ Gaps: Cursor has no search or diagnosis row; Muse has no capability, diagnosis o
 | 2026-10-26 | CAlienEntity neighbours | search | Muse `muse-wonder-full-1.0` | 0 | clean | holds | subscription | one partial gain; quota stop and resume |
 | 2026-10-26 | CXFileReader comparison and blockers | diagnosis | Codex `gpt-6.1-sol` | 0 | clean | holds | | 28 newly matched blocked by 2 peephole2 scratch choices |
 | 2026-10-26 | CLuaManager and CVideoNull register-only | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | both units stopped at two interventions; `find_function` now resolves namespace-nested free functions |
+| 2026-10-26 | stable progress report names (Harvest tooling) | capability | Muse `muse-wonder-full-1.0` | 0 | clean | holds | subscription; 29.6M input tokens | simulated bot diff on #38: 6 broken matches to 0, 34 regressions to 2; measures identical; toolchain tests run by the master session |
