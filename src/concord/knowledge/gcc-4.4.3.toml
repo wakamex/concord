@@ -551,3 +551,14 @@ evidence = [
   { commit = "880f8c0", function = "harvest::gui::CHighscoreScreen::OnEvent", note = "The candidate and target both contain `cmp eax, 1` at function offset 0x2d for the outer event-type switch. The candidate contains 19 `mov eax, 1` instructions against 18 in the target; the comparison was incorrectly selected to represent that count difference. No source intervention is supported by that comparison." },
   { commit = "880f8c0", function = "harvest::gui::CHighscoreScreen::parseHighscoreString", note = "At the three status-line getLocalizedText sites the target indexes GameMode, Planet and SortMode into .rodata+0x200, +0x240 and +0x280 (GAME_MODE_NAMES, HIGHSCORE_PLANET_NAMES, HIGHSCORE_SORT_MODES). A file-scope HIGHSCORE_TYPE_NAMES table ahead of them shifted those bases by 0x20. Removing it and moving the type table into setVisible passes the whole-build gate but GCC 4.4.3 still places the function-local pointer table at .rodata+0x200, so the status relocations stay misaligned. Literal type keys move GAME/PLANET/SORT to the target offsets but lower setVisible 89.8 to 86.0 and fail the gate." },
 ]
+
+[[idiom]]
+id = "misplaced-image-constructor-reference"
+cause = "immediate-or-reloc"
+status = "confirmed"
+symptom = "a string reference in a copy constructor disagrees with the reported target function even though the other constructor variant uses the source string"
+fix = "Identify the target function from its control flow and callers before changing the source. A guessed address can belong to an entirely different function, so its string is not evidence of a constructor change or an inlined constructor callee."
+limits = "At Harvest d08eb20 the CImage copy constructor's compiled C2 is 392 bytes and is reported at 0x4decb0 with score 14.092784; that address belongs to drawRectangle. The known C1 constructor at 0x4deb30 scores 87.37037, and its 382-byte original uses the unsupported-copy-format string already present in source. No CImage source change is indicated by this reference difference."
+evidence = [
+  { commit = "d08eb20", function = "daisy::video::CImage::CImage(ECOLOR_FORMAT, IImage*)", note = "The target rectangle-overload wrapper at 0x4def32 jumps to 0x4decb0, whose format check and pixel loops implement drawRectangle(int, int, int, int, SColor). Its format-error branch uses the CImage is not A1R5G5B5 string at 0x60e628. The known constructor at 0x4deb30 and another 382-byte constructor at 0x4de9b0 instead load the CImage: Unsupported format to copy from. string at 0x60e660. The C2 report associates its candidate with the rectangle extent, so the one-sided strings compare different functions." },
+]

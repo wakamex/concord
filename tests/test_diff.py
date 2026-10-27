@@ -207,6 +207,20 @@ class KnowledgeBase(unittest.TestCase):
         self.assertIn("99.48623", entry.limits)
         self.assertEqual(len(entry.evidence), 2)
 
+    def test_misplaced_image_constructor_is_available_for_reference_diagnosis(self):
+        from concord import knowledge
+
+        entries = [
+            i for i in knowledge.for_causes(knowledge.load("gcc-4.4.3"), {Cause.IMMEDIATE_OR_RELOC})
+            if i.id == "misplaced-image-constructor-reference"
+        ]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].status, "confirmed")
+        note = entries[0].evidence[0]["note"]
+        self.assertIn("0x4decb0", note)
+        self.assertIn("0x4def32", note)
+        self.assertIn("0x60e660", note)
+
 
 if __name__ == "__main__":
     unittest.main()
