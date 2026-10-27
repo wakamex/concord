@@ -14,6 +14,7 @@ from concord.seed import (
     UNDEFINED,
     SeedResult,
     _color_helpers,
+    _complete_config_members,
     _declare_members,
     _discard,
     _in_code,
@@ -817,6 +818,62 @@ class PortGuard(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(seed_module.subprocess, "run", run):
             self.assertEqual(port_unresolved(Path(tmp)), {})
         self.assertEqual(commands, ["harvest", "census"])
+
+
+class ConfigMembers(unittest.TestCase):
+    IRRLICHT = (
+        "#ifndef __C_IMAGE_LOADER_JPG_H_INCLUDED__\n#define __C_IMAGE_LOADER_JPG_H_INCLUDED__\n\n"
+        '#include "IImageLoader.h"\n#include <stdio.h>\n\n#include "IrrCompileConfig.h"\n'
+        '#ifdef _IRR_COMPILE_WITH_LIBJPEG_\nextern "C" {\n#include "jpeglib/jconfig.h"\n#include "jpeglib/jpeglib.h"\n}\n#endif\n\n'
+        "namespace irr\n{\nnamespace video\n{\nclass CImageLoaderJPG : public IImageLoader\n{\npublic:\n\tCImageLoaderJPG();\n\n"
+        "#ifdef _IRR_COMPILE_WITH_LIBJPEG_\nprivate:\n\tstatic void init_source (j_decompress_ptr cinfo);\n"
+        "\tstatic u8 fill_input_buffer (j_decompress_ptr cinfo);\n#endif\n};\n\n}\n}\n#endif\n"
+    )
+    STAND_IN = (
+        "// PROVISIONAL: only the JPEG writer CVideoOpenGL::saveJpegScreenshot calls is declared; the full\n"
+        "// header of the CImageLoaderJPG unit replaces this one.\n"
+        "#ifndef DAISY_VIDEO_NULL_CIMAGELOADERJPG_H\n#define DAISY_VIDEO_NULL_CIMAGELOADERJPG_H\n"
+        '#include "../../../ox/video/IImageLoader.h"\n\n'
+        "namespace ox {\nnamespace io { class IWriteFile; }\n}\n\n"
+        "namespace daisy {\nnamespace video {\n\nclass CImageLoaderJPG : public ox::video::IImageLoader\n{\npublic:\n"
+        "    CImageLoaderJPG();\n"
+        "    static bool saveImage(ox::io::IWriteFile* file, unsigned char* data, int width, int height, int channels);\n"
+        "};\n\n}\n}\n#endif\n"
+    )
+
+    def test_the_stand_in_gets_the_libjpeg_switch_and_callbacks_and_keeps_its_members(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / IRRLICHT_SOURCE).mkdir(parents=True)
+            (root / IRRLICHT_SOURCE / "CImageLoaderJPG.h").write_text(self.IRRLICHT)
+            header = root / "src/daisy/video/Null/CImageLoaderJPG.h"
+            header.parent.mkdir(parents=True)
+            header.write_text(self.STAND_IN)
+            originals: dict[str, str] = {}
+            self.assertTrue(_complete_config_members(root, "daisy/video/Null/CImageLoaderJPG.cpp", originals))
+            out = header.read_text()
+            self.assertEqual(originals, {"daisy/video/Null/CImageLoaderJPG.h": self.STAND_IN})
+            self.assertIn('#include <stdio.h>\n#define _IRR_COMPILE_WITH_LIBJPEG_\nextern "C" {\n#include <jconfig.h>\n#include <jpeglib.h>\n}\n\nnamespace ox', out)
+            self.assertIn("    static bool saveImage(ox::io::IWriteFile* file", out)
+            self.assertIn(
+                "private:\n    static void init_source (j_decompress_ptr cinfo);\n"
+                "    static boolean fill_input_buffer (j_decompress_ptr cinfo);\n};\n",
+                out,
+            )
+            self.assertNotIn("PROVISIONAL: only the JPEG writer CVideoOpenGL::saveJpegScreenshot calls is declared;", out)
+            self.assertFalse(_complete_config_members(root, "daisy/video/Null/CImageLoaderJPG.cpp", {}))
+            self.assertEqual(header.read_text(), out)
+
+    def test_a_unit_without_config_guarded_members_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / IRRLICHT_SOURCE).mkdir(parents=True)
+            (root / IRRLICHT_SOURCE / "CImageLoaderTGA.h").write_text("namespace irr {\nclass CImageLoaderTGA\n{\n};\n}\n")
+            header = root / "src/daisy/video/Null/CImageLoaderTGA.h"
+            header.parent.mkdir(parents=True)
+            header.write_text("// PROVISIONAL\n")
+            self.assertFalse(_complete_config_members(root, "daisy/video/Null/CImageLoaderTGA.cpp", {}))
+            self.assertEqual(header.read_text(), "// PROVISIONAL\n")
 
 
 class ColorPacking(unittest.TestCase):

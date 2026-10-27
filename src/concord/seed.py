@@ -34,7 +34,14 @@ from concord.complete import (
     undeclared,
 )
 from concord.harvest import BUILD, Harvest
-from concord.irrlicht import HEADERS, bare, code_words, name_helpers, translate
+from concord.irrlicht import (
+    CONFIG_MACROS,
+    HEADERS,
+    bare,
+    code_words,
+    name_helpers,
+    translate,
+)
 from concord.transforms import CPP
 
 IRRLICHT = Path("third_party/irrlicht-0.7")
@@ -113,6 +120,8 @@ def seed(
         path.write_text(drop_forward_declared_includes(qualify(root, path.read_text(), written)))
     result.written += helpers
     result.written += _rename_invented_structs(root, result.written)
+    originals: dict[str, str] = {}  # each changed header, settled with the others below
+    _complete_config_members(root, unit, originals)
     _register(root, unit, {})
     output = _match(root, unit, learn=False)
     tried: set[tuple[str, str]] = set()
@@ -121,7 +130,6 @@ def seed(
     # functions sensitive to it (concord phase) stop matching, as
     # CSpritePackage::removeAnimationState did. A completion stays only if settle
     # finds those units no worse.
-    originals: dict[str, str] = {}
     if complete_types and _complete_interfaces(root, result.written, originals):
         output = _match(root, unit, learn=False)
     names_tried: set[str] = set()
@@ -1214,6 +1222,73 @@ def _declare_members(root: Path, output: str, originals: dict[str, str]) -> bool
         header.write_text(text)
         changed = True
     return changed
+
+
+PROVISIONAL_NOTICE = (
+    "// PROVISIONAL: only the JPEG writer CVideoOpenGL::saveJpegScreenshot calls is declared; the full\n"
+    "// header of the CImageLoaderJPG unit replaces this one.\n"
+)
+PROVISIONAL_NOTICE_WITH_CALLBACKS = (
+    "// PROVISIONAL: the JPEG writer CVideoOpenGL::saveJpegScreenshot calls and the libjpeg callbacks\n"
+    "// are declared; the full header of the CImageLoaderJPG unit replaces this one.\n"
+)
+
+
+def _complete_config_members(root: Path, unit: str, originals: dict[str, str]) -> bool:
+    """Complete a provisional class header with what Irrlicht's class declares under a switch
+    Harvest's build turns on (CONFIG_MACROS): the switch and the libjpeg block the declarations
+    need, before the first namespace, and a private section holding those declarations at the end
+    of the class. Until they are declared the unit's guarded code compiles out, and its loader
+    stubs to `return 0`. The stand-in's own members stay, since other units use them. The header's
+    text before the change goes into originals, to be settled with the other changes. Returns
+    whether the header changed."""
+    name = Path(unit).stem
+    original = _original(root, f"{name}.h")
+    header = _provisional_header(root, "/".join(Path(unit).parts[:-1]), name)
+    if header is None or original is None:
+        return False
+    irrlicht = translate(original.read_text(encoding="latin-1"), "daisy")
+    irrlicht_class = re.search(r"class " + name + r"\b[^;{]*\{", irrlicht)
+    libjpeg = re.search(r'^extern "C" \{\n.*?^\}\n', irrlicht, re.MULTILINE | re.DOTALL)
+    if irrlicht_class is None or libjpeg is None:
+        return False
+    body = irrlicht[irrlicht_class.end() : _brace_end(irrlicht, irrlicht_class.end() - 1)]
+    guarded = [
+        declaration
+        for macro in CONFIG_MACROS
+        for block in re.findall(r"#ifdef " + macro + r"\n(.*?)#endif", body, re.DOTALL)
+        for declaration in re.findall(r"^\s*(static [^;{}]*\([^;{}]*\);)", block, re.MULTILINE)
+    ]
+    if not guarded:
+        return False
+    before = header.read_text()
+    stand_in = re.search(r"class " + name + r"\b[^;{]*\{", before)
+    if stand_in is None:
+        return False
+    close = _brace_end(before, stand_in.end() - 1)
+    class_text = before[stand_in.start() : close]
+    missing = []
+    for declaration in guarded:
+        member = re.search(r"(\w+)\s*\(", declaration)[1]
+        if not re.search(r"\b" + member + r"\s*\(", class_text):
+            missing.append(declaration)
+    first_namespace = re.search(r"^namespace ", irrlicht, re.MULTILINE)
+    head = (irrlicht[: first_namespace.start()] if first_namespace else "").replace(libjpeg[0], "")
+    system = "".join(re.findall(r"^#include <[^>\n]+>\n", head, re.MULTILINE))  # libjpeg's header needs stdio.h first
+    preamble = system + "".join(f"#define {macro}\n" for macro in CONFIG_MACROS) + libjpeg[0] + "\n"
+    needs_preamble = any(f"#define {macro}\n" not in before for macro in CONFIG_MACROS)
+    if not missing and not needs_preamble:
+        return False
+    text = before
+    if missing:
+        text = text[:close] + "private:\n" + "".join(f"    {d}\n" for d in missing) + text[close:]
+        text = text.replace(PROVISIONAL_NOTICE, PROVISIONAL_NOTICE_WITH_CALLBACKS, 1)
+    if needs_preamble:
+        at = re.search(r"^namespace ", text, re.MULTILINE)
+        text = text[: at.start()] + preamble + text[at.start() :]
+    originals.setdefault(header.relative_to(root / "src").as_posix(), before)
+    header.write_text(text)
+    return True
 
 
 def _whole_class(root: Path, text: str, name: str, irrlicht: str) -> str:

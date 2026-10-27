@@ -538,5 +538,20 @@ class HelperNames(unittest.TestCase):
         self.assertEqual(helper_names("int _concord_extra();\n", set()), {"_concord_extra": "extra"})
 
 
+class LibjpegLoader(unittest.TestCase):
+    def test_the_config_header_defines_the_libjpeg_switch(self):
+        self.assertEqual(translate('#include "IrrCompileConfig.h"\n'), "#define _IRR_COMPILE_WITH_LIBJPEG_\n")
+
+    def test_bundled_jpeglib_headers_become_the_system_ones(self):
+        self.assertEqual(translate('#include "jpeglib/jpeglib.h"\n'), "#include <jpeglib.h>\n")
+
+    def test_the_source_manager_fill_callback_returns_libjpeg_boolean(self):
+        declared = "\tstatic u8 fill_input_buffer (j_decompress_ptr cinfo);\n"
+        self.assertEqual(translate(declared), "\tstatic boolean fill_input_buffer (j_decompress_ptr cinfo);\n")
+        defined = "u8 CImageLoaderJPG::fill_input_buffer (j_decompress_ptr cinfo)\n{\n\treturn 1;\n}\n"
+        self.assertEqual(translate(defined), defined.replace("u8 ", "boolean ", 1))
+        self.assertEqual(translate("u8 value = 1;"), "unsigned char value = 1;")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,10 @@ TYPEDEFS = {
     "s32": "int", "u32": "unsigned int", "f32": "float", "f64": "double", "c8": "char",
 }  # fmt: skip
 
+# Switches IrrCompileConfig.h defines for Irrlicht's release build, which Harvest's Linux build keeps on:
+# the JPEG loader is compiled against libjpeg.
+CONFIG_MACROS = ("_IRR_COMPILE_WITH_LIBJPEG_",)
+
 # Irrlicht core and video types and their ox counterparts in Harvest's headers.
 TYPES = {
     "core::rect": "ox::core::CRect",
@@ -220,6 +224,9 @@ def _translate(source: str, namespace: str) -> str:
         source = re.sub(r"(?<![\w:])" + re.escape(name) + r"\b", replacement, source)
         if replacement.endswith(">"):  # GCC 4.4 reads the >> of nested template arguments as a shift
             source = source.replace(replacement + ">", replacement + " >")
+    # libjpeg's source manager declares fill_input_buffer as returning boolean, which the system
+    # headers make int; Irrlicht's bundled copy makes it u8, so the typedef pass must not see it.
+    source = re.sub(r"\bu8(\s+(?:\w+::)?fill_input_buffer\b)", r"boolean\1", source)
     for name, replacement in TYPEDEFS.items():
         source = re.sub(r"\b" + name + r"\b", replacement, source)
     source = re.sub(r"\bEVDF_BILINEAR_FILER\b", "EVDF_BILINEAR_FILTER", source)  # Irrlicht's spelling; ox's is FILTER
@@ -525,6 +532,8 @@ def _translate(source: str, namespace: str) -> str:
         source = source.replace(f'#include "{name}"', f'#include "{replacement}"')
     source = re.sub(r"^(?!#include)(.*?)(?<![\w:/])IUnknown\b", r"\1ox::IUnknown", source, flags=re.MULTILINE)
     source = re.sub(r'^#include "irrTypes.h"\n', "", source, flags=re.MULTILINE)  # its typedefs are translated away
+    source = source.replace('#include "IrrCompileConfig.h"\n', "".join(f"#define {macro}\n" for macro in CONFIG_MACROS))
+    source = re.sub(r'^#include "jpeglib/(\w+\.h)"', r"#include <\1>", source, flags=re.MULTILINE)  # the system's libjpeg 6b
 
     source = re.sub(r"\s*#ifdef _DEBUG\s*\n\s*setDebugName\([^)]*\);\s*\n\s*#endif", "", source)
     # daisy's logger takes the level explicitly where Irrlicht's defaulted it
