@@ -72,7 +72,7 @@ Both models draw on the same Codex subscription, so the binding limit is the wee
 | Newly exact functions | 56 | 1 |
 | Cost per newly exact function | about $0.78 | about $5 |
 
-Most of Sol's cost is its continuous session re-reading its own context: 234M cached input tokens over 1,279 calls, about 183,000 per call, 98.5% of its input tokens. Running each Sol task as a fresh aop run would cut that, with the brief and the knowledge base carrying the context the session now holds.
+Most of Sol's cost is its continuous session re-reading its own context: 234M cached input tokens over 1,279 calls, about 183,000 per call, 98.8% of its input tokens. Running each Sol task as a fresh aop run would cut that, with the brief and the knowledge base carrying the context the session now holds.
 
 Sol produced most of the exact functions and most of the tooling (`causal`, `frames`, `scratch-history`, `scores --base`); Terra found two real source differences (`reserve` against `resize`, and Harvest's wrong `CG_PROGRAM`) and one sweep fix. Terra is the cheaper way to check a specific lead, and Sol the more productive way to turn a whole unit into matches: leads from the sweep go to Terra, and a lead that becomes a whole-unit recovery goes to Sol.
 
