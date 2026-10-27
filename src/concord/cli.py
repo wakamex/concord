@@ -15,6 +15,7 @@ from concord import (
     bench,
     blockers,
     calls,
+    calls_constants,
     causal,
     census,
     destructors,
@@ -347,6 +348,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_inlines.add_argument("--semantic", action="store_true", help="list Irrlicht-backed functions beyond the CString/fast_atof inline-copy budget")
     p_inlines.add_argument("--save", type=Path, help="write every unit's findings as JSON")
 
+    p_cc = sub.add_parser(
+        "calls-constants",
+        help="compare every inexact function's callees, immediates and data references with the target's",
+    )
+    p_cc.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_cc.add_argument("units", nargs="*", help="units to check (default: every unit hv match built)")
+    p_cc.add_argument("--save", type=Path, help="write the ranked findings as JSON")
+
     p_destructors = sub.add_parser("destructors", help="compare destructor definition forms as read-only header overlays")
     p_destructors.add_argument("--harvest", type=Path, required=True)
     p_destructors.add_argument("--unit", required=True)
@@ -527,6 +536,13 @@ def main(argv: list[str] | None = None) -> int:
             print(lines[0] if findings else lines[0] + ": no differences")
             for line in lines[1:]:
                 print(line)
+        return 0
+    if args.command == "calls-constants":
+        result = calls_constants.gather(Harvest(args.harvest), args.units)
+        if args.save:
+            args.save.write_text(json.dumps(result, indent=2) + "\n")
+        print("\n".join(calls_constants.show(result)))
+        print(f"{result['compared']} inexact functions compared, {len(result['functions'])} differ, {len(result['skipped'])} skipped")
         return 0
     if args.command == "causal-trial":
         report = census.counterfactual(Harvest(args.harvest), args.header, args.line, args.save, args.unit)

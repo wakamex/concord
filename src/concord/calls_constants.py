@@ -1,0 +1,488 @@
+"""Compare each inexact function's calls and constants with the target's copy.
+
+Before a near miss is attributed to unit context (headers, declaration order,
+inline copies), this check asks whether what the function calls and loads
+differs at all. For every inexact function in the build it compares, against
+the target's copy of the same symbol:
+
+- the multiset of direct callees, matched by name first and by resolved target
+  address after, so our call to a placed symbol and the target's call to its
+  `sub_` name are not a difference;
+- the multiset of immediate operands with relocation fields masked, and the
+  multiset of data references the relocations point at, normalized to section
+  or symbol plus offset on both sides.
+
+Functions where either multiset differs are ranked by target bytes. A callee
+left over on both sides is reported as a substitution ("ours calls resize
+where the target calls reserve"); a callee left over on one side only is
+inline-copy noise: one side inlined what the other emits out of line.
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+import subprocess
+from collections import Counter, defaultdict
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
+
+import capstone
+from capstone import x86
+from elftools.elf.elffile import ELFFile
+from elftools.elf.relocation import RelocationSection
+
+from concord.diff import _family
+from concord.harvest import Harvest
+
+CALL, TAIL_JMP = 0xE8, 0xE9  # a 5-byte direct call or tail jump's field starts at +1
+PC32, PLT32 = 2, 4           # R_X86_64 relocation types: PC-relative fields read at field end
+
+
+@dataclass(frozen=True)
+class Callee:
+    offset: int
+    symbol: str
+
+
+@dataclass(frozen=True)
+class Constant:
+    offset: int
+    value: int
+    context: tuple  # (mnemonic, signature of the non-immediate operands)
+    site: str       # the non-immediate operands' text
+    text: str
+
+
+@dataclass(frozen=True)
+class DataRef:
+    offset: int
+    base: str       # canonical section or symbol name
+    dest: int       # offset into it
+    mnemonic: str
+    text: str
+
+
+@dataclass(frozen=True)
+class FunctionRefs:
+    size: int
+    code: bytes
+    callees: tuple[Callee, ...]
+    constants: tuple[Constant, ...]
+    datarefs: tuple[DataRef, ...]
+    indirect: int
+
+
+def _canonical(name: str) -> str:
+    """A section name's comparable identity: a COMDAT section stands for its
+    symbol, pooled constants and strings stay the section."""
+    for prefix in (".rodata._Z", ".data._Z", ".bss._Z", ".text._Z"):
+        if name.startswith(prefix):
+            return name[len(prefix) - 2 :]
+    return name
+
+
+def _operand_sig(i, o) -> tuple:
+    if o.type == x86.X86_OP_REG:
+        return ("reg", _family(i.reg_name(o.reg)))
+    if o.type == x86.X86_OP_MEM:
+        base = _family(i.reg_name(o.mem.base)) if o.mem.base else None
+        index = _family(i.reg_name(o.mem.index)) if o.mem.index else None
+        return ("mem", base, index, o.mem.scale, o.mem.disp, o.size)
+    return ("imm",)
+
+
+def _ref_key(sym, names: dict[int, str], kind: int, addend: int, func_at: dict,
+             trailing: int = 0) -> tuple[str, int]:
+    """What a relocation points at: (canonical base, offset into it).
+
+    Section symbols and local labels compare as their section plus offset, so
+    the delinked target's `.rodata.cst4+N` and our `.LCn` label at offset N are
+    the same reference; defined symbols compare the same way, so our `m_keys`
+    in `.bss` and the target's `.bss+N` agree when they land on the same slot.
+    PC-relative fields read at the instruction's end, so their addend sits 4
+    bytes plus any trailing field below zero; absolute fields read the stored
+    value. A reference landing on a function symbol takes that function's name.
+    """
+    dest = addend + 4 + trailing if kind in (PC32, PLT32) else addend
+    index = sym["st_shndx"]
+    section = names.get(index, "") if isinstance(index, int) else ""
+    if isinstance(index, int):
+        at = sym["st_value"] + dest
+        if (function := func_at.get((index, at))) is not None:
+            return function, 0
+        return _canonical(section), at
+    return sym.name or section, dest
+
+
+def _function_refs(md, code: bytes, fields: dict[int, tuple], names: dict[int, str], func_at: dict) -> FunctionRefs:
+    callees, constants, datarefs = [], [], []
+    indirect = 0
+    for i in md.disasm(code, 0):
+        local = {o: f for o, f in fields.items() if i.address <= o < i.address + i.size}
+        text = f"{i.mnemonic} {i.op_str}".strip()
+        branch = i.group(x86.X86_GRP_JUMP) or i.group(x86.X86_GRP_CALL)
+        for offset, (kind, addend, sym) in local.items():
+            if kind in (PC32, PLT32) and addend == -4 and offset > 0 and code[offset - 1] in (CALL, TAIL_JMP):
+                callees.append(Callee(offset, sym.name or func_at.get((sym["st_shndx"], sym["st_value"]), "")))
+            if i.mnemonic == "call" and i.operands and i.operands[0].type == x86.X86_OP_MEM:
+                indirect += 1
+        def hit(field_offset: int, field_size: int, insn=i, local=local):
+            for o, f in local.items():
+                if field_offset and field_offset <= o - insn.address < field_offset + field_size:
+                    kind, addend, sym = f
+                    trailing = insn.address + insn.size - (o + 4)
+                    return kind, addend, sym, trailing
+            return None
+
+        imm_hit = hit(i.imm_offset, i.imm_size)
+        disp_hit = hit(i.disp_offset, i.disp_size)
+        for o in i.operands:
+            if o.type == x86.X86_OP_IMM:
+                if branch:
+                    continue
+                if imm_hit is not None:
+                    base, dest = _ref_key(imm_hit[2], names, imm_hit[0], imm_hit[1], func_at, imm_hit[3])
+                    datarefs.append(DataRef(i.address, base, dest, i.mnemonic, text))
+                    continue
+                width = i.imm_size * 8
+                context = (i.mnemonic, tuple(_operand_sig(i, x) for x in i.operands if x is not o))
+                site = i.op_str.rsplit(",", 1)[0].strip()
+                constants.append(Constant(i.address, o.imm & ((1 << width) - 1) if width else o.imm, context, site, text))
+            elif o.type == x86.X86_OP_MEM:
+                if disp_hit is not None:
+                    base, dest = _ref_key(disp_hit[2], names, disp_hit[0], disp_hit[1], func_at, disp_hit[3])
+                    datarefs.append(DataRef(i.address, base, dest, i.mnemonic, text))
+                elif not o.mem.base and not o.mem.index and o.mem.disp:
+                    datarefs.append(DataRef(i.address, "<absolute>", o.mem.disp, i.mnemonic, text))
+    return FunctionRefs(len(code), code, tuple(callees), tuple(constants), tuple(datarefs), indirect)
+
+
+def read_refs(path: Path, only: set[str] | None = None) -> dict[str, FunctionRefs]:
+    """Each defined function symbol's callees, constants and data references."""
+    with path.open("rb") as stream:
+        elf = ELFFile(stream)
+        sections = list(elf.iter_sections())
+        names = {i: s.name for i, s in enumerate(sections)}
+        rels = defaultdict(dict)
+        for section in sections:
+            if not isinstance(section, RelocationSection):
+                continue
+            table = sections[section["sh_link"]]
+            for r in section.iter_relocations():
+                rels[section["sh_info"]][r["r_offset"]] = (r["r_info_type"], r["r_addend"], table.get_symbol(r["r_info_sym"]))
+        symbols = [s for s in elf.get_section_by_name(".symtab").iter_symbols()
+                   if s["st_info"]["type"] == "STT_FUNC" and isinstance(s["st_shndx"], int) and s["st_size"]]
+        func_at = {(s["st_shndx"], s["st_value"]): s.name for s in symbols}
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+        md.detail = True
+        functions = {}
+        for sym in symbols:
+            if only is not None and sym.name not in only:
+                continue
+            index, start, size = sym["st_shndx"], sym["st_value"], sym["st_size"]
+            code = sections[index].data()[start : start + size]
+            fields = {o - start: f for o, f in rels[index].items() if start <= o < start + size}
+            functions[sym.name] = _function_refs(md, code, fields, names, func_at)
+        return functions
+
+
+def _cancel(ours: list[str], target: list[str], resolve_ours, resolve_target) -> tuple[list, list]:
+    """Left-over names after matching by name, then by resolved target address."""
+    ours_rest = [(e, resolve_ours(e)) for e in (Counter(ours) - Counter(target)).elements()]
+    they_rest = [(e, resolve_target(e)) for e in (Counter(target) - Counter(ours)).elements()]
+    avail = Counter(a for _, a in they_rest if a is not None)
+    ours_only = []
+    for e, a in ours_rest:
+        if a is not None and avail[a]:
+            avail[a] -= 1
+        else:
+            ours_only.append((e, a))
+    avail = Counter(a for _, a in ours_rest if a is not None)
+    target_only = []
+    for e, a in they_rest:
+        if a is not None and avail[a]:
+            avail[a] -= 1
+        else:
+            target_only.append((e, a))
+    return ours_only, target_only
+
+
+def _pair(ours_only: list, target_only: list, key) -> tuple[list, list, list]:
+    """Match left-over entries that plausibly replace each other."""
+    ours_by, target_by = defaultdict(list), defaultdict(list)
+    for e in ours_only:
+        ours_by[key(e)].append(e)
+    for e in target_only:
+        target_by[key(e)].append(e)
+    pairs, ours_left, target_left = [], [], []
+    for k in sorted(set(ours_by) | set(target_by), key=repr):
+        o, t = ours_by.get(k, []), target_by.get(k, [])
+        pairs.extend(zip(o, t))
+        ours_left.extend(o[len(t):])
+        target_left.extend(t[len(o):])
+    return pairs, ours_left, target_left
+
+
+def _hex(value: int | None) -> str | None:
+    return None if value is None else f"{value:#x}"
+
+
+def _const_entry(c: Constant) -> dict:
+    return {"value": c.value, "offset": f"{c.offset:#x}", "site": c.site, "instruction": c.text}
+
+
+def _ref_entry(r: DataRef) -> dict:
+    return {"ref": f"{r.base}+{r.dest:#x}", "offset": f"{r.offset:#x}", "instruction": r.text}
+
+
+def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
+                     resolve_ours, resolve_target, display) -> list[dict]:
+    """The named differences between the two copies, structured."""
+    differences = []
+    ours_only, target_only = _cancel([c.symbol for c in ours.callees], [c.symbol for c in target.callees],
+                                     resolve_ours, resolve_target)
+    def callee(name_addr, side):
+        name, addr = name_addr
+        return {"symbol": name, "name": display(side, name, addr), "address": _hex(addr)}
+
+    if ours_only and target_only:
+        # Left over on both sides: the copies call different functions, the
+        # source-level difference the check exists to name.
+        differences.append({"kind": "call", "classification": "different-callees",
+                            "ours": [callee(e, "ours") for e in sorted(ours_only)],
+                            "target": [callee(e, "target") for e in sorted(target_only)]})
+    else:
+        # One side only: the other inlined the callee; inline-copy noise.
+        for name, addr in sorted(ours_only):
+            differences.append({"kind": "call", "classification": "called-out-of-line",
+                                "ours": callee((name, addr), "ours")})
+        for name, addr in sorted(target_only):
+            differences.append({"kind": "call", "classification": "original-called",
+                                "target": callee((name, addr), "target")})
+
+    # Constants compare as a multiset of values; leftover values are paired
+    # back through their instruction contexts, preferring sites the other
+    # side also has, then the same site, then the same mnemonic.
+    ours_count = Counter(c.value for c in ours.constants)
+    target_count = Counter(c.value for c in target.constants)
+    ours_pool, target_pool = defaultdict(list), defaultdict(list)
+    for c in ours.constants:
+        ours_pool[c.value].append(c)
+    for c in target.constants:
+        target_pool[c.value].append(c)
+    ours_ctx = Counter(c.context for c in ours.constants)
+    target_ctx = Counter(c.context for c in target.constants)
+
+    def take(pool, value, foreign):
+        choices = pool[value]
+        shared = [c for c in choices if foreign[c.context]]
+        chosen = shared[0] if shared else choices[0]
+        choices.remove(chosen)
+        return chosen
+
+    ours_rest = [take(ours_pool, v, target_ctx) for v in (ours_count - target_count).elements()]
+    target_rest = [take(target_pool, v, ours_ctx) for v in (target_count - ours_count).elements()]
+    pairs, ours_left, target_left = _pair(ours_rest, target_rest, key=lambda c: c.context)
+    shape = lambda c: (c.context[0], tuple(s[0] for s in c.context[1]))
+    extra, ours_left, target_left = _pair(ours_left, target_left, key=shape)
+    for o, t in pairs + extra:
+        differences.append({"kind": "constant", "classification": "different-constants",
+                            "ours": _const_entry(o), "target": _const_entry(t)})
+    for c in ours_left:
+        differences.append({"kind": "constant", "classification": "ours-only", "ours": _const_entry(c)})
+    for c in target_left:
+        differences.append({"kind": "constant", "classification": "target-only", "target": _const_entry(c)})
+
+    ours_by_key, target_by_key = defaultdict(list), defaultdict(list)
+    for r in ours.datarefs:
+        ours_by_key[(r.base, r.dest)].append(r)
+    for r in target.datarefs:
+        target_by_key[(r.base, r.dest)].append(r)
+    ours_keys = Counter(k for k, rows in ours_by_key.items() for _ in rows)
+    target_keys = Counter(k for k, rows in target_by_key.items() for _ in rows)
+    ours_rest = [ours_by_key[k].pop() for k in (ours_keys - target_keys).elements()]
+    target_rest = [target_by_key[k].pop() for k in (target_keys - ours_keys).elements()]
+    pairs, ours_rest, target_rest = _pair(ours_rest, target_rest, key=lambda r: r.base)
+    extra, ours_rest, target_rest = _pair(ours_rest, target_rest, key=lambda r: r.mnemonic)
+    for o, t in pairs + extra:
+        differences.append({"kind": "data", "classification": "different-references",
+                            "ours": _ref_entry(o), "target": _ref_entry(t)})
+    for r in ours_rest:
+        differences.append({"kind": "data", "classification": "ours-only", "ours": _ref_entry(r)})
+    for r in target_rest:
+        differences.append({"kind": "data", "classification": "target-only", "target": _ref_entry(r)})
+
+    if ours.indirect != target.indirect:
+        differences.append({"kind": "indirect", "ours": ours.indirect, "target": target.indirect})
+    return differences
+
+
+def load_symbols(root: Path, build: str) -> tuple[dict[int, str], dict[str, int]]:
+    """The learned symbol table: target address -> symbol, symbol -> address."""
+    named, name_to_addr = {}, {}
+    symbols_tsv = root / "config" / build / "symbols.tsv"
+    if symbols_tsv.exists():
+        for row in csv.DictReader(symbols_tsv.open(newline=""), delimiter="\t"):
+            named[int(row["address"], 16)] = row["symbol"]
+            name_to_addr[row["symbol"]] = int(row["address"], 16)
+    return named, name_to_addr
+
+
+def resolvers(rows: dict[str, dict], named: dict[int, str], name_to_addr: dict[str, int]):
+    """The callee address resolution for one unit's report rows.
+
+    Our callees resolve through the learned symbol table first and the unit's
+    placed addresses after; the target's `sub_<hex>` names carry their own
+    address. `display` renders a callee with its address when one is known.
+    """
+    placed_addr = {name: int(row["address"], 16) for name, row in rows.items() if row.get("address")}
+
+    def resolve_ours(name):
+        return name_to_addr.get(name) or placed_addr.get(name)
+
+    def resolve_target(name):
+        if name.startswith("sub_"):
+            try:
+                return int(name[4:], 16)
+            except ValueError:
+                pass
+        return name_to_addr.get(name)
+
+    def display(side, name, addr):
+        if addr is not None:
+            return f"{addr:#x} {named.get(addr, name)}"
+        return name
+
+    return resolve_ours, resolve_target, display
+
+
+def gather(harvest: Harvest, units: Iterable[str] = ()) -> dict:
+    """Run the comparison over every inexact function of the given units."""
+    root, build = harvest.root, harvest.build
+    named, name_to_addr = load_symbols(root, build)
+
+    selected = {harvest.slug(u) for u in units}
+    findings, skipped, compared = [], [], 0
+    for path in sorted(harvest.reports.glob("*.json")):
+        slug = path.stem
+        if selected and slug not in selected:
+            continue
+        report = json.loads(path.read_text())
+        rows = {f["symbol"]: f for s in report["sections"] for f in s.get("functions", [])}
+        inexact = {name: row for name, row in rows.items() if not row.get("exact")}
+        if not inexact:
+            continue
+        target_path = harvest.objects / "target" / f"{slug}.o"
+        ours_path = harvest.reports / f"{slug}.o"
+        if not target_path.exists() or not ours_path.exists():
+            skipped.extend({"unit": report["unit"], "symbol": n, "reason": "no object"} for n in inexact)
+            continue
+        ours = read_refs(ours_path, set(inexact))
+        target = read_refs(target_path, set(inexact))
+        resolve_ours, resolve_target, display = resolvers(rows, named, name_to_addr)
+
+        for name, row in inexact.items():
+            if name not in ours or name not in target:
+                skipped.append({"unit": report["unit"], "symbol": name, "reason": "not emitted on both sides"})
+                continue
+            compared += 1
+            differences = compare_function(ours[name], target[name], resolve_ours=resolve_ours,
+                                           resolve_target=resolve_target, display=display)
+            if not differences:
+                continue
+            address = int(row["address"], 16) if row.get("address") else None
+            findings.append({
+                "unit": report["unit"], "symbol": name, "address": _hex(address),
+                "verified_address": named.get(address) == name if address is not None else False,
+                "stub": len(ours[name].code) <= 4,
+                "ours_bytes": ours[name].size, "target_bytes": target[name].size,
+                "differences": differences,
+            })
+    findings.sort(key=lambda r: (-r["target_bytes"], r["unit"], r["symbol"]))
+    return {"build": build, "harvest": str(root), "compared": compared,
+            "functions": findings, "skipped": skipped}
+
+
+def _demangle_all(names: set[str]) -> dict[str, str]:
+    """One c++filt run for every name the report will print."""
+    plain = sorted(n for n in names if n and not n.startswith(("sub_", "<", ".")))
+    done = subprocess.run(["c++filt", *plain], capture_output=True, text=True, check=False)
+    pretty = dict(zip(plain, done.stdout.splitlines()))
+    return {n: pretty.get(n, n) for n in names}
+
+
+def _phrase(mnemonic: str, site: str, value: int) -> str:
+    site = site.replace("byte ptr ", "").replace("dword ptr ", "").replace("qword ptr ", "").replace("word ptr ", "")
+    if mnemonic in ("mov", "movzx", "movsx", "movsxd"):
+        return f"stores {value} to {site}" if site.startswith("[") else f"loads {value} into {site}"
+    if mnemonic in ("cmp", "test"):
+        return f"compares {site} against {value}"
+    if mnemonic in ("add", "sub", "imul", "and", "or", "xor", "lea"):
+        return f"{mnemonic}s {value} on {site}"
+    return f"uses {value} in `{mnemonic} {site}`"
+
+
+def show(result: dict) -> list[str]:
+    """Render the ranked findings for the terminal."""
+    names = set()
+    for f in result["functions"]:
+        for d in f["differences"]:
+            for side in ("ours", "target"):
+                for entry in d.get(side, []) if isinstance(d.get(side), list) else [d.get(side)]:
+                    if not entry:
+                        continue
+                    if entry.get("symbol"):
+                        names.add(entry["name"].rsplit(" ", 1)[-1])
+                    if entry.get("ref"):
+                        names.add(entry["ref"].rsplit("+", 1)[0])
+    pretty = _demangle_all(names)
+
+    def prettify(entry: dict | list | None) -> str:
+        if isinstance(entry, list):
+            return ", ".join(prettify(e) for e in entry)
+        if not entry:
+            return "?"
+        if "symbol" in entry:
+            label = pretty.get(entry["name"].rsplit(" ", 1)[-1], entry["name"])
+            return f"{entry['address']} {label}" if entry.get("address") else label
+        if "ref" in entry:
+            base, off = entry["ref"].rsplit("+", 1)
+            return f"{pretty.get(base, base)}+{off}"
+        return "?"
+
+    def render(d: dict) -> str:
+        if d["kind"] == "call":
+            if d["classification"] == "different-callees":
+                return f"calls: ours calls {prettify(d['ours'])} where the target calls {prettify(d['target'])}"
+            if d["classification"] == "called-out-of-line":
+                return f"calls: ours calls {prettify(d['ours'])} out of line; the original inlines it"
+            return f"calls: the original calls {prettify(d['target'])}; ours inlines it"
+        if d["kind"] == "constant":
+            if d["classification"] == "different-constants":
+                o, t = d["ours"], d["target"]
+                return (f"constants: ours {_phrase(o['instruction'].split(' ', 1)[0], o['site'], o['value'])} "
+                        f"where the target {_phrase(t['instruction'].split(' ', 1)[0], t['site'], t['value'])}")
+            side = "ours" if "ours" in d else "the target"
+            e = d.get("ours") or d.get("target")
+            other = "the target" if side == "ours" else "ours"
+            return (f"constants: {side} {_phrase(e['instruction'].split(' ', 1)[0], e['site'], e['value'])} "
+                    f"in `{e['instruction']}`; {other} has none")
+        if d["kind"] == "data":
+            if d["classification"] == "different-references":
+                return f"references: ours uses {prettify(d['ours'])} where the target uses {prettify(d['target'])}"
+            side = "ours" if "ours" in d else "the target"
+            e = d.get("ours") or d.get("target")
+            other = "the target" if side == "ours" else "ours"
+            return f"references: {side} uses {prettify(e)} in `{e['instruction']}`; {other} does not"
+        return f"indirect calls: ours {d['ours']}, the original {d['target']}"
+
+    out = []
+    for f in result["functions"]:
+        flags = [flag for flag, on in (("unverified address", not f["verified_address"]), ("stub", f["stub"])) if on]
+        mark = f"  [{', '.join(flags)}]" if flags else ""
+        out.append(f"{f['target_bytes']:7}B  {f['unit']}  {f['symbol']}{mark}")
+        counts = Counter(render(d) for d in f["differences"])
+        out.extend(f"    {line}" + (f" x{n}" if n > 1 else "") for line, n in counts.items())
+    return out
