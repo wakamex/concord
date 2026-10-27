@@ -295,11 +295,82 @@ def _cancel(ours: list[str], target: list[str], resolve_ours, resolve_target) ->
     return ours_only, target_only
 
 
+def _plt_names(elf: ELFFile) -> dict[int, str]:
+    """Each PLT stub's address to the dynamic symbol it calls, so a body read
+    from the stripped original still names its external callees."""
+    rela = elf.get_section_by_name(".rela.plt")
+    if rela is None:
+        return {}
+    symbols = elf.get_section(rela["sh_link"])
+    got = {r["r_offset"]: symbols.get_symbol(r["r_info_sym"]).name for r in rela.iter_relocations()}
+    names = {}
+    for plt in elf.iter_sections():
+        if not plt.name.startswith(".plt"):
+            continue
+        data, base = plt.data(), plt["sh_addr"]
+        offset = 0
+        while (hit := data.find(b"\xff\x25", offset)) >= 0:  # jmp *disp(%rip)
+            offset = hit + 2
+            disp = int.from_bytes(data[offset : offset + 4], "little", signed=True)
+            slot = base + offset + 4 + disp
+            entry = hit - 4 if data[hit - 4 : hit] == b"\xf3\x0f\x1e\xfa" else hit  # skip an IBT endbr64
+            if slot in got:
+                names[base + entry] = got[slot]
+    return names
+
+
+def original_refs(path: Path, learned: list[tuple[int, int, str]], named: dict[int, str]) -> dict[str, FunctionRefs]:
+    """The call lists of learned functions, read from the original executable.
+
+    A delinked object holds only the extents its unit owns, so an out-of-line
+    copy the matcher credits to no unit's span (list::_M_erase, or an
+    insert_aux the target places beside a different unit) has a name and a
+    call target but no body for the inline-copy check. The original has it:
+    each learned function's bytes disassembled, direct calls and tail jumps
+    out of its range resolved by the learned table, the PLT's dynamic names,
+    or a sub_ name carrying the address."""
+    if not path.is_file() or not learned:
+        return {}
+    with path.open("rb") as stream:
+        elf = ELFFile(stream)
+        plt_names = _plt_names(elf)
+        sections = [
+            s for s in elf.iter_sections()
+            if s["sh_type"] == "SHT_PROGBITS" and s["sh_flags"] & 0x4  # SHF_EXECINSTR
+        ]
+        md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+        md.detail = True
+        catalog = {}
+        for address, size, name in learned:
+            for section in sections:
+                start = section["sh_addr"]
+                if start <= address < start + section["sh_size"]:
+                    break
+            else:
+                continue
+            code = section.data()[address - start : address - start + size]
+            callees = []
+            for i in md.disasm(code, address):
+                if not (i.group(x86.X86_GRP_CALL) or i.group(x86.X86_GRP_JUMP)):
+                    continue
+                ops = i.operands
+                if len(ops) != 1 or ops[0].type != x86.X86_OP_IMM:
+                    continue
+                target = ops[0].imm
+                if address <= target < address + len(code):
+                    continue  # a branch inside the function, not a tail call
+                callee = named.get(target) or plt_names.get(target) or f"sub_{target:x}"
+                callees.append(Callee(i.address - address, callee))
+            catalog[name] = FunctionRefs(len(code), code, tuple(callees), (), (), 0)
+        return catalog
+
+
 def _body_calls(outer: str, inner: str, ours_catalog: dict[str, FunctionRefs],
-                target_catalog: dict[str, FunctionRefs], resolve_ours, resolve_target) -> bool:
+                target_catalog: dict[str, FunctionRefs], resolve_ours, resolve_target,
+                original_catalog: dict[str, FunctionRefs] | None = None) -> bool:
     """True when an out-of-line copy of outer calls inner by name or address."""
     inner_addrs = {a for a in (resolve_ours(inner), resolve_target(inner)) if a is not None}
-    for catalog in (ours_catalog, target_catalog):
+    for catalog in (ours_catalog, target_catalog, original_catalog or {}):
         body = catalog.get(outer)
         if body is None:
             continue
@@ -313,7 +384,8 @@ def _body_calls(outer: str, inner: str, ours_catalog: dict[str, FunctionRefs],
 
 
 def _inline_copy_pairs(ours_only: list, target_only: list, ours_catalog: dict[str, FunctionRefs],
-                       target_catalog: dict[str, FunctionRefs], resolve_ours, resolve_target) -> tuple[list, list, list]:
+                       target_catalog: dict[str, FunctionRefs], resolve_ours, resolve_target,
+                       original_catalog: dict[str, FunctionRefs] | None = None) -> tuple[list, list, list]:
     """Pair leftover callees explained by one side's out-of-line copy calling the other."""
     target_rest = list(target_only)
     used = set()
@@ -325,9 +397,9 @@ def _inline_copy_pairs(ours_only: list, target_only: list, ours_catalog: dict[st
             if index in used:
                 continue
             other_name = other[0]
-            if _body_calls(name, other_name, ours_catalog, target_catalog, resolve_ours, resolve_target):
+            if _body_calls(name, other_name, ours_catalog, target_catalog, resolve_ours, resolve_target, original_catalog):
                 match = (name, other_name, "ours", "target", entry, other)
-            elif _body_calls(other_name, name, ours_catalog, target_catalog, resolve_ours, resolve_target):
+            elif _body_calls(other_name, name, ours_catalog, target_catalog, resolve_ours, resolve_target, original_catalog):
                 match = (other_name, name, "target", "ours", other, entry)
             if match:
                 explained.append(match)
@@ -384,13 +456,15 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
                      ours_catalog: dict[str, FunctionRefs] | None = None,
                      target_catalog: dict[str, FunctionRefs] | None = None,
                      ours_sections: dict[str, bytes] | None = None,
-                     target_sections: dict[str, bytes] | None = None) -> list[dict]:
+                     target_sections: dict[str, bytes] | None = None,
+                     original_catalog: dict[str, FunctionRefs] | None = None) -> list[dict]:
     """The named differences between the two copies, structured."""
     differences = []
     ours_only, target_only = _cancel([c.symbol for c in ours.callees], [c.symbol for c in target.callees],
                                      resolve_ours, resolve_target)
     ours_catalog = ours_catalog or {}
     target_catalog = target_catalog or {}
+    original_catalog = original_catalog or {}
     ours_sections = ours_sections or {}
     target_sections = target_sections or {}
 
@@ -412,7 +486,7 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
 
     if ours_only and target_only:
         explained, ours_only, target_only = _inline_copy_pairs(
-            ours_only, target_only, ours_catalog, target_catalog, resolve_ours, resolve_target)
+            ours_only, target_only, ours_catalog, target_catalog, resolve_ours, resolve_target, original_catalog)
         for _outer, _inner, outer_side, inner_side, outer_entry, inner_entry in explained:
             append_inline_noise(outer_entry, outer_side, inner_entry, inner_side)
     if ours_only and target_only:
@@ -528,15 +602,18 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
     return differences
 
 
-def load_symbols(root: Path, build: str) -> tuple[dict[int, str], dict[str, int]]:
-    """The learned symbol table: target address -> symbol, symbol -> address."""
-    named, name_to_addr = {}, {}
+def load_symbols(root: Path, build: str) -> tuple[dict[int, str], dict[str, int], list[tuple[int, int, str]]]:
+    """The learned symbol table: target address -> symbol, symbol -> address,
+    and each (address, size, symbol) row."""
+    named, name_to_addr, learned = {}, {}, []
     symbols_tsv = root / "config" / build / "symbols.tsv"
     if symbols_tsv.exists():
         for row in csv.DictReader(symbols_tsv.open(newline=""), delimiter="\t"):
-            named[int(row["address"], 16)] = row["symbol"]
-            name_to_addr[row["symbol"]] = int(row["address"], 16)
-    return named, name_to_addr
+            address, symbol = int(row["address"], 16), row["symbol"]
+            named[address] = symbol
+            name_to_addr[symbol] = address
+            learned.append((address, int(row["size"]), symbol))
+    return named, name_to_addr, learned
 
 
 def resolvers(rows: dict[str, dict], named: dict[int, str], name_to_addr: dict[str, int]):
@@ -570,7 +647,8 @@ def resolvers(rows: dict[str, dict], named: dict[int, str], name_to_addr: dict[s
 def gather(harvest: Harvest, units: Iterable[str] = ()) -> dict:
     """Run the comparison over every inexact function of the given units."""
     root, build = harvest.root, harvest.build
-    named, name_to_addr = load_symbols(root, build)
+    named, name_to_addr, learned = load_symbols(root, build)
+    original_catalog = original_refs(root / "orig" / build / "Harvest", learned, named)
 
     selected = {harvest.slug(u) for u in units}
     findings, skipped, compared = [], [], 0
@@ -604,7 +682,8 @@ def gather(harvest: Harvest, units: Iterable[str] = ()) -> dict:
             differences = compare_function(ours[name], target[name], resolve_ours=resolve_ours,
                                            resolve_target=resolve_target, display=display,
                                            ours_catalog=ours_catalog, target_catalog=target_catalog,
-                                           ours_sections=ours_sections, target_sections=target_sections)
+                                           ours_sections=ours_sections, target_sections=target_sections,
+                                           original_catalog=original_catalog)
             if not differences:
                 continue
             address = int(row["address"], 16) if row.get("address") else None

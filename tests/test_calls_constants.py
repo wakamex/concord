@@ -19,6 +19,7 @@ from concord.calls_constants import (
     _canonical,
     _ref_data_key,
     compare_function,
+    original_refs,
     read_refs,
     read_string_sections,
     resolvers,
@@ -94,6 +95,22 @@ class Calls(unittest.TestCase):
             target_catalog={"_Zresize": fill_body, "sub_4f7f00": reserve_body},
         )
         self.assertEqual([row["classification"] for row in rows], ["different-callees"])
+
+    def test_an_out_of_line_copy_only_the_original_carries_is_still_noise(self):
+        # The target calls list::_M_erase where ours inlined it to unhook and
+        # operator delete. No unit's object emits _M_erase; only the
+        # original-binary catalog shows the copy itself calls both.
+        erase = "_ZNSt4listIPN2ox3gui11IGUIElementESaIS3_EE8_M_eraseESt14_List_iteratorIS3_E"
+        ours = refs(callees=[(4, "_ZNSt15_List_node_base6unhookEv"), (9, "_ZdlPv")])
+        target = refs(callees=[(4, erase)])
+        rows = compare(ours, target)
+        self.assertIn("different-callees", {row["classification"] for row in rows})
+        original = {erase: refs(callees=[(4, "_ZNSt15_List_node_base6unhookEv"), (9, "_ZdlPv")])}
+        rows = compare(ours, target, original_catalog=original)
+        kinds = {row["classification"] for row in rows}
+        self.assertNotIn("different-callees", kinds)
+        self.assertIn("called-out-of-line", kinds)
+        self.assertIn("original-called", kinds)
 
     def test_callees_cancel_by_resolved_address(self):
         ours = refs(callees=[(4, "_Zplaced")])
@@ -324,7 +341,7 @@ class Encode2TableReferences(unittest.TestCase):
         target = read_refs(root / "build" / "objdiff" / build / "target" / f"{slug}.o", {sym})[sym]
         report = json.loads((root / "build" / "match" / build / f"{slug}.json").read_text())
         rows = {f["symbol"]: f for s in report["sections"] for f in s.get("functions", [])}
-        named, name_to_addr = load_symbols(root, build)
+        named, name_to_addr, _ = load_symbols(root, build)
         resolve_ours, resolve_target, display = resolvers(rows, named, name_to_addr)
         self.assertEqual(
             compare_function(ours, target, resolve_ours=resolve_ours, resolve_target=resolve_target, display=display),
@@ -432,6 +449,31 @@ extern "C" int f(int *p) {
     def test_identical_objects_report_nothing(self):
         base = self.compile_(0, "other_a", 42)["f"]
         self.assertEqual(compare(base, base), [])
+
+    def test_original_bodies_name_learned_and_plt_callees(self):
+        from elftools.elf.elffile import ELFFile
+
+        source = self.tmp / "prog.c"
+        prog = self.tmp / "prog"
+        source.write_text(
+            "#include <stdio.h>\n#include <unistd.h>\n"
+            "__attribute__((noinline)) int helper(void) { return puts(\"x\"); }\n"
+            "int main(void) { int i = 0; while (i++ < helper()) getpid(); return 0; }\n"
+        )
+        subprocess.run(["gcc", "-O2", source, "-o", prog], check=True)
+        with prog.open("rb") as stream:
+            elf = ELFFile(stream)
+            symbols = {
+                s.name: (s["st_value"], s["st_size"])
+                for s in elf.get_section_by_name(".symtab").iter_symbols()
+            }
+        learned = [(addr, size, name) for name, (addr, size) in symbols.items() if name in ("helper", "main") and size]
+        named = {addr: name for addr, _, name in learned}
+        catalog = original_refs(prog, learned, named)
+        self.assertIn("helper", {c.symbol for c in catalog["main"].callees})
+        self.assertIn("getpid", {c.symbol for c in catalog["main"].callees})
+        self.assertIn("puts", {c.symbol for c in catalog["helper"].callees})
+        self.assertNotIn("puts", {c.symbol for c in catalog["main"].callees})
 
     def test_real_objects_keep_a_shared_comparison_out_of_the_difference(self):
         def assemble(name, body):
