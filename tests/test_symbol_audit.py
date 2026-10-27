@@ -6,14 +6,67 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from capstone import x86
 from elftools.elf.elffile import ELFFile
 
-from concord.symbol_audit import analyze, return_users, sections, void_contract
+from concord.symbol_audit import (
+    analyze,
+    decoder,
+    explicit_return,
+    return_users,
+    sections,
+    void_contract,
+)
 from concord.symbol_table import Row
 
 
 @unittest.skipUnless(shutil.which('g++'), 'g++ is needed')
 class SymbolAudit(unittest.TestCase):
+    def test_stack_protected_return_and_rax_modification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root/'guarded.cpp'
+            helper = root/'helper.cpp'
+            source.write_text('''extern "C" long value_from(const char *);\nextern "C" void use_buffer(char *);\nextern "C" __attribute__((noinline)) long guarded(const char *input) {\n    char buffer[16]; buffer[0] = input[0]; buffer[15] = input[0] + 1;\n    long result = value_from(input); use_buffer(buffer); return result;\n}\nextern "C" __attribute__((noinline)) long guarded_modified(const char *input) {\n    char buffer[16]; buffer[0] = input[0]; buffer[15] = input[0] + 1;\n    long result = value_from(input); use_buffer(buffer); return result ^ 85;\n}\nint main() { return guarded("x") + guarded_modified("y"); }\n''')
+            helper.write_text('''extern "C" long value_from(const char *input) { return input[0] + 17; }\nextern "C" void use_buffer(char *buffer) { volatile char used = buffer[0]; (void)used; }\n''')
+            target = root/'guarded'
+            subprocess.run(['g++', '-O2', '-fno-inline', '-fstack-protector', '-fno-pie', '-no-pie',
+                            str(source), str(helper), '-o', str(target)], check=True, capture_output=True)
+            with target.open('rb') as stream:
+                symbols = {symbol.name: symbol for symbol in ELFFile(stream).get_section_by_name('.symtab').iter_symbols()}
+
+            codes = {}
+            for name in ('guarded', 'guarded_modified'):
+                symbol = symbols[name]
+                start, size = symbol['st_value'], symbol['st_size']
+                codes[name] = next(data[start - base:start - base + size] for base, data in sections(target)
+                                   if base <= start and start + size <= base + len(data))
+
+            protected = list(decoder().disasm(codes['guarded'], symbols['guarded']['st_value']))
+            self.assertTrue(any(instruction.mnemonic in ('sub', 'xor')
+                                and len(instruction.operands) == 2
+                                and instruction.operands[1].type == x86.X86_OP_MEM
+                                and instruction.reg_name(instruction.operands[1].mem.segment) == 'fs'
+                                and instruction.operands[1].mem.disp == 0x28
+                                for instruction in protected))
+            self.assertTrue(explicit_return(codes['guarded'], symbols['guarded']['st_value']))
+            modified = list(decoder().disasm(codes['guarded_modified'], symbols['guarded_modified']['st_value']))
+            rax_touch_after_saved_move = False
+            for index, instruction in enumerate(modified[:-1]):
+                operands = instruction.operands
+                saved_move = (instruction.mnemonic == 'mov' and len(operands) == 2
+                              and operands[0].type == x86.X86_OP_REG
+                              and instruction.reg_name(operands[0].reg) == 'rax'
+                              and operands[1].type == x86.X86_OP_REG
+                              and instruction.reg_name(operands[1].reg) in ('rbx', 'rbp', 'r12', 'r13', 'r14', 'r15'))
+                reads, writes = modified[index + 1].regs_access()
+                if saved_move and any(modified[index + 1].reg_name(register) in {'rax', 'eax', 'ax', 'al', 'ah'}
+                                      for register in (*reads, *writes)):
+                    rax_touch_after_saved_move = True
+                    break
+            self.assertTrue(rax_touch_after_saved_move)
+            self.assertFalse(explicit_return(codes['guarded_modified'], symbols['guarded_modified']['st_value']))
+
     def test_void_list_helper_name_is_suspect_on_real_iterator_returning_erase(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

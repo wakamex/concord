@@ -29,6 +29,55 @@ def sections(path: Path) -> list[tuple[int, bytes]]:
         return [(s['sh_addr'], s.data()) for s in elf.iter_sections() if s['sh_flags'] & 4 and s['sh_size']]
 
 
+def _saved_return_move(instruction) -> bool:
+    operands = instruction.operands
+    if instruction.mnemonic != 'mov' or len(operands) != 2 or operands[0].type != x86.X86_OP_REG:
+        return False
+    if instruction.reg_name(operands[0].reg) != 'rax':
+        return False
+    saved_register = (operands[1].type == x86.X86_OP_REG
+                      and instruction.reg_name(operands[1].reg) in ('rbx', 'rbp', 'r12', 'r13', 'r14', 'r15'))
+    saved_stack = (operands[1].type == x86.X86_OP_MEM
+                   and instruction.reg_name(operands[1].mem.base) == 'rsp' and not operands[1].mem.index)
+    return saved_register or saved_stack
+
+
+def _stack_canary_epilogue(instructions) -> set[int]:
+    """Instruction indexes for GCC's stack-canary compare and failure branch."""
+    by_address = {instruction.address: instruction for instruction in instructions}
+    allowed = set()
+    for index, canary_load in enumerate(instructions[:-2]):
+        operands = canary_load.operands
+        if (canary_load.mnemonic != 'mov' or len(operands) != 2 or operands[0].type != x86.X86_OP_REG
+                or canary_load.reg_name(operands[0].reg) in RAX
+                or operands[1].type != x86.X86_OP_MEM
+                or canary_load.reg_name(operands[1].mem.base) != 'rsp' or operands[1].mem.index):
+            continue
+        compare = instructions[index + 1]
+        compare_operands = compare.operands
+        if (compare.mnemonic not in ('xor', 'sub') or len(compare_operands) != 2
+                or compare_operands[0].type != x86.X86_OP_REG
+                or compare.reg_name(compare_operands[0].reg) != canary_load.reg_name(operands[0].reg)
+                or compare_operands[1].type != x86.X86_OP_MEM
+                or compare.reg_name(compare_operands[1].mem.segment) != 'fs'
+                or compare_operands[1].mem.disp != 0x28
+                or compare_operands[1].mem.base or compare_operands[1].mem.index):
+            continue
+        branch_index = index + 2
+        if branch_index < len(instructions) and _saved_return_move(instructions[branch_index]):
+            branch_index += 1
+        if branch_index >= len(instructions):
+            continue
+        branch = instructions[branch_index]
+        if (not branch.group(capstone.CS_GRP_JUMP) or branch.mnemonic == 'jmp'
+                or not branch.operands or branch.operands[0].type != x86.X86_OP_IMM):
+            continue
+        failure = by_address.get(branch.operands[0].imm)
+        if failure is not None and failure.mnemonic == 'call':
+            allowed.update((index + 1, branch_index))
+    return allowed
+
+
 def explicit_return(code: bytes, address: int) -> list[int]:
     """A saved value deliberately moved into RAX in a return epilogue.
 
@@ -36,25 +85,20 @@ def explicit_return(code: bytes, address: int) -> list[int]:
     of a returned value, not a general return-type inference algorithm.
     """
     instructions = list(decoder().disasm(code, address))
+    canary_instructions = _stack_canary_epilogue(instructions)
     found = []
     for index, instruction in enumerate(instructions):
-        operands = instruction.operands
-        if instruction.mnemonic != 'mov' or len(operands) != 2 or operands[0].type != x86.X86_OP_REG:
+        if not _saved_return_move(instruction):
             continue
-        if instruction.reg_name(operands[0].reg) != 'rax':
-            continue
-        saved_register = (operands[1].type == x86.X86_OP_REG
-                          and instruction.reg_name(operands[1].reg) in ('rbx', 'rbp', 'r12', 'r13', 'r14', 'r15'))
-        saved_stack = (operands[1].type == x86.X86_OP_MEM
-                       and instruction.reg_name(operands[1].mem.base) == 'rsp' and not operands[1].mem.index)
-        if not (saved_register or saved_stack):
-            continue
-        for following in instructions[index + 1:index + 9]:
+        for following_index, following in enumerate(instructions[index + 1:index + 13], index + 1):
             if following.mnemonic == 'ret':
                 found.append(instruction.address)
                 break
             reads, writes = following.regs_access()
-            if any(following.reg_name(r) in RAX for r in (*reads, *writes)) or following.mnemonic not in ('mov', 'pop', 'add', 'leave', 'nop'):
+            if any(following.reg_name(r) in RAX for r in (*reads, *writes)):
+                break
+            if (following_index not in canary_instructions
+                    and following.mnemonic not in ('mov', 'pop', 'add', 'leave', 'nop')):
                 break
     return found
 
