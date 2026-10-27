@@ -181,6 +181,20 @@ class KnowledgeBase(unittest.TestCase):
         self.assertIn("fast_atof_move", note)
         self.assertIn("operator=", note)
 
+    def test_cg_parameter_namespace_diagnosis_is_available_for_immediates(self):
+        from concord import knowledge
+
+        entries = [
+            i for i in knowledge.for_causes(knowledge.load("gcc-4.4.3"), {Cause.IMMEDIATE_OR_RELOC})
+            if i.id == "cg-program-namespace"
+        ]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertIn("CG_PROGRAM = 4109", entry.fix)
+        self.assertIn("CG_LINE", entry.symptom)
+        self.assertIn("99.48623", entry.limits)
+        self.assertEqual(len(entry.evidence), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

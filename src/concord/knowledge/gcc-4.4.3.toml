@@ -490,3 +490,16 @@ limits = "At faca73a, __attribute__((used)) on Base64Alphabet2 keeps the table b
 evidence = [
   { commit = "faca73a", function = "ox::algo::CBase64url::encode2", note = "Both unit objects define the 520-byte pointer array at .rodata+0x60; our relocation names the section, the delinked target names _ZN2ox4algoL15Base64Alphabet2E. Two authored interventions were measured and rejected; concord calls-constants now normalizes the pair to the same reference." },
 ]
+
+
+[[idiom]]
+id = "cg-program-namespace"
+cause = "immediate-or-reloc"
+status = "hypothesis"
+symptom = "two calls to cgGetFirstParameter load 4125, the Cg enum CG_LINE, instead of the target's namespace value 4109"
+fix = "The Cg API defines CG_PROGRAM = 4109 for a program's entry-point parameter namespace. Harvest's recovered CgApi.h incorrectly defines CG_PROGRAM as 4125, so both uses in CCGMaterialRenderer::printVariables pass an invalid namespace. Restoring the API value removes these immediate differences; an authored source change remains subject to the exact-function and whole-build gates."
+limits = "At Harvest faca73a, a function-local corrected CG_PROGRAM overlay scores 99.48623 against the baseline 99.48478. Replacing all six explicit CString argument constructions with implicit conversions produces byte-identical function code and the same score. Both candidates emit 5314 bytes against the 5319-byte target, lower no other unit score and retain every previously exact unit function. Neither is exact; no Harvest source is retained and the whole-build score and data gate was not run."
+evidence = [
+  { commit = "faca73a", function = "daisy::video::CCGMaterialRenderer::printVariables", note = "At target 0x5d6330, instructions at function offsets 0x63 and 0x478 pass 4109 in esi to cgGetFirstParameter for VertexProgram and PixelProgram. The recovered header assigns CG_PROGRAM = 4125. NVIDIA's Cg header defines CG_PROGRAM as 4109 and CG_LINE as 4125: https://github.com/NVIDIAGameWorks/PhysX/blob/4.1/externals/cg-linux/include/Cg/cg.h . NVIDIA's API specifies CG_PROGRAM and CG_GLOBAL as the valid namespaces: https://developer.nvidia.com/w/cg/cgGetFirstParameter.html ." },
+  { commit = "faca73a", function = "daisy::video::CCGMaterialRenderer::printVariables overlays", note = "The local enum correction changes only the immediate bytes at 0x64 and 0x479 in the compiled function. Its other unresolved differences include reordered string-allocation blocks and exception cleanups; the target places the stack-check failure at 0x14c2, the candidate at 0x1461. The implicit-construction counterfactual leaves function code and relocation offsets unchanged. The causal trace could not attribute the target-only cleanup instructions to candidate source." },
+]
