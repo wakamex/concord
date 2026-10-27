@@ -1,6 +1,6 @@
 # Executor scorecard
 
-Implementation work goes to implementer sessions, run through [aop](https://github.com/wakamex/agent-orchestration-process) or, for the Codex session, natively. This file records every finished task so that each new task goes to the cheapest executor whose record on that kind of task is clean. The master session appends one row per finished task to the log and keeps the scorecard current. Finished work is the evidence; tasks are not rerun only to compare executors, and an executor is judged on all its rows of one kind together, since two runs of one task can differ as much as two executors.
+Implementation work goes to implementer sessions, each task a fresh run through [aop](https://github.com/wakamex/agent-orchestration-process). Until 2026-10-27 Sol ran in one long-lived native Codex session, and its earlier rows come from that session. This file records every finished task so that each new task goes to the cheapest executor whose record on that kind of task is clean. The master session appends one row per finished task to the log and keeps the scorecard current. Finished work is the evidence; tasks are not rerun only to compare executors, and an executor is judged on all its rows of one kind together, since two runs of one task can differ as much as two executors.
 
 Kinds of task:
 
@@ -49,7 +49,7 @@ Each executor is scored out of 100 on four parts: results (40), what its work mo
 
 | Executor | Grade | Score | Results | Reliability | Efficiency | Reports | Median wall time per task | What it is for |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| Codex `gpt-6.1-sol` | A- | 88 | 39 | 27 | 13 | 9 | about 1 to 4 hours (native session, not timed) | multi-unit recoveries that need new tooling and a whole-build gate; kept at no more than 1x pace |
+| Codex `gpt-6.1-sol` | A- | 88 | 39 | 27 | 13 | 9 | about 1 to 4 hours in its native session, not timed; aop runs from 2026-10-27 are | multi-unit recoveries that need new tooling and a whole-build gate; kept at no more than 1x pace |
 | Codex `gpt-6.1-terra` at `--effort max` | B+ | 85 | 31 | 29 | 16 | 9 | 7.8 minutes (6.2 to 17.3, five runs) | diagnosing a concrete source lead from the sweep; two of three max tasks found a real source difference |
 | Antigravity Gemini 4 Argon (second reader) | B+ | 85 | 37 | 22 | 18 | 8 | not timed | choosing the next lever; its levers held every time, about half its details did not |
 | Devin `swe-2-high` | B+ | 82 | 31 | 24 | 19 | 8 | 20.8 minutes (7.5 to 105, 37 runs) | bounded diagnoses and capability work at no cost; careful negative results; one commit made with losses, bot authorship and trailers needed fixing |
@@ -62,7 +62,7 @@ Wall time is from aop's start and finish records for each run, waiting for memor
 
 Both models draw on the same Codex subscription, so the binding limit is the weekly quota rather than money; the API-rate figures below are clanker-analytics' prices for the tokens each used. The comparison is not like for like: Sol's tasks were multi-unit recoveries and new tools, Terra's were single-function diagnoses.
 
-| | Sol (`gpt-6.1-sol`, native session) | Terra (`gpt-6.1-terra`, aop runs) |
+| | Sol (`gpt-6.1-sol`, native session until 2026-10-27) | Terra (`gpt-6.1-terra`, aop runs) |
 | --- | ---: | ---: |
 | API-rate cost | $43.58 | $4.70 (clanker-analytics and aop's records agree) |
 | Input and output tokens | 2.96M uncached, 234.3M cached, 606K output | 0.96M uncached, 57.7M cached, 171K output |
@@ -72,7 +72,7 @@ Both models draw on the same Codex subscription, so the binding limit is the wee
 | Newly exact functions | 56 | 1 |
 | Cost per newly exact function | about $0.78 | about $5 |
 
-Most of Sol's cost is its continuous session re-reading its own context: 234M cached input tokens over 1,279 calls, about 183,000 per call, 98.8% of its input tokens. Running each Sol task as a fresh aop run would cut that, with the brief and the knowledge base carrying the context the session now holds.
+Most of Sol's cost is its continuous session re-reading its own context: 234M cached input tokens over 1,279 calls, about 183,000 per call, 98.8% of its input tokens. From 2026-10-27 each Sol task is a fresh aop run, with the brief and the knowledge base carrying the context the session held, so Sol's new rows record cost and wall time per task the same way Terra's do. Its efficiency score stays on the native-session record until a few aop runs replace it.
 
 Sol produced most of the exact functions and most of the tooling (`causal`, `frames`, `scratch-history`, `scores --base`); Terra found two real source differences (`reserve` against `resize`, and Harvest's wrong `CG_PROGRAM`) and one sweep fix. Terra is the cheaper way to check a specific lead, and Sol the more productive way to turn a whole unit into matches: leads from the sweep go to Terra, and a lead that becomes a whole-unit recovery goes to Sol.
 
