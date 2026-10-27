@@ -168,6 +168,21 @@ def rewrites(source: bytes, line: int) -> list:
             if int(re.match(r'line (\d+):', rewrite.description)[1]) == line]
 
 
+def authored_rewrite(source: bytes, header: str, unit: str, symbol: str):
+    """Find a registered header correction and require its anchor and path."""
+    from concord.authored import HEADER_FUNCTION_AUTHORED, header_function_candidate
+    from concord.model import Cause
+    from concord.transforms import Rewrite
+
+    edit = HEADER_FUNCTION_AUTHORED.get((unit, symbol))
+    if edit is None or f'src/{edit.header}' != header:
+        raise ValueError(f'no authored correction for {unit} {symbol} in {header}')
+    candidate = header_function_candidate(source, symbol, edit)
+    if candidate is None:
+        raise ValueError(f'authored correction {edit.name} does not apply to {header}')
+    return Rewrite('authored', Cause.UNKNOWN, edit.name, candidate)
+
+
 def delta(before, after) -> dict:
     """Keep copy-level losses visible, including score losses in inexact code."""
     lost = sorted(before.exact_functions() - after.exact_functions())
@@ -178,10 +193,17 @@ def delta(before, after) -> dict:
             'worse': [c for c in changes if c['after'] < c['before']]}
 
 
-def counterfactual(harvest, header: str, line: int, save: Path, units: list[str] | None = None) -> dict:
-    """Measure existing rewrites at one source line without writing the header."""
+def counterfactual(harvest, header: str, line: int | None, save: Path, units: list[str] | None = None,
+                   authored: tuple[str, str] | None = None) -> dict:
+    """Measure line rewrites or a registered correction without writing the header."""
     source = (harvest.root / header).read_bytes()
-    candidates = rewrites(source, line)
+    if authored is not None:
+        unit, symbol = authored
+        candidates = [authored_rewrite(source, header, harvest.source(unit), symbol)]
+    elif line is not None:
+        candidates = rewrites(source, line)
+    else:
+        raise ValueError('a source line or an authored correction is required')
     dependents = harvest.dependents(header)
     selected = units if units is not None else dependents
     if not set(selected) <= set(dependents):
@@ -199,6 +221,8 @@ def counterfactual(harvest, header: str, line: int, save: Path, units: list[str]
               'selected': selected, 'candidates': rows,
               'config': {name: hashlib.sha256((harvest.root / 'config' / harvest.build / name).read_bytes()).hexdigest()
                          for name in ('flags.json', 'units.toml', 'symbols.tsv')}}
+    if authored is not None:
+        result['authored'] = {'unit': unit, 'symbol': symbol}
     if not candidates:
         save.write_text(json.dumps(result, indent=2) + '\n')
         return result

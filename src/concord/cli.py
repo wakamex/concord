@@ -379,10 +379,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_census.add_argument("--reuse", type=Path, help="reuse validated dump directories from an earlier census")
     p_census.add_argument("--save", type=Path, required=True)
 
-    p_trial = sub.add_parser("causal-trial", help="measure header rewrites at a traced source line")
+    p_trial = sub.add_parser("causal-trial", help="measure header counterfactuals")
     p_trial.add_argument("--harvest", type=Path, required=True)
     p_trial.add_argument("--header", required=True, help="checkout-relative header path, including src/")
-    p_trial.add_argument("--line", type=int, required=True)
+    trial_source = p_trial.add_mutually_exclusive_group(required=True)
+    trial_source.add_argument("--line", type=int, help="line with comparison or loop-form rewrites")
+    trial_source.add_argument("--authored", nargs=2, metavar=("UNIT", "SYMBOL"), help="registered authored header-function correction")
     p_trial.add_argument("--unit", action="append", help="measure these including units first (default: every including unit)")
     p_trial.add_argument("--save", type=Path, required=True)
 
@@ -545,7 +547,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{result['compared']} inexact functions compared, {len(result['functions'])} differ, {len(result['skipped'])} skipped")
         return 0
     if args.command == "causal-trial":
-        report = census.counterfactual(Harvest(args.harvest), args.header, args.line, args.save, args.unit)
+        report = census.counterfactual(Harvest(args.harvest), args.header, args.line, args.save, args.unit,
+                                       authored=tuple(args.authored) if args.authored else None)
         for row in report['candidates']:
             gained = sum(len(u.get('gained_exact', [])) for u in row['units'])
             lost = sum(len(u.get('lost_exact', [])) for u in row['units'])

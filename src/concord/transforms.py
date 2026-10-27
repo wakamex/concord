@@ -67,14 +67,14 @@ def _declarator_name(node: Node) -> str:
     return "::".join(_declarator_parts(node)[-2:])
 
 
-def _namespace_path(node: Node) -> list[str]:
-    """The names of the namespaces enclosing a node, outermost first."""
+def _enclosing_path(node: Node) -> list[str]:
+    """The namespaces and classes enclosing a node, outermost first."""
     path, ancestor = [], node.parent
     while ancestor is not None:
-        if ancestor.type == "namespace_definition":
+        if ancestor.type in ("namespace_definition", "class_specifier", "struct_specifier", "union_specifier"):
             name = ancestor.child_by_field_name("name")
             if name is not None:
-                path[:0] = name.text.decode().split("::")
+                path[:0] = re.sub(r"<[^<>]*>", "", name.text.decode()).replace(" ", "").split("::")
         ancestor = ancestor.parent
     return path
 
@@ -133,8 +133,8 @@ def find_function(source: bytes, symbol: str) -> Node:
     """The definition of the symbol's function in source, matched by class,
     name and parameter count, and by the demangled parameter types when several
     same-name overloads share the count, as the drawIndexedTriangleList vertex
-    overloads do. An unqualified declarator is also found by the namespaces
-    enclosing it, such as `f` inside `namespace a { namespace b {`."""
+    overloads do. An unqualified declarator is also found by its enclosing
+    namespaces and classes."""
     demangled = demangle(symbol)
     name, arity = _name_and_arity(demangled)
     parts = re.sub(r"<[^<>]*>", "", demangled.partition("(")[0]).replace(" ", "").split("::")
@@ -145,7 +145,7 @@ def find_function(source: bytes, symbol: str) -> Node:
         node = stack.pop()
         if node.type == "function_definition" and _arity(node) == arity:
             declarator = _declarator_parts(node)
-            if "::".join(declarator[-2:]) == name or _namespace_path(node) + declarator == parts:
+            if "::".join(declarator[-2:]) == name or _enclosing_path(node) + declarator == parts:
                 found.append(node)
         stack.extend(node.children)
     if not found:

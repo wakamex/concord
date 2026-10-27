@@ -1,11 +1,22 @@
 """Causal census selection, source identity, and distinct-function weighting."""
 
+import json
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from concord.census import delta, rank, rewrites, select
+from concord import authored
+from concord.census import (
+    authored_rewrite,
+    counterfactual,
+    delta,
+    rank,
+    rewrites,
+    select,
+)
 from concord.harvest import Evaluation
 
 
@@ -19,6 +30,77 @@ def finding(path, line, offset, status='observed-candidate-decision'):
 
 
 class Census(unittest.TestCase):
+    def test_authored_trial_reports_each_dependent_without_writing_the_header(self):
+        symbol = '_ZN5Board4pickEi'
+        units = ['u.cpp', 'v.cpp']
+        edit = authored.HeaderFunctionEdit('edit', 'board.h', (authored.Replacement(b'return 0;', b'return 1;', 1),))
+
+        class Checkout:
+            build = 'build'
+
+            def __init__(self, root):
+                self.root = root
+                self.calls = []
+
+            def source(self, unit):
+                return unit
+
+            def dependents(self, path):
+                if path != 'src/board.h':
+                    raise AssertionError(path)
+                return units
+
+            def evaluate_overlays(self, items):
+                self.calls.append(items)
+                result = {}
+                for name, (unit, overlays) in items.items():
+                    if unit not in units or set(overlays) not in (set(), {'src/board.h'}):
+                        raise AssertionError((unit, overlays))
+                    if overlays and b'return 1;' not in overlays['src/board.h']:
+                        raise AssertionError(overlays)
+                    obj = self.root / f'{unit}-{name}.o'
+                    obj.write_bytes(name.encode())
+                    result[name] = Evaluation(name, unit, object=obj,
+                                              sections=[{'functions': [{'symbol': 'f', 'exact': not overlays}]}],
+                                              fuzzy={'f': 99 if overlays else 100})
+                return result
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'src').mkdir()
+            header = root / 'src/board.h'
+            source = b'int Board::pick(int a) { return 0; }\n'
+            header.write_bytes(source)
+            for unit in units:
+                (root / 'src' / unit).write_text('int unit;\n')
+            config = root / 'config/build'
+            config.mkdir(parents=True)
+            for name in ('flags.json', 'units.toml', 'symbols.tsv'):
+                (config / name).write_text(name)
+            checkout = Checkout(root)
+            save = root / 'trial.json'
+            with patch.dict(authored.HEADER_FUNCTION_AUTHORED, {(units[0], symbol): edit}):
+                report = counterfactual(checkout, 'src/board.h', None, save, authored=(units[0], symbol))
+            self.assertEqual(header.read_bytes(), source)
+            self.assertEqual(report['selected'], units)
+            self.assertEqual(len(checkout.calls), 2)
+            self.assertEqual([row['unit'] for row in report['candidates'][0]['units']], units)
+            self.assertTrue(all(row['lost_exact'] == ['f'] for row in report['candidates'][0]['units']))
+            self.assertEqual(json.loads(save.read_text()), report)
+
+    def test_authored_header_trial_uses_the_registered_edit_and_validates_its_path(self):
+        unit, symbol = 'u.cpp', '_ZN5Board4pickEi'
+        source = b'int Board::pick(int a) { return 0; }\n'
+        edit = authored.HeaderFunctionEdit('edit', 'board.h', (authored.Replacement(b'return 0;', b'return 1;', 1),))
+        with patch.dict(authored.HEADER_FUNCTION_AUTHORED, {(unit, symbol): edit}):
+            rewrite = authored_rewrite(source, 'src/board.h', unit, symbol)
+            self.assertEqual(rewrite.transform, 'authored')
+            self.assertIn(b'return 1;', rewrite.source)
+            with self.assertRaises(ValueError):
+                authored_rewrite(source, 'src/other.h', unit, symbol)
+            with self.assertRaises(ValueError):
+                authored_rewrite(rewrite.source, 'src/board.h', unit, symbol)
+
     def test_counterfactual_rewrites_only_the_named_line(self):
         source = b'int f(int a, int b) {\nfor (int i=0;i<a+1;++i) b+=i;\nreturn a<b;\n}\n'
         candidates = rewrites(source, 2)

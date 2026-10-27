@@ -43,6 +43,15 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(main(['causal-census', '--harvest', '/root', '--maximum', '20', '--save', '/tmp/result.json']), 0)
             run.assert_called_once_with(harvest.return_value, Path('/tmp/result.json'), 97, 20, None)
 
+    def test_causal_trial_can_measure_a_registered_authored_header(self):
+        from pathlib import Path
+        from unittest import mock
+
+        with mock.patch('concord.cli.Harvest') as harvest, mock.patch('concord.cli.census.counterfactual', return_value={'candidates': []}) as run:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['causal-trial', '--harvest', '/root', '--header', 'src/h.h', '--authored', 'u.cpp', 'symbol', '--save', '/tmp/trial.json']), 0)
+            run.assert_called_once_with(harvest.return_value, 'src/h.h', None, Path('/tmp/trial.json'), None, authored=('u.cpp', 'symbol'))
+
     def test_causal_reuses_dumps_and_saves_structured_findings(self):
         import json
         import tempfile

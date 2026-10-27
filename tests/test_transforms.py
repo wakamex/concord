@@ -68,6 +68,21 @@ int g() { return f(0); }
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class FindFunction(unittest.TestCase):
+    def test_finds_inline_template_member_by_its_enclosing_class(self):
+        source = b'''namespace ox { namespace core {
+template <class T> class CString {
+    int subString(int begin, int length) const { return length; }
+};
+class Other {
+    int subString(int begin, int length) const { return begin; }
+};
+}}
+'''
+        function = find_function(source, '_ZNK2ox4core7CStringIcE9subStringEii')
+        self.assertIn(b'return length;', function.text)
+        with self.assertRaises(KeyError):
+            find_function(source, '_ZNK5wrong4core7CStringIcE9subStringEii')
+
     def test_finds_an_unqualified_definition_by_its_enclosing_namespaces(self):
         function = find_function(NESTED, "_ZN1a1b1fEi")  # a::b::f(int)
         self.assertIn(b"x + 1", function.text)
