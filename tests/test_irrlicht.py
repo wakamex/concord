@@ -46,6 +46,35 @@ class Translate(unittest.TestCase):
         self.assertEqual(out.count("::reallocateBuffers"), 1)
         self.assertIn("other.resize(3)", translate("other.set_used(3)"))
 
+    def test_software_triangle_buffers_reserve_only_in_matching_build(self):
+        source = (
+            "void CVideoSoftware::drawIndexedTriangleList(const S3DVertex* vertices, s32 vertexCount)\n{\n"
+            "    if ((s32)TransformedPoints.size() < vertexCount)\n"
+            "        TransformedPoints.set_used(vertexCount);\n}\n"
+            "void CVideoSoftware::drawIndexedTriangleList(const S3DVertex2TCoords* vertices, s32 vertexCount)\n{\n"
+            "    if ((s32)TransformedPoints.size() < vertexCount)\n"
+            "        TransformedPoints.set_used(vertexCount);\n}\n"
+            "void CVideoSoftware::other(s32 vertexCount)\n{\n"
+            "    TransformedPoints.set_used(vertexCount);\n}\n"
+            "void Another::drawIndexedTriangleList(s32 vertexCount)\n{\n"
+            "    TransformedPoints.set_used(vertexCount);\n}\n"
+            "void CVideoSoftware::drawIndexedTriangleList(s32 triangleCount)\n{\n"
+            "    TransformedPoints.set_used(triangleCount*3);\n}\n"
+        )
+        out = translate(source)
+        guarded = (
+            "#ifdef HARVEST_PORT\n"
+            "        TransformedPoints.resize(vertexCount);\n"
+            "#else\n"
+            "        TransformedPoints.reserve(vertexCount);\n"
+            "#endif"
+        )
+        self.assertEqual(out.count(guarded), 2)
+        self.assertIn("void CVideoSoftware::other(int vertexCount)\n{\n    TransformedPoints.resize(vertexCount);", out)
+        self.assertIn("void Another::drawIndexedTriangleList(int vertexCount)\n{\n    TransformedPoints.resize(vertexCount);", out)
+        self.assertIn("TransformedPoints.resize(triangleCount*3);", out)
+        self.assertEqual(translate(out), out)
+
     def test_namespace_typedefs_types_and_headers(self):
         source = (
             '#include "IUnknown.h"\n#include "SColor.h"\nnamespace irr\n{\nnamespace video\n{\n'

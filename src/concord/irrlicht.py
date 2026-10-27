@@ -182,6 +182,18 @@ def _translate(source: str, namespace: str) -> str:
         body = buffers.group().replace(".set_used(", ".reserve(")
         source = source[:buffers.start()] + source[buffers.end():]
         source = source.replace(step, body + "\n\n" + step, 1)
+    # The original reserves without resizing and indexes the storage, as the
+    # target's code proves. The port resizes to construct the vector elements.
+    def software_triangle_buffer(method: re.Match) -> str:
+        def guard(call: re.Match) -> str:
+            indent = call[1]
+            return (f"#ifdef HARVEST_PORT\n{indent}TransformedPoints.resize(vertexCount);\n"
+                    f"#else\n{indent}TransformedPoints.reserve(vertexCount);\n#endif")
+
+        return re.sub(r"(?m)^([ \t]*)TransformedPoints\.set_used\(vertexCount\);", guard, method[0])
+
+    source = re.sub(r"^void CVideoSoftware::drawIndexedTriangleList\([^)]*\)\s*\{.*?^\}",
+                    software_triangle_buffer, source, flags=re.MULTILINE | re.DOTALL)
     source = re.sub(r"\bnamespace irr\b", f"namespace {namespace}", source)
     source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui|ELL_\w+|" + "|".join(TYPEDEFS) + r")\b)", "", source)  # qualified again below
     source = re.sub(r"\birr::", "daisy::", source)
