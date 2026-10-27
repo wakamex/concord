@@ -43,18 +43,20 @@ Evaluation:
 
 Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a cheaper Codex option at half Sol's price;  Muse has no diagnosis or rule row.
 
-## Grades (2026-10-27)
+## Grades (2026-10-27, afternoon)
 
-Each executor is scored out of 100 on four parts: results (40), what its work moved, from exact functions to findings that closed or opened a lever; reliability (30), clean gates, diffs that hold and rules kept; efficiency (20), cost and wall time for what it delivered; and reports (10), whether its report was accurate and complete enough to act on without rereading its work. A is 90 and above, B 80 to 89, C 70 to 79. These are the master session's judgment from the rows below, not a benchmark, and they move as rows are added.
+Each executor is scored out of 100 on four parts: results (40), what its work moved, from exact functions to findings that closed or opened a lever; reliability (30), clean gates, diffs that hold and rules kept; efficiency (20), cost and wall time for what it delivered; and reports (10), whether its report was accurate and complete enough to act on without rereading its work. The score is the sum of the four parts. A is 90 and above, B 80 to 89, C 70 to 79, D 60 to 69; within a band, x0 to x3 is a minus, x4 to x6 plain and x7 to x9 a plus. These are the master session's judgment from the rows below, not a benchmark, and they move as rows are added.
 
 | Executor | Grade | Score | Results | Reliability | Efficiency | Reports | Median wall time per task | What it is for |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| Codex `gpt-6.1-sol` | A- | 88 | 39 | 27 | 13 | 9 | 17 minutes through aop in w3sim (1.4 to 280, 31 runs); about 1 to 4 hours in its native concord session | multi-unit recoveries that need new tooling and a whole-build gate; kept at no more than 1x pace |
-| Codex `gpt-6.1-terra` at `--effort max` | B+ | 85 | 31 | 29 | 16 | 9 | 7.8 minutes (6.2 to 17.3, five runs) | diagnosing a concrete source lead from the sweep; two of three max tasks found a real source difference |
-| Antigravity Gemini 4 Argon (second reader) | B+ | 85 | 37 | 22 | 18 | 8 | not timed | choosing the next lever; its levers held every time, about half its details did not |
-| Devin `swe-2-high` | B+ | 82 | 31 | 24 | 19 | 8 | 20.8 minutes (7.5 to 105, 37 runs) | bounded diagnoses and capability work at no cost; careful negative results; one commit made with losses, bot authorship and trailers needed fixing |
-| Muse `muse-wonder-full-1.0` | B | 80 | 30 | 28 | 10 | 10 | 49 minutes (12.5 to 128, three runs) | a capability with a careful proof (the report naming fix, merged upstream as #39); its subscription runs out fast |
-| Cursor `composer-2.5` | C+ | 74 | 18 | 22 | 18 | 9 | 12.6 minutes (1.3 to 23, four runs; one held 4 hours by an aop bug, now fixed) | small rule and search tasks written as numbered checkable rules; it broke two rules once and its first concord task failed |
+| Codex `gpt-6.1-sol` | A- | 91 | 39 | 27 | 16 | 9 | 19.6 minutes in its one concord aop run; 17 minutes over 31 aop runs in w3sim; about 1 to 4 hours per task in its earlier native session | multi-unit recoveries that need new tooling and a whole-build gate; its first aop task cost $1.75, near its w3sim median |
+| Codex `gpt-6.1-terra` at `--effort max` | B+ | 88 | 34 | 29 | 16 | 9 | 8.4 minutes (6.2 to 18.4, eight runs) | diagnosing a concrete source lead from the sweep; found the `sortRiver` fallback (1 newly matched, five copies up to 87.79) and showed two sweep leads were tool artifacts, fixing the tool each time |
+| Antigravity Gemini 4 Argon (second reader) | B | 85 | 37 | 22 | 18 | 8 | not timed | choosing the next lever; its levers held every time, about half its details did not |
+| Devin `swe-2-high` | B- | 81 | 33 | 22 | 19 | 7 | 23.4 minutes (under 1 to 120, 39 runs) | bounded diagnoses and capability work at no cost; matched MD2 `loadFile` and generalized the reserve rule; one knowledge entry that failed the suite, reported as passing, and one commit made with losses |
+| Muse `muse-wonder-full-1.0` | C+ | 78 | 30 | 28 | 10 | 10 | 49 minutes (12.5 to 128, three runs) | a capability with a careful proof (the report naming fix, merged upstream as #39); its subscription runs out fast |
+| Cursor `composer-2.5` | D+ | 67 | 20 | 20 | 18 | 9 | 12.6 minutes (1.3 to 23, seven runs; one held 4 hours by an aop bug, now fixed) | small tool fixes written as numbered checkable rules; its string-pool comparison holds after fixes, but it added co-author trailers twice, a test tied to its own worktree, and a mechanism that accepted a zero-gain edit |
+
+Muse's and Cursor's earlier scores (80 and 74) did not equal the sum of their parts; the sums are 78 and 67.
 
 Wall time is from aop's start and finish records for each run, waiting for memory excluded. Many of Devin's runs report `failed` only because of aop's trajectory-export bug while their work completed; the times count them.
 
@@ -62,16 +64,16 @@ Wall time is from aop's start and finish records for each run, waiting for memor
 
 Sol now runs through aop like every other executor, so the comparison that matters going forward is Sol through aop against Terra through aop. Sol has no concord aop runs yet; its column uses its 31 aop runs in w3sim on 2026-10-24 and 2026-10-25 (`--effort high`), the nearest measured per-task figures, beside its native concord session for reference. Both models draw on the same Codex subscription, so the binding limit is the weekly quota rather than money; the dollar figures are API prices for the tokens each run used, from aop's records and clanker-analytics, which agree. The tasks differ: Sol's were multi-unit recoveries and new tools, Terra's single-function diagnoses.
 
-| | Sol through aop (w3sim, high effort) | Terra through aop (concord, max effort) | Sol native session (concord, until 2026-10-27) |
+| | Sol through aop (w3sim, high effort; one concord run so far) | Terra through aop (concord) | Sol native session (concord, until 2026-10-27) |
 | --- | ---: | ---: | ---: |
-| Tasks | 31 runs | 6 tasks over 8 runs | about 12 |
-| Total API-price cost | $92.19 | $4.70 | $43.58 |
-| Cost per task | median $1.77, mean $2.97 ($0.16 to $24.28) | about $0.75; $1.30 to $1.55 at max | about $3.60 |
+| Tasks | 31 runs in w3sim; 1 in concord | 8 tasks over 11 runs (5 tasks at max effort) | about 12 |
+| Total API-price cost | $92.19 in w3sim; $1.75 in concord | $6.75 | $43.58 |
+| Cost per task | median $1.77, mean $2.97 ($0.16 to $24.28); the concord task $1.75 | about $0.84; median $1.38 at max ($0.62 to $1.54) | about $3.60 |
 | Share of input tokens read from cache | 98.9% | 98.4% | 98.8% |
-| Wall time per task | median 17 minutes (1.4 to 280) | median 7.8 minutes at max (1 to 17) | about 1 to 4 hours, not timed |
-| Newly exact functions | not comparable (w3sim) | 1 | 56 |
+| Wall time per task | median 17 minutes (1.4 to 280); the concord task 19.6 minutes | median 8.4 minutes per run at max (6.2 to 18.4) | about 1 to 4 hours, not timed |
+| Newly exact functions | 0 from the concord task (one function 66.20 to 77.45) | 2 | 56 |
 
-Every Codex run reads nearly all its input from cache, through aop or not: each call re-sends the conversation so far, so a run's cost grows with its number of calls and the length of its context. The native session's cost per task, about $3.60, sits within the spread of Sol's aop runs, so moving Sol to aop changes accounting more than price: each task now gets its own costed, timed row, and one task's context no longer carries into the next. On cost per task, Sol through aop is about twice Terra at max effort at the median; on results, Sol's native session produced 56 newly exact functions to Terra's 1. Leads from the sweep go to Terra, and a lead that becomes a whole-unit recovery goes to Sol, now as an aop run; the first concord Sol aop runs replace the w3sim column.
+Every Codex run reads nearly all its input from cache, through aop or not: each call re-sends the conversation so far, so a run's cost grows with its number of calls and the length of its context. The native session's cost per task, about $3.60, sits within the spread of Sol's aop runs, so moving Sol to aop changes accounting more than price: each task now gets its own costed, timed row, and one task's context no longer carries into the next. On cost per task, Sol through aop is about twice Terra at max effort at the median; on results, Sol's native session produced 56 newly exact functions to Terra's 1. Leads from the sweep go to Terra, and a lead that becomes a whole-unit recovery goes to Sol, now as an aop run; Sol's first concord aop task cost $1.75, at its w3sim median; a few more replace the w3sim figures.
 
 ## Log
 
