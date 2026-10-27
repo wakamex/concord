@@ -4,9 +4,9 @@ decomp.dev scores a pull request from Harvest's progress report
 (`python -m hv.progress report`): objdiff's fuzzy score and match state for every
 function, and the target bytes each matched data section covers. A batch of
 changes is ready to submit when, by that report, no function scores lower or
-stops matching and no data byte that matched stops matching. Data is compared by
-bytes because the report names a matched data run by its start address: two runs
-that merge into one show up as a run that disappeared and a new, larger one.
+stops matching and no data byte that matched stops matching. Data ranges come
+from Harvest's validated evidence: the report groups disjoint ranges by owner
+and represents each group by its total size and lowest address.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+DATA_FORMAT = "matched-ranges-v1"
 
 
 def report(checkout: Path, capture: bool = False, ref: str | None = None) -> dict:
@@ -33,7 +35,7 @@ def report(checkout: Path, capture: bool = False, ref: str | None = None) -> dic
             command = "capture" if capture and ref is None else "report"
             done = subprocess.run(
                 ["uv", "--no-config", "run", "--locked", "python",
-                 *([str(Path(__file__).with_name("scores_driver.py"))] if command == "capture" else ["-m", "hv.progress"]),
+                 str(Path(__file__).with_name("scores_driver.py")),
                  command, "--output", str(output)],
                 cwd=root,
                 check=False,
@@ -49,9 +51,8 @@ def report(checkout: Path, capture: bool = False, ref: str | None = None) -> dic
 
 
 def snapshot(progress: dict) -> dict:
-    """{"functions": {address: {"name", "fuzzy", "matched"}}, "data": [[start, size], ...]}
-    from a progress report: every function, and the matched data runs."""
-    functions, data = {}, []
+    """Save every function and the verified matched data ranges from a report."""
+    functions = {}
     for item in progress["units"]:
         measures = item["measures"]
         for function in item.get("functions", []):
@@ -61,9 +62,7 @@ def snapshot(progress: dict) -> dict:
                 "fuzzy": function.get("fuzzy_match_percent", 0.0),
                 "matched": measures["matched_code"] == measures["total_code"],
             }
-        if int(measures["total_data"]) and measures["matched_data"] == measures["total_data"]:
-            data += [[int(s["metadata"]["virtual_address"]), int(s["size"])] for s in item.get("sections", [])]
-    return {"functions": functions, "data": sorted(data)}
+    return {"functions": functions, "data": progress["concord_matched_data"], "data_format": DATA_FORMAT}
 
 
 @dataclass
@@ -84,6 +83,8 @@ class Change:
 
 def compare(before: dict, after: dict) -> tuple[list[Change], int, int]:
     """Changed functions, and the matched data bytes lost and gained."""
+    if before.get("data_format") != DATA_FORMAT or after.get("data_format") != DATA_FORMAT:
+        raise ValueError("saved data ranges use an obsolete format; recapture the snapshot")
     changes = []
     for address in sorted(before["functions"].keys() | after["functions"].keys(), key=int):
         a, b = before["functions"].get(address), after["functions"].get(address)

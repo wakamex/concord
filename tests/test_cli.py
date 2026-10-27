@@ -14,7 +14,7 @@ class CliTest(unittest.TestCase):
         from pathlib import Path
         from unittest import mock
 
-        snapshot = {'functions': {}, 'data': []}
+        snapshot = {'functions': {}, 'data': [], 'data_format': 'matched-ranges-v1'}
         with mock.patch('concord.cli.scores.normalized', return_value=(snapshot, dict(snapshot), {})) as run:
             with contextlib.redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(main(['scores', '--harvest', '/root', '--base', 'base']), 0)

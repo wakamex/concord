@@ -45,7 +45,7 @@ class NormalizedScores(unittest.TestCase):
                 self.assertNotEqual(private, root)
                 self.assertEqual((private/'config/test/symbols.tsv').read_text(), 'learned addresses')
                 seen.append(((private/'src/a.cpp').read_text(), (private/'src/new.cpp').exists()))
-                return {'units': []}
+                return {'units': [], 'concord_matched_data': []}
             with patch('concord.scores.report', side_effect=capture):
                 before, after, evidence = normalized(root, base)
             self.assertEqual(seen, [('base', False), ('head', True)])
