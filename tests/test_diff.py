@@ -180,6 +180,18 @@ class KnowledgeBase(unittest.TestCase):
                 self.assertTrue(i.fix and i.symptom)
                 self.assertTrue(all("commit" in e or "note" in e for e in i.evidence), i.id)
 
+    def test_opengl_source_causes_and_bounded_blockers_are_recorded(self):
+        from concord import knowledge
+
+        entries = {i.id: i for i in knowledge.load("gcc-4.4.3")}
+        for key in ("opengl-quad-index-and-bound", "opengl-live-viewport-and-version", "opengl-unit-context-blockers"):
+            self.assertIn(key, entries.keys())
+            self.assertTrue(entries[key].evidence)
+        blockers = entries["opengl-unit-context-blockers"]
+        self.assertIn("queryFeature", blockers.limits)
+        self.assertIn("setBasicRenderStates", blockers.limits)
+        self.assertIn("_M_insert_aux", blockers.limits)
+
     def test_findmesh_cleanup_thunk_diagnosis_is_recorded(self):
         from concord import knowledge
 
