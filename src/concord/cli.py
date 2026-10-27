@@ -295,11 +295,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_calls.add_argument("--object", type=Path, help="use one compiled candidate instead of its canonical object")
     p_calls.add_argument("--constructor-aliases", action="store_true", help="instead reconcile named constructor copies whose exact code and relocations are identical")
 
-    p_author = sub.add_parser("author", help="prove registered authored source exact for one function, then write it")
+    p_author = sub.add_parser("author", help="measure registered authored source, then write a verified candidate")
     p_author.add_argument("function", help="target function symbol")
     p_author.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_author.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
-    p_author.add_argument("--apply", action="store_true", help="write a proven candidate over the unit's file")
+    p_author.add_argument("--apply", action="store_true", help="write an accepted candidate to its source file")
     p_author.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_place = sub.add_parser("place", help="learn references and place called templates without re-seeding source")
@@ -612,7 +612,7 @@ def main(argv: list[str] | None = None) -> int:
         unit = harvest.source(args.unit)
         report = authored.apply(harvest, unit, args.function, write=args.apply)
         patch = (
-            results.save_patch(args.results, unit, report["original"], report["source"]) if report["applied"] else None
+            results.save_patch(args.results, report.get("path", unit), report["original"], report["source"]) if report["applied"] else None
         )
         results.record(
             args.results,
@@ -620,6 +620,7 @@ def main(argv: list[str] | None = None) -> int:
                 "command": "author",
                 "harvest": results.commit(harvest.root),
                 "unit": unit,
+                "path": report.get("path", unit),
                 "symbol": args.function,
                 "chosen": report["chosen"],
                 "applied": report["applied"],
@@ -628,8 +629,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         for name, row in report["candidates"].items():
             flags = ", ".join(k for k in ("error" if row["error"] else None, "exact" if row["exact"] else None, "kept" if row["kept"] else None) if k)
-            print(f"  {name}: {flags or 'rejected'} (score {row['score']})")
-        print(f"author {unit} {args.function}: {report['chosen'] or 'no candidate proven'}{' (applied)' if report['applied'] else ''}")
+            score = f"{row['before']} -> {row['score']}" if "before" in row else str(row["score"])
+            print(f"  {name}: {flags or 'rejected'} (score {score})")
+        if "dependents" in report:
+            print(f"  header {report['path']}: checked {len(report['dependents'])} dependent units")
+        print(f"author {unit} {args.function}: {report['chosen'] or 'no candidate accepted'}{' (applied)' if report['applied'] else ''}")
         return 0 if report["chosen"] else 1
     if args.command == "place":
         harvest = Harvest(args.harvest)
