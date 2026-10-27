@@ -2,6 +2,7 @@
 references, and extraction from real compiled objects."""
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -130,6 +131,34 @@ class CanonicalNames(unittest.TestCase):
         self.assertEqual(_canonical(".text._ZF"), "_ZF")
         self.assertEqual(_canonical(".rodata.cst4"), ".rodata.cst4")
         self.assertEqual(_canonical(".rodata.str1.8"), ".rodata.str1.8")
+
+
+class Encode2TableReferences(unittest.TestCase):
+    """GCC may relocate a jump table through .rodata+N while the target names the
+    object symbol at offset zero; both must compare the same."""
+
+    @unittest.skipUnless(
+        Path("/code/harvest-cursor/build/match/1.18-linux-amd64/ox__algo__CBase64url.o").exists()
+        or os.environ.get("CONCORD_HARVEST"),
+        "needs a Harvest checkout after hv match",
+    )
+    def test_base64url_encode2_agrees_on_base64alphabet2(self):
+        from concord.calls_constants import compare_function, load_symbols, resolvers
+
+        root = Path(os.environ.get("CONCORD_HARVEST", "/code/harvest-cursor"))
+        build = "1.18-linux-amd64"
+        sym = "_ZN2ox4algo10CBase64url7encode2ERNS_4core7CStringIcEEPNS_2io9IReadFileE"
+        slug = "ox__algo__CBase64url"
+        ours = read_refs(root / "build" / "match" / build / f"{slug}.o", {sym})[sym]
+        target = read_refs(root / "build" / "objdiff" / build / "target" / f"{slug}.o", {sym})[sym]
+        report = json.loads((root / "build" / "match" / build / f"{slug}.json").read_text())
+        rows = {f["symbol"]: f for s in report["sections"] for f in s.get("functions", [])}
+        named, name_to_addr = load_symbols(root, build)
+        resolve_ours, resolve_target, display = resolvers(rows, named, name_to_addr)
+        self.assertEqual(
+            compare_function(ours, target, resolve_ours=resolve_ours, resolve_target=resolve_target, display=display),
+            [],
+        )
 
 
 class Resolvers(unittest.TestCase):
