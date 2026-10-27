@@ -56,6 +56,50 @@ AUTHORED: dict[tuple[str, str], list[Edit]] = {
             b"    material.ZWriteEnable = false;\n    material.BilinearFilter = false;\n    material.TrilinearFilter = false;",
         ),
     ],
+    # updateState's game-over exit: the target stores NextState = 3 on each arm
+    # of the campaign check -- a `mov [this+0x50],3` behind `je` to a lone
+    # store block, and another ahead of the highscore evaluation -- where ours
+    # keeps one hoisted store before `if (GameMode != EGM_CAMPAIGN)`. CPlayState
+    # is Harvest's own, so the two-arm form is authored.
+    (
+        "HarvestFull/harvest/states/CPlayState.cpp",
+        "_ZN7harvest6states10CPlayState11updateStateEf",
+    ): [
+        Edit(
+            "campaign-nextstate",
+            b"            NextState = 3;\n            if (GameMode != game::EGM_CAMPAIGN)\n            {\n                bool highscore;",
+            b"            if (GameMode != game::EGM_CAMPAIGN)\n            {\n                NextState = 3;\n                bool highscore;",
+        ),
+        Edit(
+            "campaign-nextstate-else",
+            b"                else\n                    game::CHighscoreInfo::setNewHighscoreInfo(0);\n            }\n        }",
+            b"                else\n                    game::CHighscoreInfo::setNewHighscoreInfo(0);\n            }\n            else\n                NextState = 3;\n        }",
+        ),
+        Edit(
+            "highscore-direct",
+            b"                bool highscore;\n                if (GameWon)\n                    highscore = GameMode != game::EGM_CREATIVE;\n                else\n                    highscore = GameMode == game::EGM_NORMAL || GameMode == game::EGM_INSANE;\n                if (highscore)\n                    game::CHighscoreInfo::setNewHighscoreInfo(new game::CHighscoreInfo(PlayerName.c_str(),\n                        PlayerGroup.c_str(), RandomValue, StartTime, GameMode, game::gp_world->getPlanet(),\n                        game::gp_statistics->getGameStatValue(1), ThreatLevel->getThreatLevel(), GameTime));\n                else\n                    game::CHighscoreInfo::setNewHighscoreInfo(0);",
+            b"                if (GameWon)\n                {\n                    if (GameMode != game::EGM_CREATIVE)\n                        game::CHighscoreInfo::setNewHighscoreInfo(new game::CHighscoreInfo(PlayerName.c_str(),\n                            PlayerGroup.c_str(), RandomValue, StartTime, GameMode, game::gp_world->getPlanet(),\n                            game::gp_statistics->getGameStatValue(1), ThreatLevel->getThreatLevel(), GameTime));\n                    else\n                        game::CHighscoreInfo::setNewHighscoreInfo(0);\n                }\n                else\n                {\n                    if (GameMode == game::EGM_NORMAL || GameMode == game::EGM_INSANE)\n                        game::CHighscoreInfo::setNewHighscoreInfo(new game::CHighscoreInfo(PlayerName.c_str(),\n                            PlayerGroup.c_str(), RandomValue, StartTime, GameMode, game::gp_world->getPlanet(),\n                            game::gp_statistics->getGameStatValue(1), ThreatLevel->getThreatLevel(), GameTime));\n                    else\n                        game::CHighscoreInfo::setNewHighscoreInfo(0);\n                }",
+        ),
+    ],
+    # renderMinimap: the target draws the clipped marker square's four edges in
+    # both it->Time branches (eight MINIMAP_MARKER_COLOR reads, one shared clip
+    # block in ours), and passes a literal SColor(0x64fe8280) to the progress bar
+    # where ours loads THREAT_TEXT_COLOR from .bss.
+    (
+        "HarvestFull/harvest/states/CPlayState.cpp",
+        "_ZN7harvest6states10CPlayState13renderMinimapEv",
+    ): [
+        Edit(
+            "progress-bar-color",
+            b"            GuiSprites[GS_PROGRESS_BAR]->draw(position, &clip, THREAT_TEXT_COLOR);",
+            b"            GuiSprites[GS_PROGRESS_BAR]->draw(position, &clip, ox::video::SColor(0x64fe8280));",
+        ),
+        Edit(
+            "marker-box-per-branch",
+            b"        ox::core::CRect<int> box;\n        if (it->Time <= 4.0f)\n            box = ox::core::CRect<int>(position.X - 3, position.Y - 3, position.X + 4, position.Y + 4);\n        else\n        {\n            int size = (int)((it->Time - 4.0f) * 100.0f) + 6;\n            box.UpperLeftCorner = position - ox::core::CPosition2d<int>(size / 2, size / 2);\n            box.LowerRightCorner = box.UpperLeftCorner + ox::core::CPosition2d<int>(size, size);\n        }\n\n        // Clip the square to the minimap and skip the edges that were cut.\n        bool left = true;\n        if (box.UpperLeftCorner.X < area.UpperLeftCorner.X)\n        {\n            box.UpperLeftCorner.X = area.UpperLeftCorner.X;\n            left = false;\n        }\n        bool top = true;\n        if (box.UpperLeftCorner.Y < area.UpperLeftCorner.Y)\n        {\n            box.UpperLeftCorner.Y = area.UpperLeftCorner.Y;\n            top = false;\n        }\n        bool right = true;\n        if (box.LowerRightCorner.X >= area.LowerRightCorner.X)\n        {\n            box.LowerRightCorner.X = area.LowerRightCorner.X - 1;\n            right = false;\n        }\n        bool bottom = true;\n        if (box.LowerRightCorner.Y >= area.LowerRightCorner.Y)\n        {\n            box.LowerRightCorner.Y = area.LowerRightCorner.Y - 1;\n            bottom = false;\n        }\n        if (top)\n            Driver->draw2DLine(box.UpperLeftCorner,\n                ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n        if (left)\n            Driver->draw2DLine(box.UpperLeftCorner,\n                ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);\n        if (right)\n            Driver->draw2DLine(box.LowerRightCorner,\n                ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n        if (bottom)\n            Driver->draw2DLine(box.LowerRightCorner,\n                ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);",
+            b"        if (it->Time <= 4.0f)\n        {\n            ox::core::CRect<int> box(position.X - 3, position.Y - 3, position.X + 4, position.Y + 4);\n            // Clip the square to the minimap and skip the edges that were cut.\n            bool left = true;\n            if (box.UpperLeftCorner.X < area.UpperLeftCorner.X)\n            {\n                box.UpperLeftCorner.X = area.UpperLeftCorner.X;\n                left = false;\n            }\n            bool top = true;\n            if (box.UpperLeftCorner.Y < area.UpperLeftCorner.Y)\n            {\n                box.UpperLeftCorner.Y = area.UpperLeftCorner.Y;\n                top = false;\n            }\n            bool right = true;\n            if (box.LowerRightCorner.X >= area.LowerRightCorner.X)\n            {\n                box.LowerRightCorner.X = area.LowerRightCorner.X - 1;\n                right = false;\n            }\n            bool bottom = true;\n            if (box.LowerRightCorner.Y >= area.LowerRightCorner.Y)\n            {\n                box.LowerRightCorner.Y = area.LowerRightCorner.Y - 1;\n                bottom = false;\n            }\n            if (top)\n                Driver->draw2DLine(box.UpperLeftCorner,\n                    ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n            if (left)\n                Driver->draw2DLine(box.UpperLeftCorner,\n                    ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);\n            if (right)\n                Driver->draw2DLine(box.LowerRightCorner,\n                    ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n            if (bottom)\n                Driver->draw2DLine(box.LowerRightCorner,\n                    ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);\n        }\n        else\n        {\n            int size = (int)((it->Time - 4.0f) * 100.0f) + 6;\n            ox::core::CRect<int> box;\n            box.UpperLeftCorner = position - ox::core::CPosition2d<int>(size / 2, size / 2);\n            box.LowerRightCorner = box.UpperLeftCorner + ox::core::CPosition2d<int>(size, size);\n            // Clip the square to the minimap and skip the edges that were cut.\n            bool left = true;\n            if (box.UpperLeftCorner.X < area.UpperLeftCorner.X)\n            {\n                box.UpperLeftCorner.X = area.UpperLeftCorner.X;\n                left = false;\n            }\n            bool top = true;\n            if (box.UpperLeftCorner.Y < area.UpperLeftCorner.Y)\n            {\n                box.UpperLeftCorner.Y = area.UpperLeftCorner.Y;\n                top = false;\n            }\n            bool right = true;\n            if (box.LowerRightCorner.X >= area.LowerRightCorner.X)\n            {\n                box.LowerRightCorner.X = area.LowerRightCorner.X - 1;\n                right = false;\n            }\n            bool bottom = true;\n            if (box.LowerRightCorner.Y >= area.LowerRightCorner.Y)\n            {\n                box.LowerRightCorner.Y = area.LowerRightCorner.Y - 1;\n                bottom = false;\n            }\n            if (top)\n                Driver->draw2DLine(box.UpperLeftCorner,\n                    ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n            if (left)\n                Driver->draw2DLine(box.UpperLeftCorner,\n                    ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);\n            if (right)\n                Driver->draw2DLine(box.LowerRightCorner,\n                    ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n            if (bottom)\n                Driver->draw2DLine(box.LowerRightCorner,\n                    ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);\n        }",
+        ),
+    ],
 }
 
 HEADER_AUTHORED: dict[tuple[str, str], ConstantEdit] = {
@@ -83,13 +127,21 @@ def constant_candidate(source: bytes, edit: ConstantEdit) -> bytes | None:
 
 def candidates(source: bytes, symbol: str, edits: list[Edit]) -> dict[str, bytes]:
     """One candidate source per edit whose old text appears exactly once inside
-    the named function's body."""
+    the named function's body, plus one candidate applying every matching edit
+    together when two or more do: a function can need several disjoint edits to
+    reach exact, and single-edit candidates cannot combine."""
     scope = find_function(source, symbol)
     body = source[scope.start_byte : scope.end_byte]
     found = {}
+    combined, names = body, []
     for edit in edits:
         if body.count(edit.old) == 1:
             found[edit.name] = source[: scope.start_byte] + body.replace(edit.old, edit.new, 1) + source[scope.end_byte :]
+        if combined.count(edit.old) == 1:
+            combined = combined.replace(edit.old, edit.new, 1)
+            names.append(edit.name)
+    if len(names) > 1:
+        found["+".join(names)] = source[: scope.start_byte] + combined + source[scope.end_byte :]
     return found
 
 

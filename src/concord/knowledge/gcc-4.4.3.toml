@@ -503,3 +503,25 @@ evidence = [
   { commit = "faca73a", function = "daisy::video::CCGMaterialRenderer::printVariables", note = "At target 0x5d6330, instructions at function offsets 0x63 and 0x478 pass 4109 in esi to cgGetFirstParameter for VertexProgram and PixelProgram. The baseline recovered header assigns CG_PROGRAM = 4125. NVIDIA's Cg header defines CG_PROGRAM as 4109 and CG_LINE as 4125: https://github.com/NVIDIAGameWorks/PhysX/blob/4.1/externals/cg-linux/include/Cg/cg.h . NVIDIA's API specifies CG_PROGRAM and CG_GLOBAL as the valid namespaces: https://developer.nvidia.com/w/cg/cgGetFirstParameter.html ." },
   { commit = "faca73a", function = "daisy::video::CCGMaterialRenderer::printVariables overlays", note = "The local enum correction changes only the immediate bytes at 0x64 and 0x479 in the compiled function. Its other unresolved differences include reordered string-allocation blocks and exception cleanups; the target places the stack-check failure at 0x14c2, the candidate at 0x1461. The implicit-construction counterfactual leaves function code and relocation offsets unchanged. The causal trace could not attribute the target-only cleanup instructions to candidate source." },
 ]
+
+[[idiom]]
+id = "shared-tail-block-order"
+cause = "block-order"
+status = "hypothesis"
+symptom = "the target emits a shared statement tail once per reaching branch (extra copies of the same stores, flag writes and calls), where our source writes it once after an if/else that only computes the inputs"
+fix = "Write the tail inside each branch. GCC 4.4 has no GIMPLE tail merge (tree-ssa-tail-merge arrives in 4.6), so two source copies emit two compiled copies; the RTL crossjump pass does not merge them because each copy's spill slots differ. A source with the tail once before or after the branch emits one copy."
+limits = "CPlayState::renderMinimap's marker loop: the target clips and draws the square's four edges with MINIMAP_MARKER_COLOR in both the it->Time <= 4.0f arm and the sized-box arm (eight .bss reads against our four). Duplicating the clip-and-draw block per branch raises 78.1 to 88.97 of 6047 bytes, but the frame grows 0x40 and no spellings tried close the rest. Whether the original wrote the block twice or called an inlined helper the Mac map does not credit stays open; the candidate is not kept."
+evidence = [
+  { commit = "faca73a", function = "harvest::states::CPlayState::renderMinimap", note = "calls-constants showed the target reading .bss+0x134 (MINIMAP_MARKER_COLOR) four more times than ours, passing literal 0x64fe8280 to the GS_PROGRESS_BAR draw where ours loads THREAT_TEXT_COLOR (.bss+0x130), and a dead `mov [rsp+0x88],0xffff2020` beside `mov ecx,0xffff2020` in the alien loop - a materialized named SColor our anonymous temporary does not produce. Authored marker-box-per-branch plus progress-bar-color reaches 88.97 against 78.1 baseline; the 0xffff2020 store survives no spelling tried." },
+]
+
+[[idiom]]
+id = "store-per-arm"
+cause = "immediate-or-reloc"
+status = "hypothesis"
+symptom = "the target holds one more copy of a constant store than ours, reachable only from one arm of a condition ours hoists the store ahead of"
+fix = "Write the store inside both arms of the condition instead of once before the shared if. GCC emits each written copy; it does not duplicate a shared store into an arm."
+limits = "CPlayState::updateState's game-over exit: the target stores NextState = 3 behind `cmp GameMode,5; je` to a lone store block for the campaign path and again before the highscore evaluation for other modes. `if (GameMode != EGM_CAMPAIGN) { NextState = 3; ...highscore... } else NextState = 3;` reproduces both stores and equalizes every call, constant and data reference (95.2 to 96.8 of 7474 bytes), but the highscore arm keeps a bool flag our side expands as sete/or chains where the target jumps per comparison; rewriting the arm as nested ifs calling setNewHighscoreInfo twice falls to 92.7, so the direct-call form is wrong and the bool form's residual is open."
+evidence = [
+  { commit = "faca73a", function = "harvest::states::CPlayState::updateState", note = "calls-constants reported a missing `cmp eax,3`; the actual extra is `mov [this+0x50],3` at +0x18fe, a second NextState store for GameMode == EGM_CAMPAIGN. Two authored interventions measured; not kept." },
+]

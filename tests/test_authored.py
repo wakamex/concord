@@ -52,6 +52,18 @@ class Candidates(unittest.TestCase):
         ]
         self.assertEqual(list(candidates(SOURCE, SYMBOL, edits)), ["once"])
 
+    def test_every_matching_edit_also_applies_together(self):
+        edits = [
+            Edit("one", b"x.flagA = false;", b"x.flagA = true;"),
+            Edit("two", b"x.flagB = false;", b"x.flagB = true;"),
+            Edit("gone", b"return 9;", b"return 8;"),
+        ]
+        found = candidates(SOURCE, SYMBOL, edits)
+        self.assertIn("one+two", found)
+        self.assertIn(b"x.flagA = true;\n    x.flagB = true;", found["one+two"])
+        self.assertNotIn(b"x.flagA = true", found["two"])
+        self.assertNotIn("one+two+gone", found)
+
 
 class Keep(unittest.TestCase):
     def test_keeps_exact_with_no_function_worse(self):
