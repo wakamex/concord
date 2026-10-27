@@ -92,10 +92,49 @@ def _arity(node: Node) -> int:
     return len(named)
 
 
+def _type_name(text: str) -> str:
+    """A parameter type's unqualified name, without qualifiers, pointers or spaces."""
+    text = re.sub(r"\bconst\b", "", text)
+    return re.sub(r"[*&\[\]]", "", text).replace(" ", "").split("::")[-1]
+
+
+def _demangled_params(demangled: str) -> list[str]:
+    """The demangled signature's parameter type names, split on top-level commas."""
+    params = demangled.partition("(")[2].rsplit(")", 1)[0].strip()
+    if params in ("", "void"):
+        return []
+    out, depth, start = [], 0, 0
+    for i, ch in enumerate(params):
+        depth += ch in "<("
+        depth -= ch in ">)"
+        if ch == "," and depth == 0:
+            out.append(params[start:i])
+            start = i + 1
+    out.append(params[start:])
+    return [_type_name(p) for p in out]
+
+
+def _param_types(node: Node) -> list[str]:
+    """The function_definition's declared parameter type names."""
+    d = node.child_by_field_name("declarator")
+    while d is not None and d.type != "function_declarator":
+        d = d.child_by_field_name("declarator")
+    params = d.child_by_field_name("parameters") if d is not None else None
+    if params is None:
+        return []
+    return [
+        _type_name((p.child_by_field_name("type") or p).text.decode())
+        for p in params.named_children
+        if p.type != "comment"
+    ]
+
+
 def find_function(source: bytes, symbol: str) -> Node:
     """The definition of the symbol's function in source, matched by class,
-    name and parameter count. An unqualified declarator is also found by the
-    namespaces enclosing it, such as `f` inside `namespace a { namespace b {`."""
+    name and parameter count, and by the demangled parameter types when several
+    same-name overloads share the count, as the drawIndexedTriangleList vertex
+    overloads do. An unqualified declarator is also found by the namespaces
+    enclosing it, such as `f` inside `namespace a { namespace b {`."""
     demangled = demangle(symbol)
     name, arity = _name_and_arity(demangled)
     parts = re.sub(r"<[^<>]*>", "", demangled.partition("(")[0]).replace(" ", "").split("::")
@@ -111,6 +150,11 @@ def find_function(source: bytes, symbol: str) -> Node:
         stack.extend(node.children)
     if not found:
         raise KeyError(f"no definition of {name} in the source")
+    if len(found) > 1:
+        wanted = _demangled_params(demangled)
+        matched = [f for f in found if _param_types(f) == wanted]
+        if len(matched) == 1:
+            return matched[0]
     return found[0]
 
 

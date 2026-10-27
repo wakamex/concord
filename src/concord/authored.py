@@ -96,6 +96,81 @@ AUTHORED: dict[tuple[str, str], list[Edit]] = {
         SpriteIndex -= 72;''',
         ),
     ],
+    # drawIndexedTriangleList's vertex colour packs to A1R5G5B5 with a bool
+    # alpha test shifted left 15, not the free function's `?: 0x8000` -- the
+    # target shows `test 0xff000000; setne al; shl eax,0xf` where ours folds the
+    # ternary into `cmp eax,1; sbb; not; and dx,0x8000`, and its blue-channel
+    # `sar` marks the raw signed `color` beside the folded `shr` of the nested
+    # `>>16`/`>>8` shifts (Irrlicht 0.7's RGB16 shape). Irrlicht's member drops
+    # alpha; daisy kept it, and the member lives on ox::video::SColor, whose
+    # declaration count the other units cannot afford, so the spelling goes in
+    # the function bodies here.
+    (
+        "daisy/video/Software/CVideoSoftware.cpp",
+        "_ZN5daisy5video14CVideoSoftware23drawIndexedTriangleListEPKN2ox5video9S3DVertexEiPKti",
+    ): [
+        Edit(
+            "a1r5g5b5-alpha-uint",
+            b"\t\ttp->Color = ox::video::toA1R5G5B5(currentVertex->Color.color);",
+            b"\t\tunsigned int alpha = (currentVertex->Color.color & 0xff000000) != 0;\n"
+            b"\t\ttp->Color = (alpha << 15)\n"
+            b"\t\t\t| (((currentVertex->Color.color >> 19) & 0x1f) << 10)\n"
+            b"\t\t\t| (((currentVertex->Color.color >> 11) & 0x1f) << 5)\n"
+            b"\t\t\t| ((currentVertex->Color.color >> 3) & 0x1f);",
+        ),
+        Edit(
+            "a1r5g5b5-alpha-unsigned",
+            b"\t\ttp->Color = ox::video::toA1R5G5B5(currentVertex->Color.color);",
+            b"\t\tunsigned int c = currentVertex->Color.color;\n"
+            b"\t\tunsigned int alpha = (c & 0xff000000) != 0;\n"
+            b"\t\ttp->Color = (alpha << 15) | ((c >> 9) & 0x7c00) | ((c >> 6) & 0x3e0) | (((int)c >> 3) & 0x1f);",
+        ),
+        Edit(
+            "a1r5g5b5-alpha-uint-temps",
+            b"\t\ttp->Color = ox::video::toA1R5G5B5(currentVertex->Color.color);",
+            b"\t\tunsigned int alpha = (currentVertex->Color.color & 0xff000000) != 0;\n"
+            b"\t\tint r = currentVertex->Color.color >> 16;\n"
+            b"\t\tint g = currentVertex->Color.color >> 8;\n"
+            b"\t\tint b = currentVertex->Color.color;\n"
+            b"\t\ttp->Color = (alpha << 15)\n"
+            b"\t\t\t| (((r >> 3) & 0x1f) << 10)\n"
+            b"\t\t\t| (((g >> 3) & 0x1f) << 5)\n"
+            b"\t\t\t| ((b >> 3) & 0x1f);",
+        ),
+    ],
+    (
+        "daisy/video/Software/CVideoSoftware.cpp",
+        "_ZN5daisy5video14CVideoSoftware23drawIndexedTriangleListEPKN2ox5video17S3DVertex2TCoordsEiPKti",
+    ): [
+        Edit(
+            "a1r5g5b5-alpha-uint",
+            b"\t\ttp->Color = ox::video::toA1R5G5B5(currentVertex->Color.color);",
+            b"\t\tunsigned int alpha = (currentVertex->Color.color & 0xff000000) != 0;\n"
+            b"\t\ttp->Color = (alpha << 15)\n"
+            b"\t\t\t| (((currentVertex->Color.color >> 19) & 0x1f) << 10)\n"
+            b"\t\t\t| (((currentVertex->Color.color >> 11) & 0x1f) << 5)\n"
+            b"\t\t\t| ((currentVertex->Color.color >> 3) & 0x1f);",
+        ),
+        Edit(
+            "a1r5g5b5-alpha-unsigned",
+            b"\t\ttp->Color = ox::video::toA1R5G5B5(currentVertex->Color.color);",
+            b"\t\tunsigned int c = currentVertex->Color.color;\n"
+            b"\t\tunsigned int alpha = (c & 0xff000000) != 0;\n"
+            b"\t\ttp->Color = (alpha << 15) | ((c >> 9) & 0x7c00) | ((c >> 6) & 0x3e0) | (((int)c >> 3) & 0x1f);",
+        ),
+        Edit(
+            "a1r5g5b5-alpha-uint-temps",
+            b"\t\ttp->Color = ox::video::toA1R5G5B5(currentVertex->Color.color);",
+            b"\t\tunsigned int alpha = (currentVertex->Color.color & 0xff000000) != 0;\n"
+            b"\t\tint r = currentVertex->Color.color >> 16;\n"
+            b"\t\tint g = currentVertex->Color.color >> 8;\n"
+            b"\t\tint b = currentVertex->Color.color;\n"
+            b"\t\ttp->Color = (alpha << 15)\n"
+            b"\t\t\t| (((r >> 3) & 0x1f) << 10)\n"
+            b"\t\t\t| (((g >> 3) & 0x1f) << 5)\n"
+            b"\t\t\t| ((b >> 3) & 0x1f);",
+        ),
+    ],
     # runPPShader's post-processing path is daisy's own: Irrlicht 0.7's
     # CVideoNull has no post-processing services. The target clears the pass
     # material's bilinear flag with the other explicit overrides: its SMaterial

@@ -115,6 +115,31 @@ class Candidates(unittest.TestCase):
         self.assertNotIn(b"x.flagA = true", found["two"])
         self.assertNotIn("one+two+gone", found)
 
+    def test_software_vertex_colour_packs_alpha_as_bool(self):
+        unit = "daisy/video/Software/CVideoSoftware.cpp"
+        source = (
+            b"void CVideoSoftware::drawIndexedTriangleList(const S3DVertex* vertices, int vertexCount, const unsigned short* indexList, int triangleCount)\n"
+            b"{\n"
+            b"\t\ttp->Color = ox::video::toA1R5G5B5(currentVertex->Color.color);\n"
+            b"}\n"
+            b"void CVideoSoftware::drawIndexedTriangleList(const S3DVertex2TCoords* vertices, int vertexCount, const unsigned short* indexList, int triangleCount)\n"
+            b"{\n"
+            b"\t\ttp->Color = ox::video::toA1R5G5B5(currentVertex->Color.color);\n"
+            b"}\n"
+        )
+        for symbol, vertex in (
+            ("_ZN5daisy5video14CVideoSoftware23drawIndexedTriangleListEPKN2ox5video9S3DVertexEiPKti", b"S3DVertex*"),
+            ("_ZN5daisy5video14CVideoSoftware23drawIndexedTriangleListEPKN2ox5video17S3DVertex2TCoordsEiPKti", b"S3DVertex2TCoords*"),
+        ):
+            edits = authored.AUTHORED[(unit, symbol)]
+            found = candidates(source, symbol, edits)
+            self.assertEqual([edit.name for edit in edits], [
+                "a1r5g5b5-alpha-uint", "a1r5g5b5-alpha-unsigned", "a1r5g5b5-alpha-uint-temps"])
+            body = found["a1r5g5b5-alpha-uint"].split(vertex)[1]
+            self.assertIn(b"unsigned int alpha = (currentVertex->Color.color & 0xff000000) != 0;\n", body)
+            self.assertIn(b"(alpha << 15)", body)
+            self.assertEqual(found["a1r5g5b5-alpha-uint"].count(b"ox::video::toA1R5G5B5"), 1)
+
 
 class Keep(unittest.TestCase):
     def test_keeps_exact_with_no_function_worse(self):
