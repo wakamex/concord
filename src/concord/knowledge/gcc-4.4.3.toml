@@ -631,3 +631,15 @@ limits = "The machine code identifies the cleanup path but does not establish th
 evidence = [
   { function = "daisy::scene::CSceneManager::findMesh", note = "concord calls-constants reports candidate-only operator delete[] and target-only operator new[] plus 0x4c7b60. The target map records 606 bytes at 0x4c2c20; the candidate object is 522 bytes. Target unwind code at 0x4c2e71 passes the stack CString to 0x4c7b60, whose body at 0x4c7b60 loads the buffer pointer and jumps to operator delete[]. Both disassemblies perform the same string construction and lower-bound-style search over 0x18-byte entries. concord diff scores the candidate 64.83." },
 ]
+
+[[idiom]]
+id = "vector-insert-aux-cursor-position"
+cause = "immediate-or-reloc"
+status = "confirmed"
+symptom = "vector insertion reports subtractions such as 0x30 against 0x18 or 0xd0 against 0x68, which can look like a doubled element stride"
+fix = "Read the pointer update and copy loop together. When insertion advances finish by one element before shifting the tail backward, finish minus two element widths points at the old last element; the loop then steps backward by one element width. In Harvest's target, ox::TArray<ox::gui::IGUIElement*> is 24 bytes and CXFileReader::SXSkinWeight is 0x68 bytes, so these larger subtractions position the cursor and do not show a source layout difference."
+limits = "This interpretation applies when the disassembly shows the one-element finish advance before the two-width subtraction and a one-width decrement inside the copy loop. A larger subtraction without that surrounding sequence can be an actual element stride and needs its own layout evidence."
+evidence = [
+  { function = "std::vector<ox::TArray<ox::gui::IGUIElement*>>::_M_insert_aux", note = "Harvest 1.18-linux-amd64 target at 0x5008c0 is 980 bytes. It advances the vector finish by 0x18 at 0x500989, subtracts 0x30 from that new finish at 0x500a35, then the backward-copy loop subtracts 0x18 per iteration at 0x500a50. The target initializes the TArray begin, end and capacity pointers at offsets 0, 8 and 0x10, and advances the outer vector by 0x18, proving a 24-byte element; 0x30 is new finish minus two element widths. A fresh Harvest match at ba6c261 has the same 980-byte copy exact in CGUIEnvironment, while CGUIClickArea.cpp, CGUIModalScreen.cpp, CGUITabControl.cpp and CGUIWindow.cpp emit 1685-byte inexact copies, showing the remaining difference depends on unit context rather than TArray size." },
+  { function = "std::vector<CXFileReader::SXSkinWeight>::_M_insert_aux", note = "Harvest 1.18-linux-amd64 target at 0x598ef0 is 1559 bytes. It advances finish by 0x68 at 0x599066, subtracts 0xd0 at 0x59919f, then the backward-copy loop subtracts 0x68 per iteration at 0x599200. The source layout is a 16-byte CString, 24-byte TArray<SXWeight> and 64-byte CMatrix4 containing 16 floats, totaling 0x68; the target's copy accesses the matrix from offset 0x28 through 0x64. The 0xd0 subtraction is new finish minus two record widths." },
+]

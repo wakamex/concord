@@ -266,6 +266,25 @@ class KnowledgeBase(unittest.TestCase):
         self.assertIn("0x3030 + 0x04", entry.fix)
         self.assertIn("0 bases differ", entry.evidence[0]["note"])
 
+    def test_vector_insert_aux_double_width_is_cursor_positioning(self):
+        from concord import knowledge
+
+        entries = [
+            i for i in knowledge.for_causes(knowledge.load("gcc-4.4.3"), {Cause.IMMEDIATE_OR_RELOC})
+            if i.id == "vector-insert-aux-cursor-position"
+        ]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry.status, "confirmed")
+        self.assertIn("two element widths", entry.fix)
+        notes = "\n".join(e["note"] for e in entry.evidence)
+        self.assertIn("0x500989", notes)
+        self.assertIn("0x500a50", notes)
+        self.assertIn("0x59919f", notes)
+        self.assertIn("0x599200", notes)
+        self.assertIn("CGUIEnvironment", notes)
+        self.assertIn("0x64", notes)
+
 
 if __name__ == "__main__":
     unittest.main()
