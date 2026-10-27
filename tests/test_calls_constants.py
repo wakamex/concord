@@ -204,15 +204,11 @@ class Encode2TableReferences(unittest.TestCase):
     """GCC may relocate a jump table through .rodata+N while the target names the
     object symbol at offset zero; both must compare the same."""
 
-    @unittest.skipUnless(
-        Path("/code/harvest-cursor/build/match/1.18-linux-amd64/ox__algo__CBase64url.o").exists()
-        or os.environ.get("CONCORD_HARVEST"),
-        "needs a Harvest checkout after hv match",
-    )
+    @unittest.skipUnless(os.environ.get("CONCORD_HARVEST"), "needs a Harvest checkout after hv match")
     def test_base64url_encode2_agrees_on_base64alphabet2(self):
         from concord.calls_constants import compare_function, load_symbols, resolvers
 
-        root = Path(os.environ.get("CONCORD_HARVEST", "/code/harvest-cursor"))
+        root = Path(os.environ["CONCORD_HARVEST"])
         build = "1.18-linux-amd64"
         sym = "_ZN2ox4algo10CBase64url7encode2ERNS_4core7CStringIcEEPNS_2io9IReadFileE"
         slug = "ox__algo__CBase64url"
