@@ -482,7 +482,7 @@ evidence = [
 
 [[idiom]]
 id = "string-pointer-jump-table-reloc"
-cause = "immediate"
+cause = "immediate-or-reloc"
 status = "confirmed"
 symptom = "encode2 indexes Base64Alphabet2[] in source but the compile emits R_X86_64_32S against .rodata+N while the target names Base64Alphabet2+0 at the same nine mov (%rax*8) sites"
 fix = "calls-constants maps a section relocation at offset N to a defined object symbol at the same section offset when comparing data references. The recovered source already names Base64Alphabet2; no Harvest spelling at faca73a was found that makes GCC 4.4.3 emit the symbol relocation without moving the table to .data or changing the Itanium name."
