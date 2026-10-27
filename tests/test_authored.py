@@ -39,6 +39,24 @@ def evaluation(exact: dict[str, bool], fuzzy: dict[str, float] | None = None, er
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class Candidates(unittest.TestCase):
+    def test_opengl_glx_version_outputs_have_no_initial_stores(self):
+        symbol = "_ZN5daisy5video12CVideoOpenGL14loadExtensionsEv"
+        source = b"""void CVideoOpenGL::loadExtensions()
+{
+    if (MultiTextureExtension)
+    {
+        int major = 0;
+        int minor = 0;
+        glXQueryVersion(display, &major, &minor);
+    }
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(("daisy/video/OpenGL/CVideoOpenGL.cpp", symbol), []))
+        self.assertIn("glx-version-outputs", forms)
+        candidate = forms["glx-version-outputs"]
+        self.assertIn(b"int major;\n        int minor;\n        glXQueryVersion", candidate)
+        self.assertNotIn(b"= 0", candidate)
+
     def test_opengl_scaled_height_is_computed_after_the_upper_corners(self):
         symbol = "_ZN5daisy5video12CVideoOpenGL17drawScaled2DImageEPN2ox5video8ITextureERKNS2_4core11CPosition2dIfEERKNS6_5CRectIiEEfNS3_6SColorEb"
         source = b"""void CVideoOpenGL::drawScaled2DImage(ITexture* texture, const CPosition2d<float>& pos, const CRect<int>& sourceRect, float scale, SColor color, bool alpha)

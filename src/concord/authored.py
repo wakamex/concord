@@ -327,6 +327,8 @@ AUTHORED[("daisy/video/OpenGL/CVideoOpenGL.cpp", "_ZN5daisy5video12CVideoOpenGL1
 AUTHORED[("daisy/video/OpenGL/CVideoOpenGL.cpp", "_ZN5daisy5video12CVideoOpenGL14loadExtensionsEv")] = [
     Edit("eager-minor-version", b"    if (major > 1 || (parts[0][2] - '0' > 1 && major == 1))",
          b"    int minor = parts[0][2] - '0';\n    if (major > 1 || (minor > 1 && major == 1))"),
+    Edit("glx-version-outputs", b"        int major = 0;\n        int minor = 0;",
+         b"        int major;\n        int minor;"),
 ]
 AUTHORED[("daisy/video/OpenGL/CVideoOpenGL.cpp", "_ZN5daisy5video12CVideoOpenGL17switch2dRenderingEPN2ox5video8ITextureEbbi")] = [
     Edit("quad-bound-shift", b"i < Current2DQuadCount * 4", b"i < (Current2DQuadCount << 2)"),
