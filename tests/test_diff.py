@@ -213,12 +213,16 @@ class KnowledgeBase(unittest.TestCase):
         entries = [i for i in knowledge.load("gcc-4.4.3") if i.id == "carried-include-context"]
         self.assertEqual(len(entries), 1)
         entry = entries[0]
-        self.assertEqual(entry.status, "hypothesis")
+        self.assertEqual(entry.status, "confirmed")
         self.assertIn("wcstombs", entry.symptom)
-        self.assertIn("2,897", entry.limits)
-        self.assertIn("two worse functions", entry.limits)
+        self.assertIn("0x534050", entry.limits)
+        self.assertIn("setText+0x9e", entry.limits)
+        self.assertIn("0x6d to 0x5d", entry.limits)
+        self.assertIn("95.89651", entry.limits)
         notes = "\n".join(e["note"] for e in entry.evidence)
+        self.assertIn("2,897", notes)
         self.assertIn("7 functions changed: 3 newly matched, 2 worse; data bytes matched: +0 -0", notes)
+        self.assertIn("5 functions changed: 5 newly matched, 0 worse; data bytes matched: +0 -0", notes)
         self.assertIn("99.977165", notes)
         self.assertIn("0 candidate differences from the original", notes)
 
