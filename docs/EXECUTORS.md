@@ -27,7 +27,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Codex `gpt-6.1-terra` | rule | 1 | 1 of 1 | 1 of 1 | 0 | $0.08, default effort |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
 | Muse `muse-wonder-full-1.0` | capability | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 29.6M input tokens |
-| Cursor `composer-2.5` | search | 2 | 1 of 2 | 1 of 2 | 0 | 1.66M input tokens, a fraction of a percent of the month |
+| Cursor `composer-2.5` | search | 2 | 2 of 2 | 2 of 2 | 0 | 1.66M input tokens, a fraction of a percent of the month |
 | Cursor `composer-2.5` | rule | 2 | 1 of 2 | 1 of 2 | 0 | not recorded |
 | Claude `claude-haiku-5-5` | rule | 1 | 0 of 1 | 0 of 1 | 0 | $0.67 |
 | Codex `gpt-6-luna` | rule | 1 | 0 of 1 | 0 of 1 | 0 | $0.01 |
@@ -89,4 +89,4 @@ Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a ch
 | 2026-10-26 | CXFileReader's inlined callees against the original's copies | diagnosis | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.19 | both header definitions compile to the original's code; `operator=` copies differ only by peephole2 registers; 2 minutes; default effort (medium) |
 | 2026-10-26 | IGUIElement::updateAbsolutePosition header candidate | diagnosis | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.17 | all 22 copies identical, differing from the target by two reversed clipping comparisons; Irrlicht calls `clipAgainst` where the translation expands it; trial blocked by a missing objdiff-cli; default effort (medium) |
 | 2026-10-26 | clipAgainst hypothesis for updateAbsolutePosition | rule | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.08 | refuted by overlay before any checkout change (98.16 in all 22 units); stopped as its rules required; did not report the score without the overlay; default effort (medium) |
-| 2026-10-26 | eight near misses after the new rewrites | search | Cursor `composer-2.5` | 0 | no report | not checked | | searches finished in 30 minutes (one gain, CSpritePackage::load 96.44 to 98.36, uncommitted), then the process hung four hours until aop's timeout; no report, so no rule could be checked |
+| 2026-10-26 | eight near misses after the new rewrites | search | Cursor `composer-2.5` | 0 | clean | holds | | report written at 19:40 to Cursor's own transcript but never streamed, so aop waited four hours for its timeout (fixed in aop 296c075); no gains passed: CSpritePackage::load's 98.36 candidate was rejected by harvest-oracle as a behavior change |
