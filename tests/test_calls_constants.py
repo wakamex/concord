@@ -209,16 +209,13 @@ class DataReferences(unittest.TestCase):
         self.assertTrue(any("alpha" in row.get("ours", {}).get("ref", "") for row in rows))
         self.assertTrue(any("pad" in row.get("target", {}).get("ref", "") for row in rows))
 
-    @unittest.skipUnless(
-        Path("/code/harvest-cursor/build/match/1.18-linux-amd64").is_dir(),
-        "needs harvest-cursor after hv match",
-    )
-    def test_read_string_sections_from_compiled_harvest_object(self):
+    @unittest.skipUnless(os.environ.get("CONCORD_HARVEST"), "needs a Harvest checkout after hv match")
+    def test_read_string_sections_from_target_object(self):
         slug = "HarvestFull__harvest__entity__CDefenseTowerEntity"
-        path = Path("/code/harvest-cursor/build/match/1.18-linux-amd64") / f"{slug}.o"
+        path = Path(os.environ["CONCORD_HARVEST"]) / "build/objdiff/1.18-linux-amd64/target" / f"{slug}.o"
         pool = read_string_sections(path)[".rodata.str1.1"]
-        self.assertIn(b"DefenceTower0000", pool)
-        self.assertIn(b"DefenceTowerOn0005", pool)
+        self.assertIn(b"DefenceTower0000\0", pool)
+        self.assertIn(b"DefenceTowerOn0056\0", pool)
 
 
 class CanonicalNames(unittest.TestCase):
