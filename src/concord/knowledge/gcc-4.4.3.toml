@@ -340,6 +340,17 @@ evidence = [
 ]
 
 [[idiom]]
+id = "equivalent-member-pointer-bases"
+cause = "struct-layout"
+status = "confirmed"
+symptom = "target and candidate use different constants for an indexed member address, while the following displacement changes by the inverse amount"
+fix = "Compare the complete effective address before changing a class layout. In CVideoOpenGL, target 0x3020 + 0x14 and candidate 0x3030 + 0x04 both address Vertices2D[index].Pos.X at this + index * 36 + 0x3034. Target 0x3030 + 0x1c and candidate 0x3040 + 0x0c both address Vertices2D[index].Color at this + index * 36 + 0x304c."
+limits = "concord layout compares fixed-offset accesses and omits indexed accesses without a fixed offset. Verify indexed addresses from the disassembly before concluding that a member moved."
+evidence = [
+  { function = "daisy::video::CVideoOpenGL::switch2dRendering and draw2DImage", note = "Harvest 8ac47ed: switch2dRendering keeps this in rbx, computes r15 as this + index * 36, then uses 0x3020 with displacements 0x14 and 0x18 for Pos and 0x3030 with 0x1c, 0x20 and 0x24 for Color and TCoords. The candidate uses 0x3030 with 0x04 and 0x08 for Pos and 0x3040 with 0x0c, 0x10 and 0x14 for Color and TCoords. Every summed address is equal. Current2DTexture and Current2DQuadCount are at this + 0x28 and this + 0x30 on both sides, and concord layout reports 0 bases differ for these functions. The Vertices2D array begins at this + 0x3034; no CVideoNull or CVideoOpenGL layout correction is indicated." },
+]
+
+[[idiom]]
 id = "q3-zero-blend-offset"
 cause = "struct-layout"
 status = "confirmed"

@@ -254,6 +254,18 @@ class KnowledgeBase(unittest.TestCase):
         self.assertIn("0x4def32", note)
         self.assertIn("0x60e660", note)
 
+    def test_opengl_vertex_pointer_bases_resolve_to_the_same_fields(self):
+        from concord import knowledge
+
+        entries = [i for i in knowledge.load("gcc-4.4.3") if i.id == "equivalent-member-pointer-bases"]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry.cause, Cause.STRUCT_LAYOUT)
+        self.assertEqual(entry.status, "confirmed")
+        self.assertIn("0x3020 + 0x14", entry.fix)
+        self.assertIn("0x3030 + 0x04", entry.fix)
+        self.assertIn("0 bases differ", entry.evidence[0]["note"])
+
 
 if __name__ == "__main__":
     unittest.main()
