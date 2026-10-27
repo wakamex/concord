@@ -20,6 +20,9 @@ class SymbolAudit(unittest.TestCase):
             source = root / 'list.cpp'
             source.write_text('#include <list>\ntemplate class std::list<int*>;\nint main() { std::list<int*> x; return x.size(); }\n')
             obj, target = root/'list.o', root/'list'
+            # The target's Ubuntu GCC 4.4.3 uses -fstack-protector, which guards only functions with
+            # character arrays, so its list::erase has no canary; newer Ubuntu g++ defaults to
+            # -fstack-protector-strong and would add one here.
             subprocess.run(['g++', '-std=c++98', '-O2', '-fno-inline', '-fno-stack-protector', '-g', '-fno-pie', '-c', str(source), '-o', str(obj)], check=True, capture_output=True)
             subprocess.run(['g++', '-no-pie', str(obj), '-o', str(target)], check=True, capture_output=True)
             with target.open('rb') as stream:
