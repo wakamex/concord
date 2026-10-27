@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from concord import blockers
-from concord.blockers import Stub, cause, errors_in, ranked, restored
+from concord.blockers import Stub, _reused_helpers, cause, errors_in, ranked, restored
 from concord.harvest import Evaluation
 from concord.seed import IRRLICHT as IRRLICHT_DIRECTORY
 
@@ -74,6 +74,30 @@ class Blockers(unittest.TestCase):
         self.assertNotIn(b'#include "os.h"\n#', text)  # satisfied by the relocated daisy/os.h
         self.assertIn(b"inline int _concord_helper(int n)", text)
         self.assertLess(text.index(b"_concord_helper"), text.index(b"namespace daisy"))
+
+    def test_a_numbered_helper_the_unit_already_has_is_reused(self):
+        current = (
+            b"inline int inner(int n)\n{\n\treturn n;\n}\n"
+            b"inline int outer(int n)\n{\n\treturn inner(n) + inner(n);\n}\n"
+        )
+        translation = (
+            b"inline int inner2(int n)\n{\n\treturn n;\n}\n"
+            b"inline int outer2(int n)\n{\n\treturn inner2(n) + inner2(n);\n}\n"
+            b"void A::f()\n{\n\touter2(1);\n}\n"
+        )
+        text, names = _reused_helpers(
+            current, translation, {"_concord_inner": "inner2", "_concord_outer": "outer2"}
+        )
+        self.assertEqual(names, {"_concord_inner": "inner", "_concord_outer": "outer"})
+        self.assertIn(b"outer(1);", text)
+        self.assertNotIn(b"2", text)
+
+    def test_a_helper_differing_from_the_units_keeps_its_numbered_name(self):
+        current = b"inline int helper(int n)\n{\n\treturn n + 1;\n}\n"
+        translation = b"inline int helper2(int n)\n{\n\treturn n;\n}\nvoid A::f()\n{\n\thelper2(1);\n}\n"
+        text, names = _reused_helpers(current, translation, {"_concord_helper": "helper2"})
+        self.assertEqual(names, {"_concord_helper": "helper2"})
+        self.assertEqual(text, translation)
 
     def test_errors_are_kept_only_inside_the_method(self):
         text = restored(CURRENT, IRRLICHT)["A::stubbed"]

@@ -19,7 +19,7 @@ from pathlib import Path
 from tree_sitter import Node, Parser
 
 from concord.harvest import Harvest
-from concord.irrlicht import helper_names, name_helpers, translate
+from concord.irrlicht import HELPERS, helper_names, name_helpers, translate
 from concord.seed import IRRLICHT, companion_header_first, helper_taken, qualify
 from concord.transforms import CPP
 
@@ -78,6 +78,16 @@ def _missing_includes(current: bytes, irrlicht: bytes) -> bytes:
     return added
 
 
+def _helper_definition(text: bytes, name: str) -> bytes | None:
+    """The one file-local inline definition of `name` in `text`, or None."""
+    helper = re.compile(
+        rb"^inline\b[^\n]*?\b" + re.escape(name.encode()) + rb"\s*\([^;{]*\)\s*\{.*?^\}",
+        re.MULTILINE | re.DOTALL,
+    )
+    found = helper.findall(text)
+    return found[0] if len(found) == 1 else None
+
+
 def _missing_helpers(current: bytes, irrlicht: bytes, names: set[str]) -> bytes:
     """The file-local helpers translate wrote into the translation for members a
     shared ox header cannot add (CTriangle3d's getIntersectionWithLine), which a
@@ -91,6 +101,36 @@ def _missing_helpers(current: bytes, irrlicht: bytes, names: set[str]) -> bytes:
     return b"".join(
         found.group(0) + b"\n\n" for found in helper.finditer(irrlicht) if found.group(0) not in current
     )
+
+
+def _reused_helpers(current: bytes, translation: bytes, names: dict[str, str]) -> tuple[bytes, dict[str, str]]:
+    """The translation with each helper the unit already defines under its
+    plain name pointed back at that definition, and the marker map updated.
+    The unit's own helper names count as taken, so a refresh of a unit whose
+    earlier restore already placed getIntersectionWithLine would carry a
+    numbered copy and call it, doubling both declarations. When the helper's
+    definition under the plain name is byte-identical to the unit's, the
+    translation calls the existing helper and carries nothing; a different
+    definition under the plain name keeps the numbered one. Sibling helpers
+    settle by repetition: renaming isOnSameSide first lets
+    getIntersectionWithLine's body then match the unit's."""
+    names = dict(names)
+    changed = True
+    while changed:
+        changed = False
+        for marker, name in names.items():
+            plain = HELPERS.get(marker, marker.removeprefix("_concord_"))
+            if name == plain:
+                continue
+            definition = _helper_definition(translation, name)
+            if definition is None:
+                continue
+            candidate = re.sub(rb"\b" + re.escape(name.encode()) + rb"\b", plain.encode(), definition)
+            if candidate in current:
+                translation = re.sub(rb"\b" + re.escape(name.encode()) + rb"\b", plain.encode(), translation)
+                names[marker] = plain
+                changed = True
+    return translation, names
 
 
 def _with_includes(text: bytes, includes: bytes, helpers: bytes = b"") -> bytes:
@@ -181,8 +221,10 @@ def stubs(harvest: Harvest, units: list[str], apply: bool = False, only: set[str
             continue
         raw = translate(irrlicht.read_text(encoding="latin-1"))
         taken = helper_taken(root, raw, unit)
-        helpers = set(helper_names(raw, taken).values())
-        translation = qualify(root, name_helpers(raw, taken), unit).encode()
+        translation, helper_map = _reused_helpers(
+            current, qualify(root, name_helpers(raw, taken), unit).encode(), helper_names(raw, taken)
+        )
+        helpers = set(helper_map.values())
         candidates = restored(current, translation, helpers, stubs_only=not refresh)
         if companion_first:
             candidates = {name: companion_header_first(text.decode(), unit).encode() for name, text in candidates.items()}
