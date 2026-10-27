@@ -207,6 +207,21 @@ class KnowledgeBase(unittest.TestCase):
         self.assertIn("fast_atof_move", note)
         self.assertIn("operator=", note)
 
+    def test_xml_reader_wide_conversion_gate_is_recorded(self):
+        from concord import knowledge
+
+        entries = [i for i in knowledge.load("gcc-4.4.3") if i.id == "carried-include-context"]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry.status, "hypothesis")
+        self.assertIn("wcstombs", entry.symptom)
+        self.assertIn("2,897", entry.limits)
+        self.assertIn("two worse functions", entry.limits)
+        notes = "\n".join(e["note"] for e in entry.evidence)
+        self.assertIn("7 functions changed: 3 newly matched, 2 worse; data bytes matched: +0 -0", notes)
+        self.assertIn("99.977165", notes)
+        self.assertIn("0 candidate differences from the original", notes)
+
     def test_cg_parameter_namespace_diagnosis_is_available_for_immediates(self):
         from concord import knowledge
 
