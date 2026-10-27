@@ -9,6 +9,7 @@ from unittest.mock import patch
 from concord import authored
 from concord.authored import Edit, candidates, keep
 from concord.harvest import Evaluation
+from concord.transforms import demangle
 
 SOURCE = b"""int Board::pick(int a)
 {
@@ -38,6 +39,95 @@ def evaluation(exact: dict[str, bool], fuzzy: dict[str, float] | None = None, er
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class Candidates(unittest.TestCase):
+    def test_opengl_scaled_height_is_computed_after_the_upper_corners(self):
+        symbol = "_ZN5daisy5video12CVideoOpenGL17drawScaled2DImageEPN2ox5video8ITextureERKNS2_4core11CPosition2dIfEERKNS6_5CRectIiEEfNS3_6SColorEb"
+        source = b"""void CVideoOpenGL::drawScaled2DImage(ITexture* texture, const CPosition2d<float>& pos, const CRect<int>& sourceRect, float scale, SColor color, bool alpha)
+{
+    float height = sourceRect.getHeight() * scale;
+    ox::core::CPosition2d<float> upperRight(pos.X + width, pos.Y);
+    ox::core::CPosition2d<float> lowerLeft(pos.X, pos.Y + height);
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(("daisy/video/OpenGL/CVideoOpenGL.cpp", symbol), []))
+        self.assertIn("height-after-upper-corners", forms)
+        candidate = forms["height-after-upper-corners"]
+        self.assertLess(candidate.index(b"upperRight("), candidate.index(b"float height"))
+        self.assertLess(candidate.index(b"float height"), candidate.index(b"lowerLeft("))
+
+    def test_opengl_batch_bound_retains_the_signed_shift(self):
+        symbol = "_ZN5daisy5video12CVideoOpenGL17switch2dRenderingEPN2ox5video8ITextureEbbi"
+        source = b"""void CVideoOpenGL::switch2dRendering(ITexture* texture, bool alpha, bool filter, int quads)
+{
+    for (int i = 0; i < Current2DQuadCount * 4; i += 4)
+        draw(i);
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(("daisy/video/OpenGL/CVideoOpenGL.cpp", symbol), []))
+        self.assertIn("quad-bound-shift", forms)
+        self.assertIn(b"i < (Current2DQuadCount << 2)", forms["quad-bound-shift"])
+
+    def test_opengl_screenshot_keeps_viewport_dimensions_live_across_calls(self):
+        symbol = "_ZN5daisy5video12CVideoOpenGL18saveJpegScreenshotEPKcS3_"
+        source = b"""bool CVideoOpenGL::saveJpegScreenshot(const char* directory, const char* name)
+{
+    const int width = viewport[2];
+    const int height = viewport[3];
+    const int pitch = width * 3;
+    unsigned char* flipped = new unsigned char[pitch * height];
+        memcpy(flipped + (height - 1 - y) * pitch, pixels + y * pitch, pitch);
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(("daisy/video/OpenGL/CVideoOpenGL.cpp", symbol), []))
+        self.assertIn("live-viewport-dimensions", forms)
+        candidate = forms["live-viewport-dimensions"]
+        self.assertIn(b"const int& width = viewport[2]", candidate)
+        self.assertNotIn(b"pitch", candidate)
+        self.assertIn(b"new unsigned char[width * height * 3]", candidate)
+        self.assertIn(b"memcpy(flipped + (height - 1 - y) * (width * 3), pixels + y * (width * 3), width * 3)", candidate)
+
+    def test_opengl_parses_the_minor_version_before_branching(self):
+        symbol = "_ZN5daisy5video12CVideoOpenGL14loadExtensionsEv"
+        source = b"""void CVideoOpenGL::loadExtensions()
+{
+    int major = parts[0][0] - '0';
+    if (major > 1 || (parts[0][2] - '0' > 1 && major == 1))
+        report();
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(("daisy/video/OpenGL/CVideoOpenGL.cpp", symbol), []))
+        self.assertIn("eager-minor-version", forms)
+        self.assertIn(b"int minor = parts[0][2] - '0';\n    if (major > 1 || (minor > 1 && major == 1))", forms["eager-minor-version"])
+
+    def test_opengl_draw_edits_cache_one_index_for_all_four_stores(self):
+        unit = "daisy/video/OpenGL/CVideoOpenGL.cpp"
+        edits = [(symbol, forms) for (path, symbol), forms in authored.AUTHORED.items()
+                 if path == unit and "11draw2DImage" in symbol]
+        self.assertEqual(len(edits), 4)
+        for symbol, registered in edits:
+            source = ("void " + demangle(symbol) + "\n{\n" + "".join(
+                f"    Vertices2D[Current2DQuadCount * 4 + {n}] = vertex;\n" for n in range(4)
+            ) + "}\n").encode()
+            forms = candidates(source, symbol, registered)
+            self.assertIn("quad-vertex-index", forms)
+            candidate = forms["quad-vertex-index"]
+            self.assertEqual(candidate.count(b"Current2DQuadCount * 4"), 1)
+            self.assertEqual(candidate.count(b"Vertices2D[index +"), 4)
+            self.assertEqual(candidates(candidate, symbol, registered), {})
+
+    def test_atomic_body_edit_requires_every_anchor_and_stays_in_scope(self):
+        edit = authored.BodyEdit("both", (
+            authored.Replacement(b"x.flagA = false;", b"x.flagA = true;", 1),
+            authored.Replacement(b"x.flagB = false;", b"x.flagB = true;", 1),
+        ))
+        forms = candidates(SOURCE, SYMBOL, [edit])
+        self.assertIn("both", forms)
+        self.assertEqual(forms["both"].count(b"= true;"), 2)
+        self.assertEqual(forms["both"].split(b"int Board::skip()")[1], SOURCE.split(b"int Board::skip()")[1])
+        missing = SOURCE.replace(b"x.flagB = false;", b"x.flagC = false;", 1)
+        self.assertEqual(candidates(missing, SYMBOL, [edit]), {})
+        duplicate = SOURCE.replace(b"x.flagA = false;", b"x.flagA = false; x.flagA = false;", 1)
+        self.assertEqual(candidates(duplicate, SYMBOL, [edit]), {})
+
     def test_tower_alpha_precedes_the_laser_flags(self):
         symbol = "_ZN7harvest6entity19CDefenseTowerEntity11updateLogicEf"
         key = ("HarvestFull/harvest/entity/CDefenseTowerEntity.cpp", symbol)

@@ -43,6 +43,19 @@ SYMBOL = "_ZNK4game5Board5scoreEii"  # game::Board::score(int, int) const
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class SwapOperands(unittest.TestCase):
+    def test_overload_resolution_preserves_pointer_and_reference_types(self):
+        source = b"""void Board::pick(SColor color) { value(); }
+void Board::pick(SColor* colors) { pointer(); }
+void Board::pick(const SColor& color) { reference(); }
+"""
+        for symbol, body in (
+            ("_ZN5Board4pickE6SColor", b"value();"),
+            ("_ZN5Board4pickEP6SColor", b"pointer();"),
+            ("_ZN5Board4pickERK6SColor", b"reference();"),
+        ):
+            with self.subTest(symbol=symbol):
+                self.assertIn(body, find_function(source, symbol).text)
+
     def test_finds_the_overload_with_the_symbols_arity(self):
         function = find_function(SOURCE, SYMBOL)
         self.assertIn(b"a < b", function.text)

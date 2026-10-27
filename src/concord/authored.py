@@ -52,6 +52,14 @@ class Replacement:
 
 
 @dataclass(frozen=True)
+class BodyEdit:
+    """Related replacements that must apply together inside one body."""
+
+    name: str
+    replacements: tuple[Replacement, ...]
+
+
+@dataclass(frozen=True)
 class HeaderFunctionEdit:
     """An atomic correction to a function defined in a shared header."""
 
@@ -60,7 +68,7 @@ class HeaderFunctionEdit:
     replacements: tuple[Replacement, ...]
 
 
-AUTHORED: dict[tuple[str, str], list[Edit]] = {
+AUTHORED: dict[tuple[str, str], list[Edit | BodyEdit]] = {
     # The target's A1R5G5B5 path branches on the signed 16-bit pixel: alpha is
     # either absent or 0xff, while the RGB fields use the same shifts in both
     # arms. This form comes from the target disassembly rather than Irrlicht's
@@ -288,6 +296,50 @@ AUTHORED: dict[tuple[str, str], list[Edit]] = {
     ],
 }
 
+# Daisy's quad batch is absent from Irrlicht 0.7. The target loads the batch
+# index once and retains it across all four vertex assignments.
+_QUAD_INDEX = BodyEdit("quad-vertex-index", (
+    Replacement(b"Vertices2D[Current2DQuadCount * 4 +", b"Vertices2D[index +", 4),
+    Replacement(b"    Vertices2D[index + 0]",
+                b"    const int index = Current2DQuadCount * 4;\n    Vertices2D[index + 0]", 1),
+))
+for _draw_symbol in (
+    "_ZN5daisy5video12CVideoOpenGL11draw2DImageEPN2ox5video8ITextureERKNS2_4core11CPosition2dIiEERKNS6_5CRectIiEEPSD_NS3_6SColorEb",
+    "_ZN5daisy5video12CVideoOpenGL11draw2DImageEPN2ox5video8ITextureERKNS2_4core11CPosition2dIiEERKNS6_5CRectIiEEPSD_PNS3_6SColorEb",
+    "_ZN5daisy5video12CVideoOpenGL11draw2DImageEPN2ox5video8ITextureERKNS2_4core11CPosition2dIiEESA_SA_SA_RKNS6_5CRectIiEEPNS3_6SColorEb",
+    "_ZN5daisy5video12CVideoOpenGL11draw2DImageEPN2ox5video8ITextureERKNS2_4core11CPosition2dIfEESA_SA_SA_RKNS6_5CRectIiEEPKNS3_11SColorArrayEb",
+):
+    AUTHORED[("daisy/video/OpenGL/CVideoOpenGL.cpp", _draw_symbol)] = [_QUAD_INDEX]
+
+# These daisy methods have no corresponding Irrlicht 0.7 bodies. The target
+# reloads the viewport after external calls and subtracts '0' from the minor
+# version before either version branch.
+AUTHORED[("daisy/video/OpenGL/CVideoOpenGL.cpp", "_ZN5daisy5video12CVideoOpenGL18saveJpegScreenshotEPKcS3_")] = [
+    BodyEdit("live-viewport-dimensions", (
+        Replacement(b"const int width = viewport[2];", b"const int& width = viewport[2];", 1),
+        Replacement(b"const int height = viewport[3];", b"const int& height = viewport[3];", 1),
+        Replacement(b"    const int pitch = width * 3;\n", b"", 1),
+        Replacement(b"new unsigned char[pitch * height]", b"new unsigned char[width * height * 3]", 1),
+        Replacement(b"memcpy(flipped + (height - 1 - y) * pitch, pixels + y * pitch, pitch);",
+                    b"memcpy(flipped + (height - 1 - y) * (width * 3), pixels + y * (width * 3), width * 3);", 1),
+    )),
+]
+AUTHORED[("daisy/video/OpenGL/CVideoOpenGL.cpp", "_ZN5daisy5video12CVideoOpenGL14loadExtensionsEv")] = [
+    Edit("eager-minor-version", b"    if (major > 1 || (parts[0][2] - '0' > 1 && major == 1))",
+         b"    int minor = parts[0][2] - '0';\n    if (major > 1 || (minor > 1 && major == 1))"),
+]
+AUTHORED[("daisy/video/OpenGL/CVideoOpenGL.cpp", "_ZN5daisy5video12CVideoOpenGL17switch2dRenderingEPN2ox5video8ITextureEbbi")] = [
+    Edit("quad-bound-shift", b"i < Current2DQuadCount * 4", b"i < (Current2DQuadCount << 2)"),
+]
+AUTHORED[("daisy/video/OpenGL/CVideoOpenGL.cpp", "_ZN5daisy5video12CVideoOpenGL17drawScaled2DImageEPN2ox5video8ITextureERKNS2_4core11CPosition2dIfEERKNS6_5CRectIiEEfNS3_6SColorEb")] = [
+    BodyEdit("height-after-upper-corners", (
+        Replacement(b"    float height = sourceRect.getHeight() * scale;\n", b"", 1),
+        Replacement(b"    ox::core::CPosition2d<float> lowerLeft",
+                    b"    float height = sourceRect.getHeight() * scale;\n    ox::core::CPosition2d<float> lowerLeft", 1),
+    )),
+]
+
+
 HEADER_AUTHORED: dict[tuple[str, str], ConstantEdit] = {
     # NVIDIA's Cg header defines the program parameter namespace as 4109:
     # https://github.com/NVIDIAGameWorks/PhysX/blob/4.1/externals/cg-linux/include/Cg/cg.h
@@ -364,7 +416,16 @@ def header_function_candidate(source: bytes, symbol: str, edit: HeaderFunctionEd
     return source[:scope.start_byte] + body + source[scope.end_byte:]
 
 
-def candidates(source: bytes, symbol: str, edits: list[Edit]) -> dict[str, bytes]:
+def _body_candidate(body: bytes, edit: Edit | BodyEdit) -> bytes | None:
+    replacements = edit.replacements if isinstance(edit, BodyEdit) else (Replacement(edit.old, edit.new, 1),)
+    for replacement in replacements:
+        if body.count(replacement.old) != replacement.count:
+            return None
+        body = body.replace(replacement.old, replacement.new)
+    return body
+
+
+def candidates(source: bytes, symbol: str, edits: list[Edit | BodyEdit]) -> dict[str, bytes]:
     """One candidate source per edit whose old text appears exactly once inside
     the named function's body, plus one candidate applying every matching edit
     together when two or more do: a function can need several disjoint edits to
@@ -374,10 +435,12 @@ def candidates(source: bytes, symbol: str, edits: list[Edit]) -> dict[str, bytes
     found = {}
     combined, names = body, []
     for edit in edits:
-        if body.count(edit.old) == 1:
-            found[edit.name] = source[: scope.start_byte] + body.replace(edit.old, edit.new, 1) + source[scope.end_byte :]
-        if combined.count(edit.old) == 1:
-            combined = combined.replace(edit.old, edit.new, 1)
+        candidate = _body_candidate(body, edit)
+        if candidate is not None:
+            found[edit.name] = source[: scope.start_byte] + candidate + source[scope.end_byte :]
+        candidate = _body_candidate(combined, edit)
+        if candidate is not None:
+            combined = candidate
             names.append(edit.name)
     if len(names) > 1:
         found["+".join(names)] = source[: scope.start_byte] + combined + source[scope.end_byte :]

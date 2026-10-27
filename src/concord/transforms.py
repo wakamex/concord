@@ -93,9 +93,10 @@ def _arity(node: Node) -> int:
 
 
 def _type_name(text: str) -> str:
-    """A parameter type's unqualified name, without qualifiers, pointers or spaces."""
+    """An unqualified parameter type, retaining its pointer/reference shape."""
+    indirection = "".join(re.findall(r"[*&]", text))
     text = re.sub(r"\bconst\b", "", text)
-    return re.sub(r"[*&\[\]]", "", text).replace(" ", "").split("::")[-1]
+    return re.sub(r"[*&\[\]]", "", text).replace(" ", "").split("::")[-1] + indirection
 
 
 def _demangled_params(demangled: str) -> list[str]:
@@ -122,11 +123,16 @@ def _param_types(node: Node) -> list[str]:
     params = d.child_by_field_name("parameters") if d is not None else None
     if params is None:
         return []
-    return [
-        _type_name((p.child_by_field_name("type") or p).text.decode())
-        for p in params.named_children
-        if p.type != "comment"
-    ]
+    types = []
+    for parameter in params.named_children:
+        if parameter.type == "comment":
+            continue
+        text = (parameter.child_by_field_name("type") or parameter).text.decode()
+        declarator = parameter.child_by_field_name("declarator")
+        if declarator is not None:
+            text += "".join(re.findall(r"[*&]", declarator.text.decode()))
+        types.append(_type_name(text))
+    return types
 
 
 def find_function(source: bytes, symbol: str) -> Node:
