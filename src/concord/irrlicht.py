@@ -182,18 +182,36 @@ def _translate(source: str, namespace: str) -> str:
         body = buffers.group().replace(".set_used(", ".reserve(")
         source = source[:buffers.start()] + source[buffers.end():]
         source = source.replace(step, body + "\n\n" + step, 1)
-    # The original reserves without resizing and indexes the storage, as the
-    # target's code proves. The port resizes to construct the vector elements.
-    def software_triangle_buffer(method: re.Match) -> str:
+    # The original reserves these buffers without resizing and indexes the
+    # storage, as the target's calls to vector::reserve prove (a constant-
+    # propagated reserve clone for the box selector's set_used(12)). The port
+    # resizes to construct the vector elements those indexes write. Sites where
+    # the target resizes keep resize.
+    reserve_proven_buffers = {
+        "CVideoSoftware::drawIndexedTriangleList": "TransformedPoints",
+        "CAnimatedMeshMD2::loadFile": "InterpolateBuffer",
+        "CSceneCollisionManager::getCollisionPoint": "Triangles",
+        "CSceneCollisionManager::collideWithWorld": "Triangles",
+        "CTriangleBBSelector::CTriangleBBSelector": "Triangles",
+    }
+
+    def reserve_indexed_buffer(method: re.Match) -> str:
+        buffer = reserve_proven_buffers[method[1]]
+
         def guard(call: re.Match) -> str:
-            indent = call[1]
-            return (f"#ifdef HARVEST_PORT\n{indent}TransformedPoints.resize(vertexCount);\n"
-                    f"#else\n{indent}TransformedPoints.reserve(vertexCount);\n#endif")
+            indent, arg = call[1], call[2]
+            ifdef = (f"#ifdef HARVEST_PORT\n{indent}{buffer}.resize({arg});\n"
+                     f"#else\n{indent}{buffer}.reserve({arg});\n#endif")
+            comment = (call[3] or "").strip()
+            return f"{indent}{comment}\n{ifdef}" if comment else ifdef
 
-        return re.sub(r"(?m)^([ \t]*)TransformedPoints\.set_used\(vertexCount\);", guard, method[0])
+        return re.sub(
+            r"(?m)^([ \t]*)" + buffer + r"\.set_used\(((?:\([^()]*\)|[^()])*?)\);([ \t]*//[^\n]*)?",
+            guard, method[0])
 
-    source = re.sub(r"^void CVideoSoftware::drawIndexedTriangleList\([^)]*\)\s*\{.*?^\}",
-                    software_triangle_buffer, source, flags=re.MULTILINE | re.DOTALL)
+    source = re.sub(
+        r"(?m)^[\w:<>,&*~ ]*?\b(" + "|".join(reserve_proven_buffers) + r")\([^)]*\)[^;{]*\{.*?^\}",
+        reserve_indexed_buffer, source, flags=re.DOTALL)
     source = re.sub(r"\bnamespace irr\b", f"namespace {namespace}", source)
     source = re.sub(r"\birr::(?=(?:core|video|scene|io|gui|ELL_\w+|" + "|".join(TYPEDEFS) + r")\b)", "", source)  # qualified again below
     source = re.sub(r"\birr::", "daisy::", source)
@@ -554,6 +572,7 @@ CONTAINER_CALLS = [
     (OBJECT + r"\.erase\((?!a?it\))(\w+),\s*([^,()]+)\)", r"\1.erase(\1.begin() + (int)\2, \1.begin() + (int)(\2 + \3))"),
     (OBJECT + r"\.erase\((?!a?it\))(\w+)\)", r"\1.erase(\1.begin() + \2)"),  # Irrlicht erased by index; a vector erases by iterator
     (r"\s*[^\n;]+\.set_sorted\([^)]*\);\s*\n", "\n"),  # a sorted flag has no counterpart in a vector
+    (r"(\.|->)set_used\(0\)", r"\1clear()"),  # set_used(0) only resets the count, as clear() does; resize(0) emits a fill call the target lacks
     (r"(\.|->)set_used\(", r"\1resize("),
     (r"(\.|->)reallocate\(", r"\1reserve("),
     (r"(\.|->)getLast\(\)", r"\1back()"),

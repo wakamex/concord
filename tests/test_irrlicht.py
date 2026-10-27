@@ -75,6 +75,41 @@ class Translate(unittest.TestCase):
         self.assertIn("TransformedPoints.resize(triangleCount*3);", out)
         self.assertEqual(translate(out), out)
 
+    def test_indexed_buffers_reserve_only_in_matching_build(self):
+        source = (
+            "bool CAnimatedMeshMD2::loadFile(io::IReadFile* file)\n{\n"
+            "\t\tInterpolateBuffer.set_used(FrameList[0].size());\n}\n"
+            "bool CSceneCollisionManager::getCollisionPoint(const core::line3d<f32>& ray,\n"
+            "\t\tcore::triangle3df& outTriangle)\n{\n"
+            "\tTriangles.set_used(totalcnt);\n}\n"
+            "core::vector3df CSceneCollisionManager::collideWithWorld(s32 recursionDepth,\n"
+            "\t\tSCollisionData& colData)\n{\n"
+            "\tTriangles.set_used(totalTriangleCnt);\n}\n"
+            "CTriangleBBSelector::CTriangleBBSelector(ISceneNode* node)\n"
+            ": CTriangleSelector(node)\n{\n"
+            "\tTriangles.set_used(12); // a box has 12 triangles.\n}\n"
+            "void CParticleBoxEmitter::emitt()\n{\n"
+            "\tParticles.set_used(0);\n}\n"
+            "bool CAnimatedMeshMD2::loadFile()\n{\n"
+            "\t\tFrameList[f].set_used(count);\n}\n"
+        )
+        out = translate(source)
+        self.assertIn(
+            "#ifdef HARVEST_PORT\n\t\tInterpolateBuffer.resize(FrameList[0].size());\n"
+            "#else\n\t\tInterpolateBuffer.reserve(FrameList[0].size());\n#endif", out)
+        self.assertIn(
+            "#ifdef HARVEST_PORT\n\tTriangles.resize(totalcnt);\n#else\n\tTriangles.reserve(totalcnt);\n#endif", out)
+        self.assertIn(
+            "#ifdef HARVEST_PORT\n\tTriangles.resize(totalTriangleCnt);\n"
+            "#else\n\tTriangles.reserve(totalTriangleCnt);\n#endif", out)
+        self.assertIn(
+            "// a box has 12 triangles.\n#ifdef HARVEST_PORT\n\tTriangles.resize(12);\n"
+            "#else\n\tTriangles.reserve(12);\n#endif", out)
+        self.assertIn("Particles.clear();", out)
+        self.assertIn("FrameList[f].resize(count);", out)
+        self.assertNotIn("set_used", out)
+        self.assertEqual(translate(out), out)
+
     def test_namespace_typedefs_types_and_headers(self):
         source = (
             '#include "IUnknown.h"\n#include "SColor.h"\nnamespace irr\n{\nnamespace video\n{\n'
