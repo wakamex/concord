@@ -17,6 +17,7 @@ from concord.calls_constants import (
     _canonical,
     compare_function,
     read_refs,
+    read_string_sections,
     resolvers,
     show,
 )
@@ -190,6 +191,33 @@ class DataReferences(unittest.TestCase):
         text = "\n".join(show(report))
         self.assertIn("more often", text)
         self.assertNotIn("does not", text)
+
+    def test_merged_string_sections_compare_by_literal_not_offset(self):
+        ours_pool = b"pad\x00alpha\x00"
+        target_pool = b"alpha\x00pad\x00"
+        ours = refs(datarefs=[(4, ".rodata.str1.1", 4, "lea", "lea rdi, [rip]")])
+        target = refs(datarefs=[(4, ".rodata.str1.1", 0, "lea", "lea rdi, [rip]")])
+        sections = {".rodata.str1.1": ours_pool}
+        self.assertEqual(
+            compare(ours, target, ours_sections=sections, target_sections={".rodata.str1.1": target_pool}),
+            [],
+        )
+        other = refs(datarefs=[(4, ".rodata.str1.1", 0, "lea", "lea rdi, [rip]")])
+        [row] = compare(ours, other, ours_sections=sections, target_sections=sections)
+        self.assertEqual(row["classification"], "different-references")
+        self.assertIn("alpha", row["ours"]["ref"])
+        self.assertIn("pad", row["target"]["ref"])
+
+    @unittest.skipUnless(
+        Path("/code/harvest-cursor/build/match/1.18-linux-amd64").is_dir(),
+        "needs harvest-cursor after hv match",
+    )
+    def test_read_string_sections_from_compiled_harvest_object(self):
+        slug = "HarvestFull__harvest__entity__CDefenseTowerEntity"
+        path = Path("/code/harvest-cursor/build/match/1.18-linux-amd64") / f"{slug}.o"
+        pool = read_string_sections(path)[".rodata.str1.1"]
+        self.assertIn(b"DefenceTower0000", pool)
+        self.assertIn(b"DefenceTowerOn0005", pool)
 
 
 class CanonicalNames(unittest.TestCase):

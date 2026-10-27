@@ -10,7 +10,8 @@ the target's copy of the same symbol:
   `sub_` name are not a difference;
 - the multiset of immediate operands with relocation fields masked, and the
   multiset of data references the relocations point at, normalized to section
-  or symbol plus offset on both sides.
+  or symbol plus offset on both sides, and for GCC merged string pools to the
+  string bytes at that offset so a pool layout shift is not reported.
 
 Functions where either multiset differs are ranked by target bytes. Left-over
 callees and immediates are count differences, not proof that a particular
@@ -87,6 +88,69 @@ def _canonical(name: str) -> str:
         if name.startswith(prefix):
             return name[len(prefix) - 2 :]
     return name
+
+
+def _string_section_encoding(name: str) -> str | None:
+    """How to read a pooled literal in a GCC merged string section."""
+    if not name.startswith(".rodata.str"):
+        return None
+    tag = name.split(".", 3)[2]
+    if tag == "str1":
+        return "utf8"
+    if tag == "str4":
+        return "utf32le"
+    return None
+
+
+def read_string_sections(path: Path) -> dict[str, bytes]:
+    """The `.rodata.str*` section bodies from one object file."""
+    with path.open("rb") as stream:
+        elf = ELFFile(stream)
+        return {
+            section.name: section.data()
+            for section in elf.iter_sections()
+            if _string_section_encoding(section.name)
+        }
+
+
+def _pooled_string(data: bytes, offset: int, encoding: str) -> bytes | None:
+    if offset < 0 or offset >= len(data):
+        return None
+    if encoding == "utf8":
+        end = data.find(b"\x00", offset)
+        return None if end < 0 else data[offset:end]
+    if encoding == "utf32le":
+        units = []
+        pos = offset
+        while pos + 4 <= len(data):
+            unit = int.from_bytes(data[pos : pos + 4], "little")
+            if unit == 0:
+                break
+            units.append(unit)
+            pos += 4
+        else:
+            return None
+        return b"".join(unit.to_bytes(4, "little") for unit in units)
+    return None
+
+
+def _ref_data_key(ref: DataRef, sections: dict[str, bytes]) -> tuple:
+    encoding = _string_section_encoding(ref.base)
+    data = sections.get(ref.base) if encoding else None
+    if encoding and data is not None and (text := _pooled_string(data, ref.dest, encoding)) is not None:
+        return ("string", ref.base, text)
+    return ("offset", ref.base, ref.dest)
+
+
+def _ref_label(ref: DataRef, sections: dict[str, bytes]) -> str:
+    encoding = _string_section_encoding(ref.base)
+    data = sections.get(ref.base) if encoding else None
+    if encoding and data is not None and (text := _pooled_string(data, ref.dest, encoding)) is not None:
+        if encoding == "utf8":
+            return f'{ref.base}:"{text.decode("utf-8", "backslashreplace")}"'
+        wide = text.decode("utf-32le")
+        return f'{ref.base}:L"{wide}"'
+    return f"{ref.base}+{ref.dest:#x}"
 
 
 def _operand_sig(i, o) -> tuple:
@@ -307,23 +371,27 @@ def _const_entry(c: Constant, ours: Counter, target: Counter) -> dict:
             "ours_count": ours[key], "target_count": target[key]}
 
 
-def _ref_entry(r: DataRef, ours: Counter, target: Counter) -> dict:
-    key = r.base, r.dest
+def _ref_entry(r: DataRef, ours: Counter, target: Counter, sections: dict[str, bytes]) -> dict:
+    key = _ref_data_key(r, sections)
     offset = None if ours[key] and target[key] else f"{r.offset:#x}"
-    return {"ref": f"{r.base}+{r.dest:#x}", "offset": offset, "instruction": r.text,
+    return {"ref": _ref_label(r, sections), "offset": offset, "instruction": r.text,
             "ours_count": ours[key], "target_count": target[key]}
 
 
 def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
                      resolve_ours, resolve_target, display,
                      ours_catalog: dict[str, FunctionRefs] | None = None,
-                     target_catalog: dict[str, FunctionRefs] | None = None) -> list[dict]:
+                     target_catalog: dict[str, FunctionRefs] | None = None,
+                     ours_sections: dict[str, bytes] | None = None,
+                     target_sections: dict[str, bytes] | None = None) -> list[dict]:
     """The named differences between the two copies, structured."""
     differences = []
     ours_only, target_only = _cancel([c.symbol for c in ours.callees], [c.symbol for c in target.callees],
                                      resolve_ours, resolve_target)
     ours_catalog = ours_catalog or {}
     target_catalog = target_catalog or {}
+    ours_sections = ours_sections or {}
+    target_sections = target_sections or {}
 
     def callee(name_addr, side):
         name, addr = name_addr
@@ -412,9 +480,9 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
 
     ours_by_key, target_by_key = defaultdict(list), defaultdict(list)
     for r in ours.datarefs:
-        ours_by_key[(r.base, r.dest)].append(r)
+        ours_by_key[_ref_data_key(r, ours_sections)].append(r)
     for r in target.datarefs:
-        target_by_key[(r.base, r.dest)].append(r)
+        target_by_key[_ref_data_key(r, target_sections)].append(r)
     ours_keys = Counter(k for k, rows in ours_by_key.items() for _ in rows)
     target_keys = Counter(k for k, rows in target_by_key.items() for _ in rows)
     ours_rest = [ours_by_key[k].pop() for k in (ours_keys - target_keys).elements()]
@@ -423,14 +491,14 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
     extra, ours_rest, target_rest = _pair(ours_rest, target_rest, key=lambda r: r.mnemonic)
     for o, t in pairs + extra:
         differences.append({"kind": "data", "classification": "different-references",
-                            "ours": _ref_entry(o, ours_keys, target_keys),
-                            "target": _ref_entry(t, ours_keys, target_keys)})
+                            "ours": _ref_entry(o, ours_keys, target_keys, ours_sections),
+                            "target": _ref_entry(t, ours_keys, target_keys, target_sections)})
     for r in ours_rest:
         differences.append({"kind": "data", "classification": "ours-only",
-                            "ours": _ref_entry(r, ours_keys, target_keys)})
+                            "ours": _ref_entry(r, ours_keys, target_keys, ours_sections)})
     for r in target_rest:
         differences.append({"kind": "data", "classification": "target-only",
-                            "target": _ref_entry(r, ours_keys, target_keys)})
+                            "target": _ref_entry(r, ours_keys, target_keys, target_sections)})
 
     if ours.indirect != target.indirect:
         differences.append({"kind": "indirect", "ours": ours.indirect, "target": target.indirect})
@@ -501,6 +569,8 @@ def gather(harvest: Harvest, units: Iterable[str] = ()) -> dict:
         target = read_refs(target_path, set(inexact))
         ours_catalog = read_refs(ours_path)
         target_catalog = read_refs(target_path)
+        ours_sections = read_string_sections(ours_path)
+        target_sections = read_string_sections(target_path)
         resolve_ours, resolve_target, display = resolvers(rows, named, name_to_addr)
 
         for name, row in inexact.items():
@@ -510,7 +580,8 @@ def gather(harvest: Harvest, units: Iterable[str] = ()) -> dict:
             compared += 1
             differences = compare_function(ours[name], target[name], resolve_ours=resolve_ours,
                                            resolve_target=resolve_target, display=display,
-                                           ours_catalog=ours_catalog, target_catalog=target_catalog)
+                                           ours_catalog=ours_catalog, target_catalog=target_catalog,
+                                           ours_sections=ours_sections, target_sections=target_sections)
             if not differences:
                 continue
             address = int(row["address"], 16) if row.get("address") else None
@@ -558,7 +629,10 @@ def show(result: dict) -> list[str]:
             label = pretty.get(entry["name"].rsplit(" ", 1)[-1], entry["name"])
             return f"{entry['address']} {label}" if entry.get("address") else label
         if "ref" in entry:
-            base, off = entry["ref"].rsplit("+", 1)
+            ref = entry["ref"]
+            if ":" in ref:
+                return ref
+            base, off = ref.rsplit("+", 1)
             return f"{pretty.get(base, base)}+{off}"
         return "?"
 
