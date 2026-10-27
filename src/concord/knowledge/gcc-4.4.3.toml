@@ -581,8 +581,8 @@ evidence = [
 
 [[idiom]]
 id = "a1r5g5b5-alpha-bool-flag"
-cause = "codegen"
-status = "measured"
+cause = "instruction-selection"
+status = "confirmed"
 symptom = "the target materializes a colour's alpha byte as a 0/1 flag shifted left 15 (`test 0xff000000; setne al; shl eax,0xf`) where our free helper's `(c & 0xff000000) ? 0x8000 : 0` folds into `cmp eax,1; sbb; not; and dx,0x8000`, and its blue channel uses `sar` where ours shifts unsigned"
 fix = "Spell the A1R5G5B5 packing as `unsigned int c = color; unsigned int alpha = (c & 0xff000000) != 0; (alpha << 15) | ((c >> 9) & 0x7c00) | ((c >> 6) & 0x3e0) | (((int)c >> 3) & 0x1f)`. The named unsigned flag expands through store_flag as xor/test/setne in SImode, the unsigned input gives the logical shr for red and green, and the (int) cast keeps the arithmetic sar for blue. A bool local reaches the same setne but routes through movzbl; the shifts as one flat expression without the flag fold back to the sbb sequence."
 limits = "Both CVideoSoftware::drawIndexedTriangleList overloads improve 97.91 to 99.80 with oracle agreement (5000/5000 behavior cases) but the whole-build gate reports matched data +0/-4 twice: the last four bytes of the target's contiguous rodata run ending at 0x602a8a stop matching. The unit's own data sections are byte-identical; the S3DVertex2TCoords overload shrinks 0xca6 to 0xc9e bytes and the S3DVertex overload's emitted offset moves 0x10, so a downstream data entry tracking that placement plausibly loses coverage. Not kept. GCC 4.4's combine folds `(ne x 0) << 15` to the neg/mask sequence only when the flag is not materialized into an SI pseudo first; whether it folds varies with surrounding register pressure, which is why identical spellings produce test/setne in some functions and sbb in others."
