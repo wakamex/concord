@@ -43,6 +43,21 @@ Evaluation:
 
 Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a cheaper Codex option at half Sol's price;  Muse has no diagnosis or rule row.
 
+## Grades (2026-10-27)
+
+Each executor is scored out of 100 on four parts: results (40), what its work moved, from exact functions to findings that closed or opened a lever; reliability (30), clean gates, diffs that hold and rules kept; efficiency (20), cost and wall time for what it delivered; and reports (10), whether its report was accurate and complete enough to act on without rereading its work. A is 90 and above, B 80 to 89, C 70 to 79. These are the master session's judgment from the rows below, not a benchmark, and they move as rows are added.
+
+| Executor | Grade | Score | Results | Reliability | Efficiency | Reports | Median wall time per task | What it is for |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| Codex `gpt-6.1-sol` | A- | 88 | 39 | 27 | 13 | 9 | about 1 to 4 hours (native session, not timed) | multi-unit recoveries that need new tooling and a whole-build gate; kept at no more than 1x pace |
+| Codex `gpt-6.1-terra` at `--effort max` | B+ | 85 | 31 | 29 | 16 | 9 | 7.8 minutes (6.2 to 17.3, five runs) | diagnosing a concrete source lead from the sweep; two of three max tasks found a real source difference |
+| Antigravity Gemini 4 Argon (second reader) | B+ | 85 | 37 | 22 | 18 | 8 | not timed | choosing the next lever; its levers held every time, about half its details did not |
+| Devin `swe-2-high` | B+ | 82 | 31 | 24 | 19 | 8 | 20.8 minutes (7.5 to 105, 37 runs) | bounded diagnoses and capability work at no cost; careful negative results; one commit made with losses, bot authorship and trailers needed fixing |
+| Muse `muse-wonder-full-1.0` | B | 80 | 30 | 28 | 10 | 10 | 49 minutes (12.5 to 128, three runs) | a capability with a careful proof (the report naming fix, merged upstream as #39); its subscription runs out fast |
+| Cursor `composer-2.5` | C+ | 74 | 18 | 22 | 18 | 9 | 12.6 minutes (1.3 to 23, four runs; one held 4 hours by an aop bug, now fixed) | small rule and search tasks written as numbered checkable rules; it broke two rules once and its first concord task failed |
+
+Wall time is from aop's start and finish records for each run, waiting for memory excluded. Many of Devin's runs report `failed` only because of aop's trajectory-export bug while their work completed; the times count them.
+
 ## Log
 
 | Date | Task | Kind | Executor | Newly exact | Gates | Diff | Cost | Notes |
