@@ -321,10 +321,10 @@ def _one_sided(run: list[Instruction], side: str, others: list[list[Instruction]
     other_calls = any(i.is_call for o in others for i in o)
     if calls and not other_calls:
         cause = Cause.INLINING
-        detail = f"{side} calls where the other side has inline code: {_run(calls)}"
+        detail = f"{side} has unaligned calls: {_run(calls)}; possible inlining or a shared tail"
     elif not calls and len(run) >= 3 and other_calls:
         cause = Cause.INLINING
-        detail = f"{side} has {len(run)} inline instructions where the other side calls"
+        detail = f"{side} has {len(run)} unaligned instructions where the other side calls; possible inlining or a shared tail"
     elif all(_moves_data(i) for i in run):
         cause = Cause.REGISTER_ALLOCATION
         detail = f"{side} only, spills, reloads or copies: {_run(run[:4])}{' ...' if len(run) > 4 else ''}"

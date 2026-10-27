@@ -90,6 +90,18 @@ class AssembledCauses(unittest.TestCase):
             {Cause.INLINING},
         )
 
+    def test_an_unaligned_call_can_also_come_from_a_shared_tail(self):
+        target = read_function(assemble(self.directory, "target", (
+            "test edi, edi\nje 1f\nadd esi, 1\n1: call g\nret"
+        )), "f")
+        candidate = read_function(assemble(self.directory, "candidate", (
+            "test edi, edi\nje 1f\nadd esi, 1\ncall g\nret\n1: call g\nret"
+        )), "f")
+        findings = [f.detail for f in diff_code(target, candidate).findings if f.cause == Cause.INLINING]
+        self.assertTrue(findings)
+        self.assertIn("shared", " ".join(findings))
+        self.assertNotIn("has inline code", " ".join(findings))
+
     def test_extra_spill_is_register_allocation(self):
         self.assertEqual(
             self.causes(

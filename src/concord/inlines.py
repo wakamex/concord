@@ -221,9 +221,9 @@ def analyze(
     - `mac-missing`: Mac rows for the unit we emit nothing for, restricted to
       names some unit in the build does emit (the rest are the Mac headers'
       own internals and counted as `mac-platform`).
-    - `call-differences`: per function on both sides, direct callees only we
-      have (`called-out-of-line`: the original inlined them) or only the target
-      has (`original-called`: we inlined them), and indirect-call counts.
+    - `call-differences`: per function on both sides, direct callees with higher
+      counts in ours (`called-out-of-line`) or in the target (`original-called`),
+      and indirect-call counts. Shared tails can also change call counts.
       Callees compare by target address where one is known, so our call to a
       placed symbol and the target's to its `sub_` name are not a difference.
     """

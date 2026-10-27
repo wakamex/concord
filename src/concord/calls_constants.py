@@ -12,12 +12,16 @@ the target's copy of the same symbol:
   multiset of data references the relocations point at, normalized to section
   or symbol plus offset on both sides.
 
-Functions where either multiset differs are ranked by target bytes. A callee
-left over on both sides is reported as a substitution ("ours calls resize
-where the target calls reserve") unless one leftover is an out-of-line copy
-whose body calls the other leftover (inline-copy noise, as when ours calls a
-CString constructor and the target calls operator new[] because one side inlined
-that constructor). A callee left over on one side only is the same noise.
+Functions where either multiset differs are ranked by target bytes. Left-over
+callees and immediates are count differences, not proof that a particular
+source statement or an inline decision differs; a shared compiled tail, for
+example, can change both counts without changing the source operations. A
+callee left over on both sides is reported as a substitution ("ours calls
+resize where the target calls reserve") unless one leftover is an out-of-line
+copy whose body calls the other leftover (inline-copy noise, as when ours calls
+a CString constructor and the target calls operator new[] because one side
+inlined that constructor). A callee left over on one side only is reported as a
+possible inline or shared tail.
 """
 
 from __future__ import annotations
@@ -290,12 +294,24 @@ def _hex(value: int | None) -> str | None:
     return None if value is None else f"{value:#x}"
 
 
-def _const_entry(c: Constant) -> dict:
-    return {"value": c.value, "offset": f"{c.offset:#x}", "site": c.site, "instruction": c.text}
+def _const_key(c: Constant) -> tuple:
+    return c.value, c.context, c.text
 
 
-def _ref_entry(r: DataRef) -> dict:
-    return {"ref": f"{r.base}+{r.dest:#x}", "offset": f"{r.offset:#x}", "instruction": r.text}
+def _const_entry(c: Constant, ours: Counter, target: Counter) -> dict:
+    key = _const_key(c)
+    # When both sides contain the same instruction, the multiset difference
+    # does not identify which of its occurrences is the extra one.
+    offset = None if ours[key] and target[key] else f"{c.offset:#x}"
+    return {"value": c.value, "offset": offset, "site": c.site, "instruction": c.text,
+            "ours_count": ours[key], "target_count": target[key]}
+
+
+def _ref_entry(r: DataRef, ours: Counter, target: Counter) -> dict:
+    key = r.base, r.dest
+    offset = None if ours[key] and target[key] else f"{r.offset:#x}"
+    return {"ref": f"{r.base}+{r.dest:#x}", "offset": offset, "instruction": r.text,
+            "ours_count": ours[key], "target_count": target[key]}
 
 
 def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
@@ -331,8 +347,8 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
         for _outer, _inner, outer_side, inner_side, outer_entry, inner_entry in explained:
             append_inline_noise(outer_entry, outer_side, inner_entry, inner_side)
     if ours_only and target_only:
-        # Left over on both sides: the copies call different functions, the
-        # source-level difference the check exists to name.
+        # Both sides have higher counts for at least one callee. These are
+        # candidates for a substitution, not proof of a source difference.
         differences.append({"kind": "call", "classification": "different-callees",
                             "ours": [callee(e, "ours") for e in sorted(ours_only)],
                             "target": [callee(e, "target") for e in sorted(target_only)]})
@@ -345,18 +361,31 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
             differences.append({"kind": "call", "classification": "original-called",
                                 "target": callee((name, addr), "target")})
 
-    # Constants compare as a multiset of values; leftover values are paired
-    # back through their instruction contexts, preferring sites the other
-    # side also has, then the same site, then the same mnemonic.
+    # Constants compare as a multiset of values. Cancel identical instruction
+    # contexts first, so an unrelated occurrence of the same value cannot be
+    # reported as the difference. Repeated identical contexts remain ambiguous.
     ours_count = Counter(c.value for c in ours.constants)
     target_count = Counter(c.value for c in target.constants)
-    ours_pool, target_pool = defaultdict(list), defaultdict(list)
-    for c in ours.constants:
-        ours_pool[c.value].append(c)
-    for c in target.constants:
-        target_pool[c.value].append(c)
-    ours_ctx = Counter(c.context for c in ours.constants)
-    target_ctx = Counter(c.context for c in target.constants)
+    ours_keys = Counter(_const_key(c) for c in ours.constants)
+    target_keys = Counter(_const_key(c) for c in target.constants)
+
+    def unmatched(constants, foreign):
+        remaining = foreign.copy()
+        pool = defaultdict(list)
+        for c in constants:
+            key = _const_key(c)
+            if remaining[key]:
+                remaining[key] -= 1
+            else:
+                pool[c.value].append(c)
+        return pool
+
+    ours_pool = unmatched(ours.constants, target_keys)
+    target_pool = unmatched(target.constants, ours_keys)
+    ours_excess = ours_count - target_count
+    target_excess = target_count - ours_count
+    ours_ctx = Counter(c.context for value in ours_excess for c in ours_pool[value])
+    target_ctx = Counter(c.context for value in target_excess for c in target_pool[value])
 
     def take(pool, value, foreign):
         choices = pool[value]
@@ -365,18 +394,21 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
         choices.remove(chosen)
         return chosen
 
-    ours_rest = [take(ours_pool, v, target_ctx) for v in (ours_count - target_count).elements()]
-    target_rest = [take(target_pool, v, ours_ctx) for v in (target_count - ours_count).elements()]
+    ours_rest = [take(ours_pool, v, target_ctx) for v in ours_excess.elements()]
+    target_rest = [take(target_pool, v, ours_ctx) for v in target_excess.elements()]
     pairs, ours_left, target_left = _pair(ours_rest, target_rest, key=lambda c: c.context)
     shape = lambda c: (c.context[0], tuple(s[0] for s in c.context[1]))
     extra, ours_left, target_left = _pair(ours_left, target_left, key=shape)
     for o, t in pairs + extra:
         differences.append({"kind": "constant", "classification": "different-constants",
-                            "ours": _const_entry(o), "target": _const_entry(t)})
+                            "ours": _const_entry(o, ours_keys, target_keys),
+                            "target": _const_entry(t, ours_keys, target_keys)})
     for c in ours_left:
-        differences.append({"kind": "constant", "classification": "ours-only", "ours": _const_entry(c)})
+        differences.append({"kind": "constant", "classification": "ours-only",
+                            "ours": _const_entry(c, ours_keys, target_keys)})
     for c in target_left:
-        differences.append({"kind": "constant", "classification": "target-only", "target": _const_entry(c)})
+        differences.append({"kind": "constant", "classification": "target-only",
+                            "target": _const_entry(c, ours_keys, target_keys)})
 
     ours_by_key, target_by_key = defaultdict(list), defaultdict(list)
     for r in ours.datarefs:
@@ -391,11 +423,14 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
     extra, ours_rest, target_rest = _pair(ours_rest, target_rest, key=lambda r: r.mnemonic)
     for o, t in pairs + extra:
         differences.append({"kind": "data", "classification": "different-references",
-                            "ours": _ref_entry(o), "target": _ref_entry(t)})
+                            "ours": _ref_entry(o, ours_keys, target_keys),
+                            "target": _ref_entry(t, ours_keys, target_keys)})
     for r in ours_rest:
-        differences.append({"kind": "data", "classification": "ours-only", "ours": _ref_entry(r)})
+        differences.append({"kind": "data", "classification": "ours-only",
+                            "ours": _ref_entry(r, ours_keys, target_keys)})
     for r in target_rest:
-        differences.append({"kind": "data", "classification": "target-only", "target": _ref_entry(r)})
+        differences.append({"kind": "data", "classification": "target-only",
+                            "target": _ref_entry(r, ours_keys, target_keys)})
 
     if ours.indirect != target.indirect:
         differences.append({"kind": "indirect", "ours": ours.indirect, "target": target.indirect})
@@ -499,17 +534,6 @@ def _demangle_all(names: set[str]) -> dict[str, str]:
     return {n: pretty.get(n, n) for n in names}
 
 
-def _phrase(mnemonic: str, site: str, value: int) -> str:
-    site = site.replace("byte ptr ", "").replace("dword ptr ", "").replace("qword ptr ", "").replace("word ptr ", "")
-    if mnemonic in ("mov", "movzx", "movsx", "movsxd"):
-        return f"stores {value} to {site}" if site.startswith("[") else f"loads {value} into {site}"
-    if mnemonic in ("cmp", "test"):
-        return f"compares {site} against {value}"
-    if mnemonic in ("add", "sub", "imul", "and", "or", "xor", "lea"):
-        return f"{mnemonic}s {value} on {site}"
-    return f"uses {value} in `{mnemonic} {site}`"
-
-
 def show(result: dict) -> list[str]:
     """Render the ranked findings for the terminal."""
     names = set()
@@ -541,27 +565,26 @@ def show(result: dict) -> list[str]:
     def render(d: dict) -> str:
         if d["kind"] == "call":
             if d["classification"] == "different-callees":
-                return f"calls: ours calls {prettify(d['ours'])} where the target calls {prettify(d['target'])}"
+                return f"calls: ours has additional calls to {prettify(d['ours'])}; the target has additional calls to {prettify(d['target'])}"
             if d["classification"] == "called-out-of-line":
-                return f"calls: ours calls {prettify(d['ours'])} out of line; the original inlines it"
-            return f"calls: the original calls {prettify(d['target'])}; ours inlines it"
+                return f"calls: ours calls {prettify(d['ours'])} more often than the target"
+            return f"calls: the target calls {prettify(d['target'])} more often than ours"
         if d["kind"] == "constant":
+            def count(e):
+                return f"`{e['instruction']}` occurs {e['ours_count']} times in ours and {e['target_count']} times in the target"
+
             if d["classification"] == "different-constants":
                 o, t = d["ours"], d["target"]
-                return (f"constants: ours {_phrase(o['instruction'].split(' ', 1)[0], o['site'], o['value'])} "
-                        f"where the target {_phrase(t['instruction'].split(' ', 1)[0], t['site'], t['value'])}")
-            side = "ours" if "ours" in d else "the target"
+                return f"constants: possible pairing: {count(o)}; {count(t)}"
             e = d.get("ours") or d.get("target")
-            other = "the target" if side == "ours" else "ours"
-            return (f"constants: {side} {_phrase(e['instruction'].split(' ', 1)[0], e['site'], e['value'])} "
-                    f"in `{e['instruction']}`; {other} has none")
+            return f"constants: {count(e)}"
         if d["kind"] == "data":
             if d["classification"] == "different-references":
-                return f"references: ours uses {prettify(d['ours'])} where the target uses {prettify(d['target'])}"
+                return f"references: possible pairing: ours uses {prettify(d['ours'])}; the target uses {prettify(d['target'])}"
             side = "ours" if "ours" in d else "the target"
             e = d.get("ours") or d.get("target")
             other = "the target" if side == "ours" else "ours"
-            return f"references: {side} uses {prettify(e)} in `{e['instruction']}`; {other} does not"
+            return f"references: {side} uses {prettify(e)} more often than {other}"
         return f"indirect calls: ours {d['ours']}, the original {d['target']}"
 
     out = []

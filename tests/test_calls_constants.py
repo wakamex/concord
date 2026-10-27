@@ -18,6 +18,7 @@ from concord.calls_constants import (
     compare_function,
     read_refs,
     resolvers,
+    show,
 )
 
 
@@ -104,6 +105,15 @@ class Calls(unittest.TestCase):
         [row] = compare(refs(indirect=2), refs(indirect=5))
         self.assertEqual(row, {"kind": "indirect", "ours": 2, "target": 5})
 
+    def test_a_call_count_difference_does_not_claim_inlining(self):
+        differences = compare(refs(callees=[(4, "_Zonly"), (9, "_Zonly")]),
+                              refs(callees=[(4, "_Zonly")]))
+        report = {"functions": [{"target_bytes": 20, "unit": "u", "symbol": "f",
+                                 "verified_address": True, "stub": False, "differences": differences}]}
+        text = "\n".join(show(report))
+        self.assertIn("more", text)
+        self.assertNotIn("inlines", text)
+
 
 class Constants(unittest.TestCase):
     def test_identical_immediates_report_nothing(self):
@@ -131,6 +141,26 @@ class Constants(unittest.TestCase):
         [row] = compare(ours, target)
         self.assertEqual(row["classification"], "target-only")
 
+    def test_an_identical_comparison_is_not_mistaken_for_the_extra_immediate(self):
+        cmp_one = constant(1, "cmp", "eax", (("reg", "rax"),))
+        mov_one = constant(1, "mov", "eax", (("reg", "rax"),), offset=8)
+        [row] = compare(refs(constants=[cmp_one, mov_one]), refs(constants=[cmp_one]))
+        self.assertEqual(row["ours"]["instruction"], "mov eax, 1")
+        self.assertEqual((row["ours"]["ours_count"], row["ours"]["target_count"]), (1, 0))
+
+    def test_a_repeated_instruction_has_no_claimed_extra_offset(self):
+        one = constant(0, offset=0)
+        two = constant(0, offset=8)
+        [row] = compare(refs(constants=[one, two]), refs(constants=[one]))
+        self.assertEqual((row["ours"]["ours_count"], row["ours"]["target_count"]), (2, 1))
+        self.assertIsNone(row["ours"]["offset"])
+        report = {"functions": [{"target_bytes": 20, "unit": "u", "symbol": "f",
+                                 "verified_address": True, "stub": False, "differences": [row]}]}
+        text = "\n".join(show(report))
+        self.assertIn("2", text)
+        self.assertIn("1", text)
+        self.assertNotIn("has none", text)
+
 
 class DataReferences(unittest.TestCase):
     def test_identical_references_report_nothing(self):
@@ -149,6 +179,17 @@ class DataReferences(unittest.TestCase):
         [row] = compare(ours, refs())
         self.assertEqual(row["classification"], "ours-only")
         self.assertEqual(row["ours"]["ref"], "_ZTVX+0x10")
+
+    def test_a_reference_count_difference_does_not_claim_absence(self):
+        ref = (4, "_ZTVX", 16, "mov", "mov qword ptr [rdi], 0")
+        differences = compare(refs(datarefs=[ref, ref]), refs(datarefs=[ref]))
+        self.assertIsNone(differences[0]["ours"]["offset"])
+        self.assertEqual((differences[0]["ours"]["ours_count"], differences[0]["ours"]["target_count"]), (2, 1))
+        report = {"functions": [{"target_bytes": 20, "unit": "u", "symbol": "f",
+                                 "verified_address": True, "stub": False, "differences": differences}]}
+        text = "\n".join(show(report))
+        self.assertIn("more often", text)
+        self.assertNotIn("does not", text)
 
 
 class CanonicalNames(unittest.TestCase):
@@ -185,6 +226,32 @@ class Encode2TableReferences(unittest.TestCase):
             compare_function(ours, target, resolve_ours=resolve_ours, resolve_target=resolve_target, display=display),
             [],
         )
+
+
+@unittest.skipUnless(os.environ.get("CONCORD_HARVEST"), "needs a specified Harvest checkout")
+class HarvestGUIReferences(unittest.TestCase):
+    def test_baseline_gui_comparisons_are_not_selected_as_extras(self):
+        root = Path(os.environ["CONCORD_HARVEST"])
+        revision = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                                  check=True, capture_output=True, text=True).stdout.strip()
+        if not revision.startswith("880f8c0"):
+            self.skipTest("the observed GUI baseline is Harvest 880f8c0")
+        cases = [
+            ("HarvestFull__harvest__gui__CHighscoreScreen",
+             "_ZN7harvest3gui16CHighscoreScreen7OnEventERKN2ox5event6SEventE",
+             {"cmp eax, 1"}),
+            ("daisy__gui__CGUIEditBox", "_ZN5daisy3gui11CGUIEditBox10processKeyERKN2ox5event6SEventE",
+             {"cmp eax, 1", "cmp qword ptr [rbx + 0xc8], 0", "mov byte ptr [rsp + 0x28], 0"}),
+        ]
+        for slug, symbol, shared in cases:
+            with self.subTest(symbol=symbol):
+                ours = read_refs(root / "build/match/1.18-linux-amd64" / f"{slug}.o", {symbol})[symbol]
+                target = read_refs(root / "build/objdiff/1.18-linux-amd64/target" / f"{slug}.o", {symbol})[symbol]
+                self.assertTrue(shared <= {c.text for c in ours.constants})
+                self.assertTrue(shared <= {c.text for c in target.constants})
+                selected = {d[side]["instruction"] for d in compare(ours, target)
+                            if d["kind"] == "constant" for side in ("ours", "target") if side in d}
+                self.assertFalse(shared & selected)
 
 
 class Resolvers(unittest.TestCase):
@@ -261,6 +328,21 @@ extern "C" int f(int *p) {
     def test_identical_objects_report_nothing(self):
         base = self.compile_(0, "other_a", 42)["f"]
         self.assertEqual(compare(base, base), [])
+
+    def test_real_objects_keep_a_shared_comparison_out_of_the_difference(self):
+        def assemble(name, body):
+            source = self.tmp / f"{name}.s"
+            output = self.tmp / f"{name}.o"
+            source.write_text(".intel_syntax noprefix\n.text\n.globl f\n.type f,@function\nf:\n"
+                              + body + "\n.size f,.-f\n")
+            subprocess.run(["as", "-o", str(output), str(source)], check=True)
+            return read_refs(output)["f"]
+
+        target = assemble("target", "cmp eax, 1\nret")
+        ours = assemble("ours", "cmp eax, 1\nmov eax, 1\nret")
+        [row] = compare(ours, target)
+        self.assertEqual(row["ours"]["instruction"], "mov eax, 1")
+        self.assertEqual(row["ours"]["offset"], "0x3")
 
 
 if __name__ == "__main__":

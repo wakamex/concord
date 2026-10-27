@@ -525,3 +525,15 @@ limits = "CPlayState::updateState's game-over exit: the target stores NextState 
 evidence = [
   { commit = "faca73a", function = "harvest::states::CPlayState::updateState", note = "calls-constants reported a missing `cmp eax,3`; the actual extra is `mov [this+0x50],3` at +0x18fe, a second NextState store for GameMode == EGM_CAMPAIGN. Two authored interventions measured; not kept." },
 ]
+
+[[idiom]]
+id = "shared-tail-call-count"
+cause = "inlining"
+status = "hypothesis"
+symptom = "one function has more copies of a destructor call and its nearby constant stores than the other"
+fix = "Inspect the original branch destinations and compare the counts of identical instruction contexts before attributing a call to inlining or a constant to a source change. A jump to a shared tail can execute the same destructor and stores from multiple branches."
+limits = "At Harvest 880f8c0, reordering the KEY_DELETE resets to the Irrlicht ancestor's MarkBegin then MarkEnd merges the candidate's duplicate cleanup, but lowers the objdiff score from 98.79758 to 98.75926. Also restoring the ancestor's direct BlinkStartTime assignment lowers it to 98.71456. Both overlays emit 7493 bytes and 32 wide-string destructor calls, against 7525 bytes and 33 calls before and 7509 bytes and 32 calls in the target. Neither is retained; further source interventions stop."
+evidence = [
+  { commit = "880f8c0", function = "daisy::gui::CGUIEditBox::processKey", note = "The candidate and target both contain `cmp eax, 1` at function offset 0x1a, `mov byte ptr [rsp + 0x28], 0` at 0x44, and `cmp qword ptr [rbx + 0xc8], 0` at 0x62. They test key release, initialize the text-change flag and check OverrideFont. The target KEY_DELETE branch at 0x5c41ae jumps to the common cleanup at 0x5c3db0, which clears MarkBegin and MarkEnd, calls the wide-string destructor and sets the text-change flag. The candidate emits that cleanup again in the branch." },
+  { commit = "880f8c0", function = "harvest::gui::CHighscoreScreen::OnEvent", note = "The candidate and target both contain `cmp eax, 1` at function offset 0x2d for the outer event-type switch. The candidate contains 19 `mov eax, 1` instructions against 18 in the target; the comparison was incorrectly selected to represent that count difference. No source intervention is supported by that comparison." },
+]
