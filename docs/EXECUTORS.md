@@ -22,7 +22,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Devin `swe-2-high` | capability | 6 | 6 of 6 | 6 of 6 | 1 | $1.88 where recorded |
 | Devin `swe-2-high` | diagnosis | 11 | 11 of 11 | 11 of 11 | 9 | $0.50 to $3.92, mean $2.06 where recorded |
 | Devin `swe-2-high` | search | 2 | 2 of 2 | 2 of 2 | 3 | not recorded |
-| Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
+| Devin `swe-2-high` | rule | 5 | 4 of 5 | 4 of 5 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
 | Codex `gpt-6.1-terra` | diagnosis | 3 | 3 of 3 | 3 of 3 | 1 | $0.17 to $0.19 at default effort; $1.38 at max |
 | Codex `gpt-6.1-terra` | rule | 2 | 2 of 2 | 2 of 2 | 0 | $0.08 at default effort; $1.54 at max |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
@@ -96,3 +96,4 @@ Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a ch
 | 2026-10-27 | calls-and-constants sweep | capability | Devin `swe-2-high` | 0 | clean | holds | | `concord calls-constants`; both known cases pass; 553 inexact functions compared, 274 differ; inline-copy noise not yet separated from callee substitutions |
 | 2026-10-27 | CBase64url::encode2 table reference | diagnosis | Cursor `composer-2.5` | 0 | clean | does not hold | | not a source difference: GCC names the same table by section offset; fixed calls-constants to name references through defined symbols; two source probes rejected; finished on its own in 16 minutes; broke two rules: a `Co-authored-by: Cursor` trailer, and a knowledge cause concord does not accept, which failed two tests until fixed |
 | 2026-10-27 | CCGMaterialRenderer::printVariables constant | rule | Codex `gpt-6.1-terra` | 0 | clean | holds | $1.54 over two sessions | effort max; Harvest's CgApi.h defined CG_PROGRAM as 4125 (NVIDIA's CG_LINE) where the target passes 4109; authored header correction through concord; printVariables 99.4848 to 99.4862 |
+| 2026-10-27 | CPlayState renderMinimap and updateState | rule | Devin `swe-2-high` | 0 | clean | holds | | authored per-branch marker drawing, the literal progress-bar colour and NextState on both arms; renderMinimap 78.10 to 88.93, updateState 95.21 to 96.90, oracle agrees; author now keeps oracle-checked improved candidates and combines edits; rebased cleanly onto the header-constant change |
