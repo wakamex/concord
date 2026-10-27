@@ -64,13 +64,15 @@ Both models draw on the same Codex subscription, so the binding limit is the wee
 
 | | Sol (`gpt-6.1-sol`, native session) | Terra (`gpt-6.1-terra`, aop runs) |
 | --- | ---: | ---: |
-| API-rate cost | $43.58 | $4.70 (clanker-analytics); $5.99 in aop's own records, which include runs clanker-analytics missed |
-| Input and output tokens | 2.96M and 606K | 0.96M and 171K |
-| Tasks | about 12 | 6, over 8 runs |
+| API-rate cost | $43.58 | $4.70 (clanker-analytics and aop's records agree) |
+| Input and output tokens | 2.96M uncached, 234.3M cached, 606K output | 0.96M uncached, 57.7M cached, 171K output |
+| Tasks | about 12 | 6, over 8 runs (two resumed runs share their sessions) |
 | Cost per task | about $3.60 | about $0.75; $1.30 to $1.55 at `--effort max` |
 | Wall time per task | about 1 to 4 hours | 1 to 17 minutes; 7.8 minutes median at max |
 | Newly exact functions | 56 | 1 |
 | Cost per newly exact function | about $0.78 | about $5 |
+
+Most of Sol's cost is its continuous session re-reading its own context: 234M cached input tokens over 1,279 calls, about 183,000 per call and about $23 of the $43.58, against about $6 of uncached input and $6 of output. Running each Sol task as a fresh aop run would cut that, with the brief and the knowledge base carrying the context the session now holds.
 
 Sol produced most of the exact functions and most of the tooling (`causal`, `frames`, `scratch-history`, `scores --base`); Terra found two real source differences (`reserve` against `resize`, and Harvest's wrong `CG_PROGRAM`) and one sweep fix. Terra is the cheaper way to check a specific lead, and Sol the more productive way to turn a whole unit into matches: leads from the sweep go to Terra, and a lead that becomes a whole-unit recovery goes to Sol.
 
