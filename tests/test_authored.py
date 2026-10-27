@@ -140,6 +140,25 @@ class Candidates(unittest.TestCase):
             self.assertIn(b"(alpha << 15)", body)
             self.assertEqual(found["a1r5g5b5-alpha-uint"].count(b"ox::video::toA1R5G5B5"), 1)
 
+    def test_status_texts_take_the_empty_wide_string_as_style(self):
+        symbol = "_ZN7harvest6states10CPlayState10secondInitEv"
+        key = ("HarvestFull/harvest/states/CPlayState.cpp", symbol)
+        source = b"""int harvest::states::CPlayState::secondInit()
+{
+        InfoText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, 0);
+        SelectedNameText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, 0);
+        OperatorText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, 0);
+        MiniStatText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, 0);
+    return 0;
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        combined = "info-text-style+selected-name-style+operator-text-style+mini-stat-style"
+        self.assertIn(combined, forms)
+        self.assertEqual(forms[combined].count(b'ActionPanel, -1, L"");'), 4)
+        self.assertNotIn(b"ActionPanel, -1, 0);", forms[combined])
+        self.assertEqual(forms["info-text-style"].count(b'ActionPanel, -1, L"");'), 1)
+
 
 class Keep(unittest.TestCase):
     def test_keeps_exact_with_no_function_worse(self):

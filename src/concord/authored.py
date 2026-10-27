@@ -211,6 +211,37 @@ AUTHORED: dict[tuple[str, str], list[Edit]] = {
             b"                if (GameWon)\n                {\n                    if (GameMode != game::EGM_CREATIVE)\n                        game::CHighscoreInfo::setNewHighscoreInfo(new game::CHighscoreInfo(PlayerName.c_str(),\n                            PlayerGroup.c_str(), RandomValue, StartTime, GameMode, game::gp_world->getPlanet(),\n                            game::gp_statistics->getGameStatValue(1), ThreatLevel->getThreatLevel(), GameTime));\n                    else\n                        game::CHighscoreInfo::setNewHighscoreInfo(0);\n                }\n                else\n                {\n                    if (GameMode == game::EGM_NORMAL || GameMode == game::EGM_INSANE)\n                        game::CHighscoreInfo::setNewHighscoreInfo(new game::CHighscoreInfo(PlayerName.c_str(),\n                            PlayerGroup.c_str(), RandomValue, StartTime, GameMode, game::gp_world->getPlanet(),\n                            game::gp_statistics->getGameStatValue(1), ThreatLevel->getThreatLevel(), GameTime));\n                    else\n                        game::CHighscoreInfo::setNewHighscoreInfo(0);\n                }",
         ),
     ],
+    # The target passes L"" as the last argument of addStaticText at secondInit's
+    # four status labels. That argument is the line prefix CGUIStaticText keeps
+    # in a CString, which reads the NULL the source passed and L"" as the same
+    # empty string, so only the passed pointer differs. The target stores L"" in
+    # the call's eighth argument ([rsp+8]) where the source stored 0. The file's
+    # other addStaticText calls already pass L"".
+    (
+        "HarvestFull/harvest/states/CPlayState.cpp",
+        "_ZN7harvest6states10CPlayState10secondInitEv",
+    ): [
+        Edit(
+            "info-text-style",
+            b'InfoText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, 0);',
+            b'InfoText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, L"");',
+        ),
+        Edit(
+            "selected-name-style",
+            b'SelectedNameText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, 0);',
+            b'SelectedNameText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, L"");',
+        ),
+        Edit(
+            "operator-text-style",
+            b'OperatorText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, 0);',
+            b'OperatorText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, L"");',
+        ),
+        Edit(
+            "mini-stat-style",
+            b'MiniStatText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, 0);',
+            b'MiniStatText = GUIEnvironment->addStaticText(L"", ox::core::CRect<int>(0, 0, 90, 20), false, false, ActionPanel, -1, L"");',
+        ),
+    ],
     # renderMinimap: the target draws the clipped marker square's four edges in
     # both it->Time branches (eight MINIMAP_MARKER_COLOR reads, one shared clip
     # block in ours), and passes a literal SColor(0x64fe8280) to the progress bar
