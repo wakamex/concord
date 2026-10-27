@@ -203,10 +203,11 @@ class DataReferences(unittest.TestCase):
             [],
         )
         other = refs(datarefs=[(4, ".rodata.str1.1", 0, "lea", "lea rdi, [rip]")])
-        [row] = compare(ours, other, ours_sections=sections, target_sections=sections)
-        self.assertEqual(row["classification"], "different-references")
-        self.assertIn("alpha", row["ours"]["ref"])
-        self.assertIn("pad", row["target"]["ref"])
+        rows = compare(ours, other, ours_sections=sections, target_sections=sections)
+        kinds = {row["classification"] for row in rows}
+        self.assertEqual(kinds, {"ours-only", "target-only"})
+        self.assertTrue(any("alpha" in row.get("ours", {}).get("ref", "") for row in rows))
+        self.assertTrue(any("pad" in row.get("target", {}).get("ref", "") for row in rows))
 
     @unittest.skipUnless(
         Path("/code/harvest-cursor/build/match/1.18-linux-amd64").is_dir(),

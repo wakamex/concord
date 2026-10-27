@@ -487,8 +487,22 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
     target_keys = Counter(k for k, rows in target_by_key.items() for _ in rows)
     ours_rest = [ours_by_key[k].pop() for k in (ours_keys - target_keys).elements()]
     target_rest = [target_by_key[k].pop() for k in (target_keys - ours_keys).elements()]
+
+    def split_pooled(refs, sections):
+        pooled, rest = [], []
+        for ref in refs:
+            if _ref_data_key(ref, sections)[0] == "string":
+                pooled.append(ref)
+            else:
+                rest.append(ref)
+        return pooled, rest
+
+    ours_pooled, ours_rest = split_pooled(ours_rest, ours_sections)
+    target_pooled, target_rest = split_pooled(target_rest, target_sections)
     pairs, ours_rest, target_rest = _pair(ours_rest, target_rest, key=lambda r: r.base)
     extra, ours_rest, target_rest = _pair(ours_rest, target_rest, key=lambda r: r.mnemonic)
+    ours_rest.extend(ours_pooled)
+    target_rest.extend(target_pooled)
     for o, t in pairs + extra:
         differences.append({"kind": "data", "classification": "different-references",
                             "ours": _ref_entry(o, ours_keys, target_keys, ours_sections),
