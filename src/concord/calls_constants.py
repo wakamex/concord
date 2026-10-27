@@ -14,8 +14,10 @@ the target's copy of the same symbol:
 
 Functions where either multiset differs are ranked by target bytes. A callee
 left over on both sides is reported as a substitution ("ours calls resize
-where the target calls reserve"); a callee left over on one side only is
-inline-copy noise: one side inlined what the other emits out of line.
+where the target calls reserve") unless one leftover is an out-of-line copy
+whose body calls the other leftover (inline-copy noise, as when ours calls a
+CString constructor and the target calls operator new[] because one side inlined
+that constructor). A callee left over on one side only is the same noise.
 """
 
 from __future__ import annotations
@@ -224,6 +226,50 @@ def _cancel(ours: list[str], target: list[str], resolve_ours, resolve_target) ->
     return ours_only, target_only
 
 
+def _body_calls(outer: str, inner: str, ours_catalog: dict[str, FunctionRefs],
+                target_catalog: dict[str, FunctionRefs], resolve_ours, resolve_target) -> bool:
+    """True when an out-of-line copy of outer calls inner by name or address."""
+    inner_addrs = {a for a in (resolve_ours(inner), resolve_target(inner)) if a is not None}
+    for catalog in (ours_catalog, target_catalog):
+        body = catalog.get(outer)
+        if body is None:
+            continue
+        for call in body.callees:
+            if call.symbol == inner:
+                return True
+            addr = resolve_ours(call.symbol) or resolve_target(call.symbol)
+            if addr is not None and addr in inner_addrs:
+                return True
+    return False
+
+
+def _inline_copy_pairs(ours_only: list, target_only: list, ours_catalog: dict[str, FunctionRefs],
+                       target_catalog: dict[str, FunctionRefs], resolve_ours, resolve_target) -> tuple[list, list, list]:
+    """Pair leftover callees explained by one side's out-of-line copy calling the other."""
+    target_rest = list(target_only)
+    used = set()
+    explained, ours_rest = [], []
+    for entry in sorted(ours_only):
+        name = entry[0]
+        match = None
+        for index, other in enumerate(target_rest):
+            if index in used:
+                continue
+            other_name = other[0]
+            if _body_calls(name, other_name, ours_catalog, target_catalog, resolve_ours, resolve_target):
+                match = (name, other_name, "ours", "target", entry, other)
+            elif _body_calls(other_name, name, ours_catalog, target_catalog, resolve_ours, resolve_target):
+                match = (other_name, name, "target", "ours", other, entry)
+            if match:
+                explained.append(match)
+                used.add(index)
+                break
+        if not match:
+            ours_rest.append(entry)
+    target_rest = [entry for index, entry in enumerate(target_rest) if index not in used]
+    return explained, ours_rest, target_rest
+
+
 def _pair(ours_only: list, target_only: list, key) -> tuple[list, list, list]:
     """Match left-over entries that plausibly replace each other."""
     ours_by, target_by = defaultdict(list), defaultdict(list)
@@ -253,22 +299,44 @@ def _ref_entry(r: DataRef) -> dict:
 
 
 def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
-                     resolve_ours, resolve_target, display) -> list[dict]:
+                     resolve_ours, resolve_target, display,
+                     ours_catalog: dict[str, FunctionRefs] | None = None,
+                     target_catalog: dict[str, FunctionRefs] | None = None) -> list[dict]:
     """The named differences between the two copies, structured."""
     differences = []
     ours_only, target_only = _cancel([c.symbol for c in ours.callees], [c.symbol for c in target.callees],
                                      resolve_ours, resolve_target)
+    ours_catalog = ours_catalog or {}
+    target_catalog = target_catalog or {}
+
     def callee(name_addr, side):
         name, addr = name_addr
         return {"symbol": name, "name": display(side, name, addr), "address": _hex(addr)}
 
+    def append_inline_noise(outer_entry, outer_side, inner_entry, inner_side):
+        if outer_side == "ours":
+            differences.append({"kind": "call", "classification": "called-out-of-line",
+                                "ours": callee(outer_entry, "ours")})
+            differences.append({"kind": "call", "classification": "original-called",
+                                "target": callee(inner_entry, "target")})
+        else:
+            differences.append({"kind": "call", "classification": "called-out-of-line",
+                                "ours": callee(inner_entry, "ours")})
+            differences.append({"kind": "call", "classification": "original-called",
+                                "target": callee(outer_entry, "target")})
+
+    if ours_only and target_only:
+        explained, ours_only, target_only = _inline_copy_pairs(
+            ours_only, target_only, ours_catalog, target_catalog, resolve_ours, resolve_target)
+        for _outer, _inner, outer_side, inner_side, outer_entry, inner_entry in explained:
+            append_inline_noise(outer_entry, outer_side, inner_entry, inner_side)
     if ours_only and target_only:
         # Left over on both sides: the copies call different functions, the
         # source-level difference the check exists to name.
         differences.append({"kind": "call", "classification": "different-callees",
                             "ours": [callee(e, "ours") for e in sorted(ours_only)],
                             "target": [callee(e, "target") for e in sorted(target_only)]})
-    else:
+    elif ours_only or target_only:
         # One side only: the other inlined the callee; inline-copy noise.
         for name, addr in sorted(ours_only):
             differences.append({"kind": "call", "classification": "called-out-of-line",
@@ -396,6 +464,8 @@ def gather(harvest: Harvest, units: Iterable[str] = ()) -> dict:
             continue
         ours = read_refs(ours_path, set(inexact))
         target = read_refs(target_path, set(inexact))
+        ours_catalog = read_refs(ours_path)
+        target_catalog = read_refs(target_path)
         resolve_ours, resolve_target, display = resolvers(rows, named, name_to_addr)
 
         for name, row in inexact.items():
@@ -404,7 +474,8 @@ def gather(harvest: Harvest, units: Iterable[str] = ()) -> dict:
                 continue
             compared += 1
             differences = compare_function(ours[name], target[name], resolve_ours=resolve_ours,
-                                           resolve_target=resolve_target, display=display)
+                                           resolve_target=resolve_target, display=display,
+                                           ours_catalog=ours_catalog, target_catalog=target_catalog)
             if not differences:
                 continue
             address = int(row["address"], 16) if row.get("address") else None

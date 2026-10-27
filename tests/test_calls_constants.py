@@ -64,6 +64,32 @@ class Calls(unittest.TestCase):
         [row] = compare(refs(), ours)
         self.assertEqual(row["classification"], "original-called")
 
+    def test_ctor_against_new_is_inline_copy_noise(self):
+        ctor = "_ZN2ox4core7CStringIcEC1IcEEPKT_"
+        new_array = "_Znam"
+        caller_ours = refs(callees=[(4, ctor)])
+        caller_target = refs(callees=[(8, new_array)])
+        ctor_body = refs(callees=[(4, new_array)])
+        catalog = {ctor: ctor_body}
+        rows = compare(caller_ours, caller_target, ours_catalog=catalog, target_catalog=catalog)
+        kinds = {row["classification"] for row in rows}
+        self.assertNotIn("different-callees", kinds)
+        self.assertIn("called-out-of-line", kinds)
+        self.assertIn("original-called", kinds)
+
+    def test_resize_against_reserve_stays_a_substitution(self):
+        ours = refs(callees=[(4, "_Zresize")])
+        target = refs(callees=[(4, "sub_4f7f00")])
+        reserve_body = refs(callees=[(4, "_Zother")])
+        fill_body = refs(callees=[(4, "_Znwm")])
+        rows = compare(
+            ours,
+            target,
+            ours_catalog={"_Zresize": fill_body, "sub_4f7f00": reserve_body},
+            target_catalog={"_Zresize": fill_body, "sub_4f7f00": reserve_body},
+        )
+        self.assertEqual([row["classification"] for row in rows], ["different-callees"])
+
     def test_callees_cancel_by_resolved_address(self):
         ours = refs(callees=[(4, "_Zplaced")])
         target = refs(callees=[(4, "sub_2000")])
