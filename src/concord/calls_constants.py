@@ -70,6 +70,7 @@ class DataRef:
     dest: int       # offset into it
     mnemonic: str
     text: str
+    indexed: bool = False  # the memory operand reads through an index register
 
 
 @dataclass(frozen=True)
@@ -135,18 +136,33 @@ def _pooled_string(data: bytes, offset: int, encoding: str) -> bytes | None:
     return None
 
 
-def _ref_data_key(ref: DataRef, sections: dict[str, bytes]) -> tuple:
+def _pooled_literal(ref: DataRef, sections: dict[str, bytes]) -> tuple[str, bytes] | None:
+    """The encoding and text of the pooled literal a reference reads, if any.
+
+    An indexed read of an empty literal is not a read of it: indexing past its
+    terminator is undefined, so the bytes are an array element that happens to
+    start with zero. Harvest's fast_atof_table starts with 0.0f, whose four
+    bytes are also an empty L"".
+    """
     encoding = _string_section_encoding(ref.base)
     data = sections.get(ref.base) if encoding else None
-    if encoding and data is not None and (text := _pooled_string(data, ref.dest, encoding)) is not None:
-        return ("string", ref.base, text)
+    if not encoding or data is None:
+        return None
+    text = _pooled_string(data, ref.dest, encoding)
+    if text is None or (ref.indexed and not text):
+        return None
+    return encoding, text
+
+
+def _ref_data_key(ref: DataRef, sections: dict[str, bytes]) -> tuple:
+    if (literal := _pooled_literal(ref, sections)) is not None:
+        return ("string", ref.base, literal[1])
     return ("offset", ref.base, ref.dest)
 
 
 def _ref_label(ref: DataRef, sections: dict[str, bytes]) -> str:
-    encoding = _string_section_encoding(ref.base)
-    data = sections.get(ref.base) if encoding else None
-    if encoding and data is not None and (text := _pooled_string(data, ref.dest, encoding)) is not None:
+    if (literal := _pooled_literal(ref, sections)) is not None:
+        encoding, text = literal
         if encoding == "utf8":
             return f'{ref.base}:"{text.decode("utf-8", "backslashreplace")}"'
         wide = text.decode("utf-32le")
@@ -233,7 +249,7 @@ def _function_refs(md, code: bytes, fields: dict[int, tuple], names: dict[int, s
             elif o.type == x86.X86_OP_MEM:
                 if disp_hit is not None:
                     base, dest = _ref_key(disp_hit[2], names, disp_hit[0], disp_hit[1], func_at, object_at, disp_hit[3])
-                    datarefs.append(DataRef(i.address, base, dest, i.mnemonic, text))
+                    datarefs.append(DataRef(i.address, base, dest, i.mnemonic, text, bool(o.mem.index)))
                 elif not o.mem.base and not o.mem.index and o.mem.disp:
                     datarefs.append(DataRef(i.address, "<absolute>", o.mem.disp, i.mnemonic, text))
     return FunctionRefs(len(code), code, tuple(callees), tuple(constants), tuple(datarefs), indirect)

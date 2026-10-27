@@ -308,6 +308,16 @@ class DataReferences(unittest.TestCase):
         self.assertTrue(any("alpha" in row.get("ours", {}).get("ref", "") for row in rows))
         self.assertTrue(any("pad" in row.get("target", {}).get("ref", "") for row in rows))
 
+    def test_an_indexed_read_of_an_empty_pooled_string_is_an_array_element(self):
+        # Harvest's fast_atof_table starts with 0.0f, four zero bytes that also decode as an empty L"".
+        pool = {".rodata.str4.4": bytes(4) + bytes.fromhex("cdcccc3d")}
+        table_read = refs(datarefs=[(4, ".rodata.str4.4", 0, "mulss", "mulss xmm0, dword ptr [rax*4]", True)])
+        [row] = compare(refs(), table_read, target_sections=pool)
+        self.assertEqual(row["target"]["ref"], ".rodata.str4.4+0x0")
+        pointer = refs(datarefs=[(4, ".rodata.str4.4", 0, "mov", "mov esi, 0")])
+        [row] = compare(refs(), pointer, target_sections=pool)
+        self.assertEqual(row["target"]["ref"], '.rodata.str4.4:L""')
+
     @unittest.skipUnless(os.environ.get("CONCORD_HARVEST"), "needs a Harvest checkout after hv match")
     def test_read_string_sections_from_target_object(self):
         slug = "HarvestFull__harvest__entity__CDefenseTowerEntity"
