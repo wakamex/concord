@@ -19,7 +19,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Codex `gpt-6.1-sol` | search | 1 | 1 of 1 | 1 of 1 | 17 | included above |
 | Codex `gpt-6.1-sol` | diagnosis | 2 | 2 of 2 | 2 of 2 | 0 | included above |
 | Codex `gpt-6.1-sol` | rule | 1 | 1 of 1 | 1 of 1 | not applied | $0.74 |
-| Devin `swe-2-high` | capability | 5 | 5 of 5 | 5 of 5 | 1 | $1.88 where recorded |
+| Devin `swe-2-high` | capability | 6 | 6 of 6 | 6 of 6 | 1 | $1.88 where recorded |
 | Devin `swe-2-high` | diagnosis | 11 | 11 of 11 | 11 of 11 | 9 | $0.50 to $3.92, mean $2.06 where recorded |
 | Devin `swe-2-high` | search | 2 | 2 of 2 | 2 of 2 | 3 | not recorded |
 | Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
@@ -92,3 +92,4 @@ Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a ch
 | 2026-10-26 | eight near misses after the new rewrites | search | Cursor `composer-2.5` | 0 | clean | holds | | report written at 19:40 to Cursor's own transcript but never streamed, so aop waited four hours for its timeout (fixed in aop 296c075); no gains passed: CSpritePackage::load's 98.36 candidate was rejected by harvest-oracle as a behavior change |
 | 2026-10-26 | drawIndexedTriangleList's unnamed callee | diagnosis | Codex `gpt-6.1-terra` | 1 | clean | holds | $1.38 over two sessions | effort max; the callee is vector<S2DVertex>::reserve where the translation used resize; both overloads 93.36 to 97.91, reserve copy matched; port keeps resize |
 | 2026-10-26 | CSpritePackage::load rerun | search | Devin `swe-2-high` | 0 | clean | holds | | reproduced the 98.36 candidate; harvest-oracle rejected it (it reorders a readSprite call against memmove and moves away from the original), so nothing was written |
+| 2026-10-27 | calls-and-constants sweep | capability | Devin `swe-2-high` | 0 | clean | holds | | `concord calls-constants`; both known cases pass; 553 inexact functions compared, 274 differ; inline-copy noise not yet separated from callee substitutions |
