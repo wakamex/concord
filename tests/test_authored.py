@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from concord import authored
 from concord.authored import Edit, candidates, keep
@@ -158,6 +159,84 @@ const char* example = "CG_PROGRAM = 4125";
             report = authored.apply_header(checkout, unit, SYMBOL, edit, write=True)
             self.assertTrue(report["applied"])
             self.assertEqual(path.read_bytes(), b"enum CGenum { CG_PROGRAM = 4109 };\n")
+
+
+@unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
+class HeaderFunction(unittest.TestCase):
+    def test_replacements_are_atomic_and_confined_to_the_named_function(self):
+        source = b'''void Board::pick(int a)
+{
+    one = "";
+    repeated = "";
+    repeated = "";
+}
+void Board::skip()
+{
+    one = "";
+}
+'''
+        edit = authored.HeaderFunctionEdit(
+            "fallback", "board.h", (
+                authored.Replacement(b'one = "";', b'one = "tab";', 1),
+                authored.Replacement(b'repeated = "";', b'repeated = "tab";', 2),
+            ),
+        )
+        result = authored.header_function_candidate(source, SYMBOL, edit)
+        self.assertEqual(result.count(b'"tab"'), 3)
+        self.assertIn(b'void Board::skip()\n{\n    one = "";', result)
+        self.assertIsNone(authored.header_function_candidate(source.replace(b'    repeated = "";\n', b'', 1), SYMBOL, edit))
+
+    def test_header_function_requires_dependent_scores_and_an_oracle_verdict(self):
+        unit, dependent = "d/a.cpp", "d/b.cpp"
+        edit = authored.HeaderFunctionEdit("fallback", "d/board.h", (authored.Replacement(b'x = 0;', b'x = 1;', 1),))
+
+        class Checkout:
+            def __init__(self, root):
+                self.root = root
+                self.regress = False
+
+            def dependents(self, path):
+                if path != "src/d/board.h":
+                    raise AssertionError(path)
+                return [unit, dependent]
+
+            def evaluate_overlays(self, items):
+                result = {}
+                for name, (source_unit, overlays) in items.items():
+                    if source_unit not in (unit, dependent) or set(overlays) not in (set(), {"src/d/board.h"}):
+                        raise AssertionError((source_unit, overlays))
+                    scores = {SYMBOL: 91.0 if overlays else 90.0, "other": 100.0}
+                    if source_unit == dependent and overlays and self.regress:
+                        scores["other"] = 99.0
+                    item = evaluation({SYMBOL: False, "other": True}, scores)
+                    item.object = self.root / f"{name}.o"
+                    result[name] = item
+                return result
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "src/d/board.h"
+            path.parent.mkdir(parents=True)
+            source = b"void Board::pick(int a) { x = 0; }\n"
+            path.write_bytes(source)
+            checkout = Checkout(root)
+            with patch("concord.authored.oracle.gate_objects", return_value=(False, {"same": {"verdict": "differ"}})):
+                report = authored.apply_header_function(checkout, unit, SYMBOL, edit, write=True)
+            self.assertIsNone(report["chosen"])
+            self.assertEqual(path.read_bytes(), source)
+            with patch("concord.authored.oracle.gate_objects", return_value=(True, None)):
+                report = authored.apply_header_function(checkout, unit, SYMBOL, edit, write=True)
+            self.assertIsNone(report["chosen"])
+            with patch("concord.authored.oracle.gate_objects", return_value=(True, {"original": {"before": 2, "after": 0}})) as gate:
+                checkout.regress = True
+                report = authored.apply_header_function(checkout, unit, SYMBOL, edit, write=True)
+                self.assertIsNone(report["chosen"])
+                gate.assert_not_called()
+                checkout.regress = False
+                report = authored.apply_header_function(checkout, unit, SYMBOL, edit, write=True)
+                self.assertTrue(report["applied"])
+                self.assertEqual(path.read_bytes(), b"void Board::pick(int a) { x = 1; }\n")
+                self.assertEqual(gate.call_count, 1)
 
 
 if __name__ == "__main__":

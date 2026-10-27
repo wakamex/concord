@@ -21,6 +21,7 @@ import os
 import shlex
 import shutil
 import subprocess
+from pathlib import Path
 
 from concord.harvest import Harvest
 from concord.model import EquivalenceResult
@@ -54,8 +55,16 @@ def check(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes)
     for name, e in evaluations.items():
         if e.error:
             return EquivalenceResult(False, "differential-test", f"{name} does not compile")
+    return check_objects(harvest, unit, symbol, evaluations["before"].object, evaluations["after"].object)
+
+
+def check_objects(harvest: Harvest, unit: str, symbol: str, before: Path, after: Path) -> EquivalenceResult | None:
+    """Compare already compiled objects, including objects from header overlays."""
+    prefix = command()
+    if prefix is None:
+        return None
     done = subprocess.run(
-        [*shlex.split(prefix), "check", str(evaluations["before"].object), str(evaluations["after"].object),
+        [*shlex.split(prefix), "check", str(before), str(after),
          "--symbol", symbol, "--unit", unit, "--cases", str(CASES)],
         cwd=harvest.root, capture_output=True, text=True, check=False,
     )  # fmt: skip
@@ -77,15 +86,23 @@ def original_differences(harvest: Harvest, unit: str, symbol: str, sources: dict
     built = {name: e.object for name, e in evaluations.items() if not e.error}
     if not built:
         return {}
+    report = original_comparison_objects(harvest, symbol, built)
+    return {name: report["comparison"][f"original vs {name}"]["differ"] for name in built}
+
+
+def original_comparison_objects(harvest: Harvest, symbol: str, objects: dict[str, Path]) -> dict:
+    """Compare the original and compiled objects on the same generated cases."""
+    prefix = command()
+    if prefix is None:
+        raise ValueError("an oracle is required for an original comparison")
     done = subprocess.run(
         [*shlex.split(prefix), "compare", symbol, "original=image",
-         *(f"{name}={obj}" for name, obj in built.items()), "--cases", str(CASES)],
+         *(f"{name}={obj}" for name, obj in objects.items()), "--cases", str(CASES)],
         cwd=harvest.root, capture_output=True, text=True, check=False,
     )  # fmt: skip
     if done.returncode not in (0, 1):
         raise RuntimeError(f"oracle failed ({done.returncode}):\n{done.stderr[-2000:]}")
-    comparison = json.loads(done.stdout)["comparison"]
-    return {name: comparison[f"original vs {name}"]["differ"] for name in built}
+    return json.loads(done.stdout)
 
 
 def toward_original(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> dict | None:
@@ -112,3 +129,22 @@ def gate(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) 
     record["original"] = toward_original(harvest, unit, symbol, before, after)
     closer = record["original"] is not None and record["original"]["after"] < record["original"]["before"]
     return closer, record
+
+
+def gate_objects(harvest: Harvest, unit: str, symbol: str, before: Path, after: Path) -> tuple[bool, dict | None]:
+    """Apply the behavior gate to compiled overlay objects."""
+    same = check_objects(harvest, unit, symbol, before, after)
+    if same is None:
+        return True, None
+    record = {"same": json.loads(same.detail)}
+    if same.equivalent:
+        return True, record
+    report = original_comparison_objects(harvest, symbol, {"before": before, "after": after})
+    comparison = report["comparison"]
+    record["original"] = {
+        "before": comparison["original vs before"]["differ"],
+        "after": comparison["original vs after"]["differ"],
+        "cases": CASES,
+        "outcomes": report.get("outcomes", {}),
+    }
+    return record["original"]["after"] < record["original"]["before"], record

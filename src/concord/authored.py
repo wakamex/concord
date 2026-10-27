@@ -5,9 +5,9 @@ rather than translated; each is a text edit applied inside the named function's
 body and accepted when the function is exact, or scores higher with the
 oracle's agreement like `permute --apply-improved`, and the unit is no worse.
 
-A recovered header can also have an incorrect named enum value. Its registered
-correction is measured in every dependent unit and must improve the named
-function without lowering another score; the whole-build gate follows.
+A recovered header can also have an incorrect enum value or function body. Its
+registered correction is measured in every dependent unit and must improve the
+named function without lowering another score; the whole-build gate follows.
 """
 
 from __future__ import annotations
@@ -40,6 +40,24 @@ class ConstantEdit:
     constant: str
     old: bytes
     new: bytes
+
+
+@dataclass(frozen=True)
+class Replacement:
+    """A required number of replacements within a function body."""
+
+    old: bytes
+    new: bytes
+    count: int
+
+
+@dataclass(frozen=True)
+class HeaderFunctionEdit:
+    """An atomic correction to a function defined in a shared header."""
+
+    name: str
+    header: str
+    replacements: tuple[Replacement, ...]
 
 
 AUTHORED: dict[tuple[str, str], list[Edit]] = {
@@ -114,6 +132,48 @@ HEADER_AUTHORED: dict[tuple[str, str], ConstantEdit] = {
 }
 
 
+_RIVER_FALLBACK = HeaderFunctionEdit(
+    "river-tab-fallback", "ox/gui/IGUILayoutInline.h", (
+        Replacement(
+            b'''        if (!flags && !sortHidden)
+        {
+            rows[row].push_back(*it);
+            continue;
+        }
+        if (!flags)
+            flags = "";''',
+            b'''        if (!flags)
+        {
+            if (!sortHidden)
+            {
+                rows[row].push_back(*it);
+                continue;
+            }
+            flags = "tab";
+        }''', 1,
+        ),
+        Replacement(
+            b'''                if (!flags && !sortHidden)
+                    continue;
+                if (!flags)
+                    flags = "";''',
+            b'''                if (!flags)
+                {
+                    if (!sortHidden)
+                        continue;
+                    flags = "tab";
+                }''', 2,
+        ),
+    ),
+)
+
+# The target substitutes "tab" for absent layout flags at all three sites.
+HEADER_FUNCTION_AUTHORED = {
+    (f"daisy/gui/{name}.cpp", "_ZN2ox3gui10IGUILayout9sortRiverEbiib"): _RIVER_FALLBACK
+    for name in ("CGUIClickArea", "CGUIEnvironment", "CGUIModalScreen", "CGUITabControl", "CGUIWindow")
+}
+
+
 def constant_candidate(source: bytes, edit: ConstantEdit) -> bytes | None:
     """Replace exactly one matching enumerator's literal, leaving all other text."""
     root = Parser(CPP).parse(source).root_node
@@ -125,6 +185,17 @@ def constant_candidate(source: bytes, edit: ConstantEdit) -> bytes | None:
     if value is None or value.type != "number_literal" or value.text != edit.old:
         return None
     return source[:value.start_byte] + edit.new + source[value.end_byte:]
+
+
+def header_function_candidate(source: bytes, symbol: str, edit: HeaderFunctionEdit) -> bytes | None:
+    """Apply every replacement inside the named function or make no change."""
+    scope = find_function(source, symbol)
+    body = source[scope.start_byte:scope.end_byte]
+    for replacement in edit.replacements:
+        if body.count(replacement.old) != replacement.count:
+            return None
+        body = body.replace(replacement.old, replacement.new)
+    return source[:scope.start_byte] + body + source[scope.end_byte:]
 
 
 def candidates(source: bytes, symbol: str, edits: list[Edit]) -> dict[str, bytes]:
@@ -213,6 +284,53 @@ def apply_header(harvest: Harvest, unit: str, symbol: str, edit: ConstantEdit, w
     }
 
 
+def apply_header_function(harvest: Harvest, unit: str, symbol: str, edit: HeaderFunctionEdit, write: bool) -> dict:
+    """Measure a header body in its dependents and check the selected copy."""
+    path = harvest.root / "src" / edit.header
+    source = path.read_bytes()
+    candidate = header_function_candidate(source, symbol, edit)
+    if candidate is None:
+        raise ValueError(f"no authored function candidate applies to {symbol} in {edit.header}")
+    units = sorted(set(harvest.dependents(f"src/{edit.header}")) | {unit})
+    items = {}
+    for n, dependent in enumerate(units):
+        items[f"before-{n}"] = (dependent, {})
+        items[f"after-{n}"] = (dependent, {f"src/{edit.header}": candidate})
+    evaluations = harvest.evaluate_overlays(items)
+    pairs = {dependent: (evaluations[f"before-{n}"], evaluations[f"after-{n}"])
+             for n, dependent in enumerate(units)}
+    for dependent, (before, _) in pairs.items():
+        if before.error:
+            raise RuntimeError(f"the unit {dependent} does not compile:\n{before.error}")
+    before, after = pairs[unit]
+    verdict = after.verdict(symbol)
+    accepted = keep_improvement(before, after, symbol) and all(_preserves(*pair) for pair in pairs.values())
+    evidence = None
+    if accepted and not verdict.row["exact"]:
+        if before.object is None or after.object is None:
+            accepted = False
+        else:
+            accepted, evidence = oracle.gate_objects(harvest, unit, symbol, before.object, after.object)
+            accepted = accepted and evidence is not None
+    if accepted and write:
+        if path.read_bytes() != source:
+            raise ValueError(f"{edit.header} changed while candidates compiled")
+        path.write_bytes(candidate)
+    return {
+        "unit": unit,
+        "path": edit.header,
+        "symbol": symbol,
+        "dependents": units,
+        "candidates": {edit.name: {"error": after.error or None, "exact": bool(verdict and verdict.row["exact"]),
+                                   "before": before.fuzzy.get(symbol), "score": after.fuzzy.get(symbol),
+                                   "kept": accepted, "oracle": evidence}},
+        "chosen": edit.name if accepted else None,
+        "applied": bool(accepted and write),
+        "original": source,
+        "source": candidate if accepted else None,
+    }
+
+
 def apply(harvest: Harvest, unit: str, symbol: str, write: bool) -> dict:
     """Measure registered authored candidates and optionally write an accepted
     one. A function-body candidate is kept when the function is exact, or
@@ -220,6 +338,8 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool) -> dict:
     unit is worse; an exact candidate always wins, then the one applying more
     of the function's diagnosed edits, then the higher score."""
     unit = harvest.source(unit)
+    if edit := HEADER_FUNCTION_AUTHORED.get((unit, symbol)):
+        return apply_header_function(harvest, unit, symbol, edit, write)
     if edit := HEADER_AUTHORED.get((unit, symbol)):
         return apply_header(harvest, unit, symbol, edit, write)
     path = harvest.root / "src" / unit
