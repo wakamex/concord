@@ -9,7 +9,7 @@ Kinds of task:
 - search: running concord's existing searches over a list of functions
 - rule: an Irrlicht-to-daisy source difference fixed through a translation rule
 
-Gates clean means the whole-build gate (`concord scores --base`) showed no function worse and no matched data lost, and the required builds and tests passed. Diff holds means the master session's reading of the diff found nothing to undo; fixing commit text only does not count against it. Cost is the API-rate figure clanker-analytics records for the run (`api_cost_usd`), missing where it recorded none; the Codex session is native, so its cost is a total over its tasks.
+Gates clean means the whole-build gate (`concord scores --base`) showed no function worse and no matched data lost, and the required builds and tests passed. Diff holds means the master session's reading of the diff found nothing to undo; fixing commit text only does not count against it. Cost is the API-rate figure clanker-analytics records for the run (`api_cost_usd`), missing where it recorded none; the Codex session is native, so its cost is a total over its tasks. Reasoning effort is recorded where the executor takes one (`aop run --effort`); a run without `--effort` uses the harness's configured default, which for Codex here is medium, and published comparisons show GPT-6.1 Terra scoring far lower below max effort than at max.
 
 ## Scorecard (2026-10-26)
 
@@ -23,11 +23,11 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Devin `swe-2-high` | diagnosis | 11 | 11 of 11 | 11 of 11 | 9 | $0.50 to $3.92, mean $2.06 where recorded |
 | Devin `swe-2-high` | search | 1 | 1 of 1 | 1 of 1 | 3 | not recorded |
 | Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
-| Codex `gpt-6.1-terra` | diagnosis | 2 | 2 of 2 | 2 of 2 | 0 | $0.17 to $0.19 |
-| Codex `gpt-6.1-terra` | rule | 1 | 1 of 1 | 1 of 1 | 0 | $0.08 |
+| Codex `gpt-6.1-terra` | diagnosis | 2 | 2 of 2 | 2 of 2 | 0 | $0.17 to $0.19, default effort |
+| Codex `gpt-6.1-terra` | rule | 1 | 1 of 1 | 1 of 1 | 0 | $0.08, default effort |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
 | Muse `muse-wonder-full-1.0` | capability | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 29.6M input tokens |
-| Cursor `composer-2.5` | search | 1 | 1 of 1 | 1 of 1 | 0 | 1.66M input tokens, a fraction of a percent of the month |
+| Cursor `composer-2.5` | search | 2 | 1 of 2 | 1 of 2 | 0 | 1.66M input tokens, a fraction of a percent of the month |
 | Cursor `composer-2.5` | rule | 2 | 1 of 2 | 1 of 2 | 0 | not recorded |
 | Claude `claude-haiku-5-5` | rule | 1 | 0 of 1 | 0 of 1 | 0 | $0.67 |
 | Codex `gpt-6-luna` | rule | 1 | 0 of 1 | 0 of 1 | 0 | $0.01 |
@@ -86,6 +86,7 @@ Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a ch
 | 2026-10-26 | CXFileReader blockers by scratch position | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | definition order cannot move the emit slots; the restoration emits seven template copies the target never did, so the lever is the parser bodies |
 | 2026-10-26 | CXFileReader's extra template copies | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | falsified its own earlier claim: all seven copies exist in the target; the difference is inlining inside them, not a source construct; spent neither intervention |
 | 2026-10-26 | hand-solve CXFileReader's size mismatches | diagnosis | Devin `swe-2-high` | 0 | clean | holds | | both size differences are inliner choices of which calls stay out of line; no source difference; four variants rejected |
-| 2026-10-26 | CXFileReader's inlined callees against the original's copies | diagnosis | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.19 | both header definitions compile to the original's code; `operator=` copies differ only by peephole2 registers; 2 minutes |
-| 2026-10-26 | IGUIElement::updateAbsolutePosition header candidate | diagnosis | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.17 | all 22 copies identical, differing from the target by two reversed clipping comparisons; Irrlicht calls `clipAgainst` where the translation expands it; trial blocked by a missing objdiff-cli |
-| 2026-10-26 | clipAgainst hypothesis for updateAbsolutePosition | rule | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.08 | refuted by overlay before any checkout change (98.16 in all 22 units); stopped as its rules required; did not report the score without the overlay |
+| 2026-10-26 | CXFileReader's inlined callees against the original's copies | diagnosis | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.19 | both header definitions compile to the original's code; `operator=` copies differ only by peephole2 registers; 2 minutes; default effort (medium) |
+| 2026-10-26 | IGUIElement::updateAbsolutePosition header candidate | diagnosis | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.17 | all 22 copies identical, differing from the target by two reversed clipping comparisons; Irrlicht calls `clipAgainst` where the translation expands it; trial blocked by a missing objdiff-cli; default effort (medium) |
+| 2026-10-26 | clipAgainst hypothesis for updateAbsolutePosition | rule | Codex `gpt-6.1-terra` | 0 | clean | holds | $0.08 | refuted by overlay before any checkout change (98.16 in all 22 units); stopped as its rules required; did not report the score without the overlay; default effort (medium) |
+| 2026-10-26 | eight near misses after the new rewrites | search | Cursor `composer-2.5` | 0 | no report | not checked | | searches finished in 30 minutes (one gain, CSpritePackage::load 96.44 to 98.36, uncommitted), then the process hung four hours until aop's timeout; no report, so no rule could be checked |
