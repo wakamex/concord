@@ -624,6 +624,7 @@ def main(argv: list[str] | None = None) -> int:
                 "symbol": args.function,
                 "chosen": report["chosen"],
                 "applied": report["applied"],
+                "oracle": report["candidates"][report["chosen"]].get("oracle") if report["chosen"] else None,
                 "patch": patch,
             },
         )

@@ -2,7 +2,8 @@
 
 The entries in AUTHORED carry source no ancestor has, so they are authored
 rather than translated; each is a text edit applied inside the named function's
-body and accepted only when the function is exact and the unit is no worse.
+body and accepted when the function is exact, or scores higher with the
+oracle's agreement like `permute --apply-improved`, and the unit is no worse.
 
 A recovered header can also have an incorrect named enum value. Its registered
 correction is measured in every dependent unit and must improve the named
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 
 from tree_sitter import Parser
 
+from concord import oracle
 from concord.harvest import Evaluation, Harvest
 from concord.search import other_scores, worse_elsewhere
 from concord.transforms import CPP, _descendants, find_function
@@ -147,12 +149,13 @@ def candidates(source: bytes, symbol: str, edits: list[Edit]) -> dict[str, bytes
 
 def keep(before: Evaluation, after: Evaluation, symbol: str) -> bool:
     """Whether the authored candidate may replace the unit's source: it compiles,
-    the named function is exact, every previously exact function stays exact,
-    and no other function of the unit scores lower."""
+    the named function is exact or scores higher than before, every previously
+    exact function stays exact, and no other function of the unit scores lower.
+    An inexact candidate also needs the oracle's agreement; apply() runs it."""
     if after.error:
         return False
     verdict = after.verdict(symbol)
-    if verdict is None or not verdict.row["exact"]:
+    if verdict is None or (not verdict.row["exact"] and (after.fuzzy.get(symbol) or 0.0) <= (before.fuzzy.get(symbol) or 0.0)):
         return False
     return before.exact_functions() <= after.exact_functions() and not worse_elsewhere(other_scores(before, symbol), after, symbol)
 
@@ -211,7 +214,11 @@ def apply_header(harvest: Harvest, unit: str, symbol: str, edit: ConstantEdit, w
 
 
 def apply(harvest: Harvest, unit: str, symbol: str, write: bool) -> dict:
-    """Measure registered authored candidates and optionally write an accepted one."""
+    """Measure registered authored candidates and optionally write an accepted
+    one. A function-body candidate is kept when the function is exact, or
+    scores higher with the oracle's agreement, and no other function of the
+    unit is worse; an exact candidate always wins, then the one applying more
+    of the function's diagnosed edits, then the higher score."""
     unit = harvest.source(unit)
     if edit := HEADER_AUTHORED.get((unit, symbol)):
         return apply_header(harvest, unit, symbol, edit, write)
@@ -229,13 +236,22 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool) -> dict:
         if name == "baseline":
             continue
         verdict = row.verdict(symbol)
+        kept = keep(baseline, row, symbol)
+        evidence = None
+        if kept and not verdict.row["exact"]:
+            kept, evidence = oracle.gate(harvest, unit, symbol, source, forms[name])
         verdicts[name] = {
             "error": row.error or None,
             "exact": bool(verdict and verdict.row["exact"]),
             "score": row.fuzzy.get(symbol),
-            "kept": keep(baseline, row, symbol),
+            "kept": kept,
+            "oracle": evidence,
         }
-    chosen = next((name for name, row in verdicts.items() if row["kept"]), None)
+    chosen = max(
+        (name for name, row in verdicts.items() if row["kept"]),
+        key=lambda name: (verdicts[name]["exact"], name.count("+"), verdicts[name]["score"] or 0.0),
+        default=None,
+    )
     if chosen and write:
         if path.read_bytes() != source:
             raise ValueError(f"{unit} changed while candidates compiled")

@@ -71,10 +71,18 @@ class Keep(unittest.TestCase):
         after = evaluation({SYMBOL: True, "other": True}, {SYMBOL: 100.0, "other": 100.0})
         self.assertTrue(keep(before, after, SYMBOL))
 
-    def test_rejects_errors_inexact_lost_exact_and_worse_scores(self):
+    def test_keeps_an_improved_inexact_candidate(self):
+        before = evaluation({SYMBOL: False, "other": True}, {SYMBOL: 90.0, "other": 100.0})
+        after = evaluation({SYMBOL: False, "other": True}, {SYMBOL: 95.0, "other": 100.0})
+        self.assertTrue(keep(before, after, SYMBOL))
+
+    def test_rejects_errors_unimproved_lost_exact_and_worse_scores(self):
         before = evaluation({SYMBOL: False, "other": True}, {SYMBOL: 90.0, "other": 100.0})
         self.assertFalse(keep(before, evaluation({SYMBOL: True, "other": True}, error="boom"), SYMBOL))
-        self.assertFalse(keep(before, evaluation({SYMBOL: False, "other": True}, {SYMBOL: 99.0, "other": 100.0}), SYMBOL))
+        self.assertFalse(keep(before, evaluation({SYMBOL: False, "other": True}, {SYMBOL: 90.0, "other": 100.0}), SYMBOL))
+        self.assertFalse(keep(before, evaluation({SYMBOL: False, "other": True}, {SYMBOL: 89.0, "other": 100.0}), SYMBOL))
+        self.assertFalse(keep(before, evaluation({SYMBOL: False, "other": False}, {SYMBOL: 95.0, "other": 100.0}), SYMBOL))
+        self.assertFalse(keep(before, evaluation({SYMBOL: False, "other": True}, {SYMBOL: 95.0, "other": 99.0}), SYMBOL))
         self.assertFalse(keep(before, evaluation({SYMBOL: True, "other": False}, {SYMBOL: 100.0, "other": 50.0}), SYMBOL))
         self.assertFalse(keep(before, evaluation({SYMBOL: True, "other": True}, {SYMBOL: 100.0, "other": 99.0}), SYMBOL))
         self.assertFalse(keep(before, evaluation({"other": True}, {"other": 100.0}), SYMBOL))
