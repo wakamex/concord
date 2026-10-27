@@ -180,6 +180,20 @@ class KnowledgeBase(unittest.TestCase):
                 self.assertTrue(i.fix and i.symptom)
                 self.assertTrue(all("commit" in e or "note" in e for e in i.evidence), i.id)
 
+    def test_findmesh_cleanup_thunk_diagnosis_is_recorded(self):
+        from concord import knowledge
+
+        entries = [i for i in knowledge.load("gcc-4.4.3") if i.id == "findmesh-cleanup-thunk"]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry.status, "hypothesis")
+        self.assertIn("cleanup thunk", entry.symptom)
+        note = entry.evidence[0]["note"]
+        self.assertIn("0x4c2c20", note)
+        self.assertIn("0x4c7b60", note)
+        self.assertIn("606", note)
+        self.assertIn("522", note)
+
     def test_the_reader_size_diagnosis_is_recorded(self):
         from concord import knowledge
 

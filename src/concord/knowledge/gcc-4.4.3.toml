@@ -604,3 +604,14 @@ evidence = [
   { commit = "9c1fb21", function = "CString<char>::subString header overlays", note = "The first candidate replaces return CString<T>(\"\") with return CString<T>(); and has header SHA-256 7d13e44e3884b7b5e9a855d00358548ad4a2cdaba7709e846a5a8d9f98264a2d. The second replaces it with return CString<T>(\"\", 0); and has header SHA-256 7d2ff8d66bca310fd36af86cbe19ab319f17e853a7b33879550c8319b621baa4. The CXFileReader baseline object SHA-256 is b70e7aa17aa3b01bc317095b496f261ce2a912da767c92fec9f917fca35a5f96; the two overlay objects are 08dc8550fb2495aa35a0d2207b66af9eea4f729960141d5f40baf1ac41974b9c and b7afc1ff2a9d21a291bff26d51777cf5290635513475792133af393acdd7a180. The full first trial took about 214 seconds with two workers; the second stopped after the reader-unit regression." },
   { commit = "9c1fb21", function = "CString<char>::subString overlay configuration", note = "flags.json SHA-256 9ebb8c16c904108ddb5cbaa50345a733d400ee2bd3994c72e5545e676fb03ad8, units.toml 0f2cdd26c91bc911659fce625d8d82f723e04d99c4c99cd7e3b1d4595fda399c, symbols.tsv 45c1f5068e0549d89422a4e05a2e847c4746b6fa08b47cf4254810013e50f185. All 155 dependent units compiled successfully for the first candidate; the second compiled successfully in CXFileReader." },
 ]
+
+[[idiom]]
+id = "findmesh-cleanup-thunk"
+cause = "inlining"
+status = "hypothesis"
+symptom = "findMesh reports an extra operator new[] path and a delete[] cleanup thunk in the target, while the candidate calls delete[] directly"
+fix = "Disassemble the full target function and trace any short cleanup thunk before changing the search. The target's 606-byte body at 0x4c2c20 and the 522-byte candidate both build the name and run a lower-bound-style search over MeshEntry. The extra target call is exception cleanup for a stack CString: sub_4c7b60 loads the buffer pointer and tail-calls _ZdaPv. Keep the translated search unless a comparison or traversal difference appears."
+limits = "The machine code identifies the cleanup path but does not establish the original source spelling that made GCC materialize the CString on the stack. No Harvest source candidate was measured or kept; findMesh remains inexact at 64.83."
+evidence = [
+  { function = "daisy::scene::CSceneManager::findMesh", note = "concord calls-constants reports candidate-only operator delete[] and target-only operator new[] plus 0x4c7b60. The target map records 606 bytes at 0x4c2c20; the candidate object is 522 bytes. Target unwind code at 0x4c2e71 passes the stack CString to 0x4c7b60, whose body at 0x4c7b60 loads the buffer pointer and jumps to operator delete[]. Both disassemblies perform the same string construction and lower-bound-style search over 0x18-byte entries. concord diff scores the candidate 64.83." },
+]
