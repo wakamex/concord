@@ -38,6 +38,56 @@ def evaluation(exact: dict[str, bool], fuzzy: dict[str, float] | None = None, er
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class Candidates(unittest.TestCase):
+    def test_tower_alpha_precedes_the_laser_flags(self):
+        symbol = "_ZN7harvest6entity19CDefenseTowerEntity11updateLogicEf"
+        key = ("HarvestFull/harvest/entity/CDefenseTowerEntity.cpp", symbol)
+        source = b"""int harvest::entity::CDefenseTowerEntity::updateLogic(float frameDelta)
+{
+    updateTowerLinks();
+    bool showLaser = false;
+    bool noHitParticle = false;
+    int alpha = 162;
+    return 0;
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertIn("alpha-before-flags", forms)
+        self.assertIn(b"int alpha = 162;\n    bool showLaser = false;\n    bool noHitParticle = false;", forms["alpha-before-flags"])
+        self.assertEqual(forms["alpha-before-flags"].count(b"int alpha = 162;"), 1)
+
+    def test_tower_clamps_alpha_before_packing_color(self):
+        symbol = "_ZN7harvest6entity19CDefenseTowerEntity11updateLogicEf"
+        key = ("HarvestFull/harvest/entity/CDefenseTowerEntity.cpp", symbol)
+        source = b"""int harvest::entity::CDefenseTowerEntity::updateLogic(float frameDelta)
+{
+        Beam.Color = ox::video::SColor(ox::core::min_(laserAlpha, 255), 255, 255, 255);
+    return 0;
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertIn("clamp-alpha-before-color", forms)
+        self.assertIn(b"if (laserAlpha >= 255)\n            laserAlpha = 255;\n        Beam.Color = ox::video::SColor(laserAlpha, 255, 255, 255);", forms["clamp-alpha-before-color"])
+
+    def test_tower_checks_the_firing_sprite_bank_first(self):
+        symbol = "_ZN7harvest6entity19CDefenseTowerEntity11updateLogicEf"
+        key = ("HarvestFull/harvest/entity/CDefenseTowerEntity.cpp", symbol)
+        source = b"""int harvest::entity::CDefenseTowerEntity::updateLogic(float frameDelta)
+{
+    if (!Shooting)
+    {
+        if (SpriteIndex >= 72)
+            SpriteIndex -= 72;
+    }
+    else if (SpriteIndex < 72)
+        SpriteIndex += 72;
+    return 0;
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertIn("firing-sprites-first", forms)
+        self.assertIn(b"if (Shooting)\n    {\n        if (SpriteIndex < 72)\n            SpriteIndex += 72;", forms["firing-sprites-first"])
+        self.assertIn(b"else if (SpriteIndex >= 72)\n        SpriteIndex -= 72;", forms["firing-sprites-first"])
+
     def test_the_edit_applies_inside_the_named_function_only(self):
         edits = [Edit("flag", b"x.flagA = false;\n    x.flagB = false;", b"x.flagA = false;\n    x.flagC = false;\n    x.flagB = false;")]
         found = candidates(SOURCE, SYMBOL, edits)

@@ -61,6 +61,41 @@ class HeaderFunctionEdit:
 
 
 AUTHORED: dict[tuple[str, str], list[Edit]] = {
+    # Initializing alpha before the flags changes the tower's PHI copies and
+    # block layout without changing its calls or constants. This is authored
+    # game code; no Irrlicht ancestor defines the tower.
+    (
+        "HarvestFull/harvest/entity/CDefenseTowerEntity.cpp",
+        "_ZN7harvest6entity19CDefenseTowerEntity11updateLogicEf",
+    ): [
+        Edit(
+            "alpha-before-flags",
+            b"    bool showLaser = false;\n    bool noHitParticle = false;\n    int alpha = 162;",
+            b"    int alpha = 162;\n    bool showLaser = false;\n    bool noHitParticle = false;",
+        ),
+        Edit(
+            "clamp-alpha-before-color",
+            b"        Beam.Color = ox::video::SColor(ox::core::min_(laserAlpha, 255), 255, 255, 255);",
+            b"        if (laserAlpha >= 255)\n            laserAlpha = 255;\n        Beam.Color = ox::video::SColor(laserAlpha, 255, 255, 255);",
+        ),
+        Edit(
+            "firing-sprites-first",
+            b'''    if (!Shooting)
+    {
+        if (SpriteIndex >= 72)
+            SpriteIndex -= 72;
+    }
+    else if (SpriteIndex < 72)
+        SpriteIndex += 72;''',
+            b'''    if (Shooting)
+    {
+        if (SpriteIndex < 72)
+            SpriteIndex += 72;
+    }
+    else if (SpriteIndex >= 72)
+        SpriteIndex -= 72;''',
+        ),
+    ],
     # runPPShader's post-processing path is daisy's own: Irrlicht 0.7's
     # CVideoNull has no post-processing services. The target clears the pass
     # material's bilinear flag with the other explicit overrides: its SMaterial
