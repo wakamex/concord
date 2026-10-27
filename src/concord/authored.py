@@ -61,6 +61,31 @@ class HeaderFunctionEdit:
 
 
 AUTHORED: dict[tuple[str, str], list[Edit]] = {
+    # The target's A1R5G5B5 path branches on the signed 16-bit pixel: alpha is
+    # either absent or 0xff, while the RGB fields use the same shifts in both
+    # arms. This form comes from the target disassembly rather than Irrlicht's
+    # branchless conversion helper.
+    (
+        "daisy/video/Null/CImage.cpp",
+        "_ZN5daisy5video6CImage8getPixelEii",
+    ): [
+        Edit(
+            "a1r5g5b5-alpha-branch",
+            b"\t\treturn A1R5G5B5toA8R8G8B8(((short*)Data)[y*Size.Width + x]);",
+            b"\t\t{\n"
+            b"\t\t\tshort color = ((short*)Data)[y*Size.Width + x];\n"
+            b"\t\t\tif (color < 0)\n"
+            b"\t\t\t\treturn SColor(0xff000000 |\n"
+            b"\t\t\t\t\t(color << 9 & 0xf80000) |\n"
+            b"\t\t\t\t\t(color << 6 & 0xf800) |\n"
+            b"\t\t\t\t\t(color << 3 & 0xff));\n"
+            b"\t\t\treturn SColor(\n"
+            b"\t\t\t\t(color << 9 & 0xf80000) |\n"
+            b"\t\t\t\t(color << 6 & 0xf800) |\n"
+            b"\t\t\t\t(color << 3 & 0xff));\n"
+            b"\t\t}",
+        ),
+    ],
     # Initializing alpha before the flags changes the tower's PHI copies and
     # block layout without changing its calls or constants. This is authored
     # game code; no Irrlicht ancestor defines the tower.

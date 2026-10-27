@@ -140,6 +140,30 @@ class Candidates(unittest.TestCase):
             self.assertIn(b"(alpha << 15)", body)
             self.assertEqual(found["a1r5g5b5-alpha-uint"].count(b"ox::video::toA1R5G5B5"), 1)
 
+    def test_cimage_a1r5g5b5_conversion_branches_on_the_alpha_bit(self):
+        unit = "daisy/video/Null/CImage.cpp"
+        symbol = "_ZN5daisy5video6CImage8getPixelEii"
+        key = (unit, symbol)
+        source = b"""SColor CImage::getPixel(int x, int y)
+{
+    switch(Format)
+    {
+    case ECF_A1R5G5B5:
+\t\treturn A1R5G5B5toA8R8G8B8(((short*)Data)[y*Size.Width + x]);
+    case ECF_R5G6B5:
+        return R5G6B5toA8R8G8B8(((short*)Data)[y*Size.Width + x]);
+    }
+    return SColor(0);
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertIn("a1r5g5b5-alpha-branch", forms)
+        body = forms["a1r5g5b5-alpha-branch"]
+        self.assertIn(b"short color = ((short*)Data)[y*Size.Width + x];", body)
+        self.assertIn(b"if (color < 0)", body)
+        self.assertIn(b"SColor(0xff000000 |", body)
+        self.assertIn(b"case ECF_R5G6B5:\n        return R5G6B5toA8R8G8B8", body)
+
     def test_status_texts_take_the_empty_wide_string_as_style(self):
         symbol = "_ZN7harvest6states10CPlayState10secondInitEv"
         key = ("HarvestFull/harvest/states/CPlayState.cpp", symbol)
