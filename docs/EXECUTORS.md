@@ -58,6 +58,22 @@ Each executor is scored out of 100 on four parts: results (40), what its work mo
 
 Wall time is from aop's start and finish records for each run, waiting for memory excluded. Many of Devin's runs report `failed` only because of aop's trajectory-export bug while their work completed; the times count them.
 
+## Cost: Sol against Terra (2026-10-24 to 2026-10-27)
+
+Both models draw on the same Codex subscription, so the binding limit is the weekly quota rather than money; the API-rate figures below are clanker-analytics' prices for the tokens each used. The comparison is not like for like: Sol's tasks were multi-unit recoveries and new tools, Terra's were single-function diagnoses.
+
+| | Sol (`gpt-6.1-sol`, native session) | Terra (`gpt-6.1-terra`, aop runs) |
+| --- | ---: | ---: |
+| API-rate cost | $43.58 | $4.70 (clanker-analytics); $5.99 in aop's own records, which include runs clanker-analytics missed |
+| Input and output tokens | 2.96M and 606K | 0.96M and 171K |
+| Tasks | about 12 | 6, over 8 runs |
+| Cost per task | about $3.60 | about $0.75; $1.30 to $1.55 at `--effort max` |
+| Wall time per task | about 1 to 4 hours | 1 to 17 minutes; 7.8 minutes median at max |
+| Newly exact functions | 56 | 1 |
+| Cost per newly exact function | about $0.78 | about $5 |
+
+Sol produced most of the exact functions and most of the tooling (`causal`, `frames`, `scratch-history`, `scores --base`); Terra found two real source differences (`reserve` against `resize`, and Harvest's wrong `CG_PROGRAM`) and one sweep fix. Terra is the cheaper way to check a specific lead, and Sol the more productive way to turn a whole unit into matches: leads from the sweep go to Terra, and a lead that becomes a whole-unit recovery goes to Sol.
+
 ## Log
 
 | Date | Task | Kind | Executor | Newly exact | Gates | Diff | Cost | Notes |
