@@ -49,7 +49,7 @@ Each executor is scored out of 100 on four parts: results (40), what its work mo
 
 | Executor | Grade | Score | Results | Reliability | Efficiency | Reports | Median wall time per task | What it is for |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| Codex `gpt-6.1-sol` | A- | 88 | 39 | 27 | 13 | 9 | about 1 to 4 hours in its native session, not timed; aop runs from 2026-10-27 are | multi-unit recoveries that need new tooling and a whole-build gate; kept at no more than 1x pace |
+| Codex `gpt-6.1-sol` | A- | 88 | 39 | 27 | 13 | 9 | 17 minutes through aop in w3sim (1.4 to 280, 31 runs); about 1 to 4 hours in its native concord session | multi-unit recoveries that need new tooling and a whole-build gate; kept at no more than 1x pace |
 | Codex `gpt-6.1-terra` at `--effort max` | B+ | 85 | 31 | 29 | 16 | 9 | 7.8 minutes (6.2 to 17.3, five runs) | diagnosing a concrete source lead from the sweep; two of three max tasks found a real source difference |
 | Antigravity Gemini 4 Argon (second reader) | B+ | 85 | 37 | 22 | 18 | 8 | not timed | choosing the next lever; its levers held every time, about half its details did not |
 | Devin `swe-2-high` | B+ | 82 | 31 | 24 | 19 | 8 | 20.8 minutes (7.5 to 105, 37 runs) | bounded diagnoses and capability work at no cost; careful negative results; one commit made with losses, bot authorship and trailers needed fixing |
@@ -60,21 +60,18 @@ Wall time is from aop's start and finish records for each run, waiting for memor
 
 ## Cost: Sol against Terra (2026-10-24 to 2026-10-27)
 
-Both models draw on the same Codex subscription, so the binding limit is the weekly quota rather than money; the API-rate figures below are clanker-analytics' prices for the tokens each used. The comparison is not like for like: Sol's tasks were multi-unit recoveries and new tools, Terra's were single-function diagnoses.
+Sol now runs through aop like every other executor, so the comparison that matters going forward is Sol through aop against Terra through aop. Sol has no concord aop runs yet; its column uses its 31 aop runs in w3sim on 2026-10-24 and 2026-10-25 (`--effort high`), the nearest measured per-task figures, beside its native concord session for reference. Both models draw on the same Codex subscription, so the binding limit is the weekly quota rather than money; the dollar figures are API prices for the tokens each run used, from aop's records and clanker-analytics, which agree. The tasks differ: Sol's were multi-unit recoveries and new tools, Terra's single-function diagnoses.
 
-| | Sol (`gpt-6.1-sol`, native session until 2026-10-27) | Terra (`gpt-6.1-terra`, aop runs) |
-| --- | ---: | ---: |
-| API-rate cost | $43.58 | $4.70 (clanker-analytics and aop's records agree) |
-| Input and output tokens | 2.96M uncached, 234.3M cached, 606K output | 0.96M uncached, 57.7M cached, 171K output |
-| Tasks | about 12 | 6, over 8 runs (two resumed runs share their sessions) |
-| Cost per task | about $3.60 | about $0.75; $1.30 to $1.55 at `--effort max` |
-| Wall time per task | about 1 to 4 hours | 1 to 17 minutes; 7.8 minutes median at max |
-| Newly exact functions | 56 | 1 |
-| Cost per newly exact function | about $0.78 | about $5 |
+| | Sol through aop (w3sim, high effort) | Terra through aop (concord, max effort) | Sol native session (concord, until 2026-10-27) |
+| --- | ---: | ---: | ---: |
+| Tasks | 31 runs | 6 tasks over 8 runs | about 12 |
+| Total API-price cost | $92.19 | $4.70 | $43.58 |
+| Cost per task | median $1.77, mean $2.97 ($0.16 to $24.28) | about $0.75; $1.30 to $1.55 at max | about $3.60 |
+| Share of input tokens read from cache | 98.9% | 98.4% | 98.8% |
+| Wall time per task | median 17 minutes (1.4 to 280) | median 7.8 minutes at max (1 to 17) | about 1 to 4 hours, not timed |
+| Newly exact functions | not comparable (w3sim) | 1 | 56 |
 
-Most of Sol's cost is its continuous session re-reading its own context: 234M cached input tokens over 1,279 calls, about 183,000 per call, 98.8% of its input tokens. From 2026-10-27 each Sol task is a fresh aop run, with the brief and the knowledge base carrying the context the session held, so Sol's new rows record cost and wall time per task the same way Terra's do. Its efficiency score stays on the native-session record until a few aop runs replace it.
-
-Sol produced most of the exact functions and most of the tooling (`causal`, `frames`, `scratch-history`, `scores --base`); Terra found two real source differences (`reserve` against `resize`, and Harvest's wrong `CG_PROGRAM`) and one sweep fix. Terra is the cheaper way to check a specific lead, and Sol the more productive way to turn a whole unit into matches: leads from the sweep go to Terra, and a lead that becomes a whole-unit recovery goes to Sol.
+Every Codex run reads nearly all its input from cache, through aop or not: each call re-sends the conversation so far, so a run's cost grows with its number of calls and the length of its context. The native session's cost per task, about $3.60, sits within the spread of Sol's aop runs, so moving Sol to aop changes accounting more than price: each task now gets its own costed, timed row, and one task's context no longer carries into the next. On cost per task, Sol through aop is about twice Terra at max effort at the median; on results, Sol's native session produced 56 newly exact functions to Terra's 1. Leads from the sweep go to Terra, and a lead that becomes a whole-unit recovery goes to Sol, now as an aop run; the first concord Sol aop runs replace the w3sim column.
 
 ## Log
 
