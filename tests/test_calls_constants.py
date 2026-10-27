@@ -1,8 +1,10 @@
 """The call-and-constant sweep: cancellation and pairing logic on constructed
 references, and extraction from real compiled objects."""
 
+import itertools
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -15,6 +17,7 @@ from concord.calls_constants import (
     DataRef,
     FunctionRefs,
     _canonical,
+    _ref_data_key,
     compare_function,
     read_refs,
     read_string_sections,
@@ -189,8 +192,87 @@ class DataReferences(unittest.TestCase):
         report = {"functions": [{"target_bytes": 20, "unit": "u", "symbol": "f",
                                  "verified_address": True, "stub": False, "differences": differences}]}
         text = "\n".join(show(report))
-        self.assertIn("more often", text)
+        self.assertIn("appears in both", text)
         self.assertNotIn("does not", text)
+
+    def test_shared_pooled_literals_report_counts_without_claiming_absence(self):
+        pool = {".rodata.str1.1": b"alpha\0beta\0"}
+        alpha = (4, ".rodata.str1.1", 0, "mov", "mov esi, 0")
+        beta = (8, ".rodata.str1.1", 6, "mov", "mov esi, 0")
+        rows = compare(refs(datarefs=[alpha, beta, beta, beta]),
+                       refs(datarefs=[alpha, alpha, alpha, beta]),
+                       ours_sections=pool, target_sections=pool)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r["classification"] for r in rows}, {"reference-count-difference"})
+        counts = {r["ours"]["ref"]: (r["ours"]["ours_count"], r["target"]["target_count"])
+                  for r in rows}
+        self.assertEqual(counts, {'.rodata.str1.1:"alpha"': (1, 3), '.rodata.str1.1:"beta"': (3, 1)})
+        self.assertTrue(all(r["ours"]["offset"] is None and r["target"]["offset"] is None for r in rows))
+
+    def test_shared_reference_surplus_is_not_paired_with_an_unshared_reference(self):
+        ours = refs(datarefs=[(4, ".rodata.cst4", 0, "mov", "mov eax, 0")] * 3)
+        target = refs(datarefs=[(4, ".rodata.cst4", 0, "mov", "mov eax, 0"),
+                                (8, ".rodata.cst4", 4, "mov", "mov eax, 0")])
+        rows = compare(ours, target)
+        self.assertEqual([r["classification"] for r in rows], ["reference-count-difference", "target-only"])
+        self.assertEqual(rows[0]["ours"]["ref"], ".rodata.cst4+0x0")
+        self.assertEqual(rows[1]["target"]["ref"], ".rodata.cst4+0x4")
+
+    @unittest.skipUnless(os.environ.get("CONCORD_HARVEST"), "needs a Harvest checkout after hv match")
+    def test_harvest_inline_constructor_references_are_shared(self):
+        root = Path(os.environ["CONCORD_HARVEST"])
+        revision = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                                  check=True, capture_output=True, text=True).stdout.strip()
+        if not revision.startswith("d08eb20"):
+            self.skipTest("the observed inlining baseline is Harvest d08eb20")
+        slug = "HarvestFull__harvest__entity__CAlienEntity"
+        symbol = "_ZN7harvest6entity12CAlienEntity25replaceWithMagnetoSpritesEv"
+        ours_path = root / "build/match/1.18-linux-amd64" / f"{slug}.o"
+        target_path = root / "build/objdiff/1.18-linux-amd64/target" / f"{slug}.o"
+        ours = read_refs(ours_path, {symbol})[symbol]
+        target = read_refs(target_path, {symbol})[symbol]
+        rows = compare(ours, target, ours_sections=read_string_sections(ours_path),
+                       target_sections=read_string_sections(target_path))
+        brain = [r for r in rows if r["kind"] == "data" and "BrainRotor" in str(r)]
+        self.assertEqual(len(brain), 1)
+        self.assertEqual(brain[0]["classification"], "reference-count-difference")
+        self.assertEqual((brain[0]["ours"]["ours_count"], brain[0]["target"]["target_count"]), (3, 1))
+
+    @unittest.skipUnless(os.environ.get("CONCORD_HARVEST"), "needs a Harvest checkout after hv match")
+    def test_harvest_sprite_order_against_target_references(self):
+        from concord.transforms import find_function
+
+        root = Path(os.environ["CONCORD_HARVEST"])
+        revision = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                                  check=True, capture_output=True, text=True).stdout.strip()
+        if not revision.startswith("d08eb20"):
+            self.skipTest("the observed sprite baseline is Harvest d08eb20")
+        cases = [
+            ("CDefenseTowerEntity", "_ZN7harvest6entity19CDefenseTowerEntityC1Eff"),
+            ("CDefenseTowerEntity", "_ZN7harvest6entity19CDefenseTowerEntityC2Eff"),
+            ("CAlienEntity", "_ZN7harvest6entity12CAlienEntity25replaceWithMagnetoSpritesEv"),
+            ("CAlienEntity", "_ZN7harvest6entity12CAlienEntity24replaceWithLookerSpritesEv"),
+            ("CAlienEntity", "_ZN7harvest6entity12CAlienEntity22replaceWithTinySpritesEv"),
+            ("CDropshipEntity", "_ZN7harvest6entity15CDropshipEntity10loadSpriteEb"),
+        ]
+        resource = b"$GAME_RESOURCES$/harvestClientData/gfx/ingame.dat"
+        for unit, symbol in cases:
+            with self.subTest(symbol=symbol):
+                source = (root / "src/HarvestFull/harvest/entity" / f"{unit}.cpp").read_bytes()
+                scope = find_function(source, symbol)
+                names = re.findall(rb'addNewAnimationState\(ox::core::CString<char>\("([^"\\]+)"\)\)',
+                                   source[scope.start_byte:scope.end_byte])
+                self.assertEqual(len(names), len(set(names)))
+                target = (root / "build/objdiff/1.18-linux-amd64/target" /
+                          f"HarvestFull__harvest__entity__{unit}.o")
+                sections = read_string_sections(target)
+                body = read_refs(target, {symbol})[symbol]
+                string_refs = [(key[2], ref.mnemonic) for ref in body.datarefs
+                               if (key := _ref_data_key(ref, sections))[0] == "string" and key[2] != resource]
+                groups = [(name, list(group)) for name, group in itertools.groupby(string_refs, key=lambda row: row[0])]
+                self.assertEqual(names, [name for name, _ in groups])
+                self.assertTrue(all(tuple(mnemonic for _, mnemonic in group) in
+                                    (("mov",), ("mov", "mov", "sub")) for _, group in groups))
 
     def test_merged_string_sections_compare_by_literal_not_offset(self):
         ours_pool = b"pad\x00alpha\x00"

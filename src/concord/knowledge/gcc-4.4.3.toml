@@ -528,6 +528,18 @@ evidence = [
 ]
 
 [[idiom]]
+id = "inlined-string-reference-counts"
+cause = "inlining"
+status = "confirmed"
+symptom = "one side has three references to a sprite literal where the other has one, making a shared literal look absent in a multiset difference"
+fix = "Compare whether the literal occurs on each side before interpreting its reference count. calls-constants reports a shared literal with unequal counts as a reference-count difference; inspect the surrounding code and calls before treating a count as a source use."
+limits = "Reference counts do not establish how many source expressions use a literal. Grouping adjacent references is valid only after checking the instructions and call sites; compiled block order can also differ from source execution order."
+evidence = [
+  { commit = "d08eb20", function = "CDefenseTowerEntity constructors and CAlienEntity sprite replacements", note = "Both tower constructors reference the same 147 sprite names as source, in the same instruction order. Magneto references BrainBottom0000 through BrainBottom0071, BrainRotor and BrainWave; Looker references AlienLooker0000 through AlienLooker0071; Tiny references AlienTiny0000 through AlienTiny0029. Each target sequence agrees with source. For BrainRotor the target passes the literal to an out-of-line CString constructor once, while the candidate's inlined construction references it three times before the sprite call." },
+  { commit = "d08eb20", function = "CDropshipEntity::loadSprite", note = "The target and source reference all 77 DragonFly names in the same order. DragonFly0019 has three target references in the inlined CString construction and one in the candidate's out-of-line construction. The function scores 98.48337 against the target." },
+]
+
+[[idiom]]
 id = "shared-tail-call-count"
 cause = "inlining"
 status = "hypothesis"

@@ -14,9 +14,10 @@ the target's copy of the same symbol:
   string bytes at that offset so a pool layout shift is not reported.
 
 Functions where either multiset differs are ranked by target bytes. Left-over
-callees and immediates are count differences, not proof that a particular
-source statement or an inline decision differs; a shared compiled tail, for
-example, can change both counts without changing the source operations. A
+callees, immediates and references are count differences, not proof that a
+particular source statement or an inline decision differs; an inlined string
+constructor can reference one literal several times, and a shared compiled
+tail can also change counts without changing the source operations. A
 callee left over on both sides is reported as a substitution ("ours calls
 resize where the target calls reserve") unless one leftover is an out-of-line
 copy whose body calls the other leftover (inline-copy noise, as when ours calls
@@ -485,8 +486,16 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
         target_by_key[_ref_data_key(r, target_sections)].append(r)
     ours_keys = Counter(k for k, rows in ours_by_key.items() for _ in rows)
     target_keys = Counter(k for k, rows in target_by_key.items() for _ in rows)
-    ours_rest = [ours_by_key[k].pop() for k in (ours_keys - target_keys).elements()]
-    target_rest = [target_by_key[k].pop() for k in (target_keys - ours_keys).elements()]
+    # A surplus of references to an item present on both sides does not mean
+    # that item is absent from either side. Keep it separate from unshared
+    # references so it cannot be paired with a different item.
+    for key in ours_by_key:
+        if target_keys[key] and ours_keys[key] != target_keys[key]:
+            differences.append({"kind": "data", "classification": "reference-count-difference",
+                                "ours": _ref_entry(ours_by_key[key][0], ours_keys, target_keys, ours_sections),
+                                "target": _ref_entry(target_by_key[key][0], ours_keys, target_keys, target_sections)})
+    ours_rest = [ours_by_key[k].pop() for k in (ours_keys - target_keys).elements() if not target_keys[k]]
+    target_rest = [target_by_key[k].pop() for k in (target_keys - ours_keys).elements() if not ours_keys[k]]
 
     def split_pooled(refs, sections):
         pooled, rest = [], []
@@ -669,6 +678,10 @@ def show(result: dict) -> list[str]:
         if d["kind"] == "data":
             if d["classification"] == "different-references":
                 return f"references: possible pairing: ours uses {prettify(d['ours'])}; the target uses {prettify(d['target'])}"
+            if d["classification"] == "reference-count-difference":
+                e = d["ours"]
+                return (f"references: {prettify(e)} appears in both; ours has {e['ours_count']} references, "
+                        f"the target has {e['target_count']}")
             side = "ours" if "ours" in d else "the target"
             e = d.get("ours") or d.get("target")
             other = "the target" if side == "ours" else "ours"
