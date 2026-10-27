@@ -27,6 +27,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Codex `gpt-6.1-terra` | rule | 2 | 2 of 2 | 2 of 2 | 0 | $0.08 at default effort; $1.54 at max |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
 | Muse `muse-wonder-full-1.0` | capability | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 29.6M input tokens |
+| Cursor `composer-2.5` | capability | 1 | 1 of 1 | 1 of 1 | 0 | not recorded |
 | Cursor `composer-2.5` | diagnosis | 1 | 1 of 1 | 0 of 1 | 0 | not recorded |
 | Cursor `composer-2.5` | search | 2 | 2 of 2 | 2 of 2 | 0 | 1.66M input tokens, a fraction of a percent of the month |
 | Cursor `composer-2.5` | rule | 2 | 1 of 2 | 1 of 2 | 0 | not recorded |
@@ -97,3 +98,4 @@ Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a ch
 | 2026-10-27 | CBase64url::encode2 table reference | diagnosis | Cursor `composer-2.5` | 0 | clean | does not hold | | not a source difference: GCC names the same table by section offset; fixed calls-constants to name references through defined symbols; two source probes rejected; finished on its own in 16 minutes; broke two rules: a `Co-authored-by: Cursor` trailer, and a knowledge cause concord does not accept, which failed two tests until fixed |
 | 2026-10-27 | CCGMaterialRenderer::printVariables constant | rule | Codex `gpt-6.1-terra` | 0 | clean | holds | $1.54 over two sessions | effort max; Harvest's CgApi.h defined CG_PROGRAM as 4125 (NVIDIA's CG_LINE) where the target passes 4109; authored header correction through concord; printVariables 99.4848 to 99.4862 |
 | 2026-10-27 | CPlayState renderMinimap and updateState | rule | Devin `swe-2-high` | 0 | clean | holds | | authored per-branch marker drawing, the literal progress-bar colour and NextState on both arms; renderMinimap 78.10 to 88.93, updateState 95.21 to 96.90, oracle agrees; author now keeps oracle-checked improved candidates and combines edits; rebased cleanly onto the header-constant change |
+| 2026-10-27 | calls-constants inline-copy noise | capability | Cursor `composer-2.5` | 0 | clean | holds | | different-callees entries 176 to 123; resize against reserve still a substitution; all rules kept; 5 minutes; its sweep read stale reports because the brief left out hv match |
