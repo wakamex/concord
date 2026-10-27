@@ -24,7 +24,7 @@ Gates clean means the whole-build gate (`concord scores --base`) showed no funct
 | Devin `swe-2-high` | search | 2 | 2 of 2 | 2 of 2 | 3 | not recorded |
 | Devin `swe-2-high` | rule | 4 | 3 of 4 | 3 of 4 | 12, and 141 after re-seeding with its five-way changes | $1.83 to $3.08 where recorded |
 | Codex `gpt-6.1-terra` | diagnosis | 3 | 3 of 3 | 3 of 3 | 1 | $0.17 to $0.19 at default effort; $1.38 at max |
-| Codex `gpt-6.1-terra` | rule | 1 | 1 of 1 | 1 of 1 | 0 | $0.08, default effort |
+| Codex `gpt-6.1-terra` | rule | 2 | 2 of 2 | 2 of 2 | 0 | $0.08 at default effort; $1.54 at max |
 | Muse `muse-wonder-full-1.0` | search | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 5.2M input tokens over two sessions |
 | Muse `muse-wonder-full-1.0` | capability | 1 | 1 of 1 | 1 of 1 | 0 | subscription only; 29.6M input tokens |
 | Cursor `composer-2.5` | diagnosis | 1 | 1 of 1 | 0 of 1 | 0 | not recorded |
@@ -95,3 +95,4 @@ Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a ch
 | 2026-10-26 | CSpritePackage::load rerun | search | Devin `swe-2-high` | 0 | clean | holds | | reproduced the 98.36 candidate; harvest-oracle rejected it (it reorders a readSprite call against memmove and moves away from the original), so nothing was written |
 | 2026-10-27 | calls-and-constants sweep | capability | Devin `swe-2-high` | 0 | clean | holds | | `concord calls-constants`; both known cases pass; 553 inexact functions compared, 274 differ; inline-copy noise not yet separated from callee substitutions |
 | 2026-10-27 | CBase64url::encode2 table reference | diagnosis | Cursor `composer-2.5` | 0 | clean | does not hold | | not a source difference: GCC names the same table by section offset; fixed calls-constants to name references through defined symbols; two source probes rejected; finished on its own in 16 minutes; broke two rules: a `Co-authored-by: Cursor` trailer, and a knowledge cause concord does not accept, which failed two tests until fixed |
+| 2026-10-27 | CCGMaterialRenderer::printVariables constant | rule | Codex `gpt-6.1-terra` | 0 | clean | holds | $1.54 over two sessions | effort max; Harvest's CgApi.h defined CG_PROGRAM as 4125 (NVIDIA's CG_LINE) where the target passes 4109; authored header correction through concord; printVariables 99.4848 to 99.4862 |
