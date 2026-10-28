@@ -19,11 +19,17 @@ class EnumSwitchTests(unittest.TestCase):
 
         harvest = Harvest(HARVEST)
         path = HARVEST / "src" / UNIT
-        fixed = path.read_bytes()
+        current = path.read_bytes()
         cast = b"switch((int)b->getVertexType())"
         original = b"switch(b->getVertexType())"
+        # The checkout may hold the source before or after the fix.
+        if cast in current:
+            fixed = current
+            before_fix = current.replace(cast, original, 1)
+        else:
+            before_fix = current
+            fixed = current.replace(original, cast, 1)
         self.assertEqual(fixed.count(cast), 1)
-        before_fix = fixed.replace(cast, original, 1)
 
         evaluation = harvest.evaluate(UNIT, {"before_fix": before_fix})["before_fix"]
         self.assertFalse(evaluation.error)
