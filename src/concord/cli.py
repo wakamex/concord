@@ -324,6 +324,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_place.add_argument("--save", type=Path, help="save placement results as JSON")
     p_place.add_argument("--object", type=Path, help="learn addresses from one compiled candidate, then rebuild unchanged source")
 
+    p_place_bss = sub.add_parser("place-bss", help="place every unplaced unit .bss proved by its static initializer")
+    p_place_bss.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_place_bss.add_argument("--save", type=Path, help="save the placements as JSON")
+
     p_clean = sub.add_parser("clean", help="remove concord's old work directories from the Harvest checkout")
     p_clean.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_clean.add_argument("--older-than", type=float, default=24.0, metavar="HOURS", help="keep directories changed more recently")
@@ -754,6 +758,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {len(row['learned'])} addresses learned from candidate; source unchanged")
             else:
                 print(f"  {len(row['sections'])} called sections verified; {len(row['literals'])} literal repairs exact")
+        return 0
+    if args.command == "place-bss":
+        rows = place.place_bss(Harvest(args.harvest))
+        if args.save:
+            args.save.write_text(json.dumps(rows, indent=2) + "\n")
+        for row in rows:
+            print(f"{row['unit']}: .bss = {row['address']:#x}")
+        print(f"{len(rows)} .bss placements learned from static initializer references")
         return 0
     if args.command == "bench":
         return _bench(args)

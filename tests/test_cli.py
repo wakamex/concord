@@ -167,6 +167,24 @@ class CliTest(unittest.TestCase):
             self.assertEqual(main([]), 0)
         self.assertIn("Matching recompilation", out.getvalue())
 
+    def test_place_bss_runs_the_sweep_and_saves_placements(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        placements = [{"unit": "daisy/A.cpp", "address": 0x2000}]
+        with tempfile.TemporaryDirectory() as directory:
+            save = Path(directory) / "placements.json"
+            with mock.patch("concord.cli.Harvest") as harvest, mock.patch(
+                "concord.cli.place.place_bss", return_value=placements
+            ) as run, contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(["place-bss", "--harvest", directory, "--save", str(save)]), 0
+                )
+            run.assert_called_once_with(harvest.return_value)
+            self.assertEqual(json.loads(save.read_text()), placements)
+
     def test_parser_lists_the_commands(self):
         help_text = build_parser().format_help()
         for command in (

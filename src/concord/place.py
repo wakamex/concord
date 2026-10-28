@@ -16,7 +16,7 @@ from tree_sitter import Node
 from concord.harvest import BUILD, Harvest
 from concord.irrlicht import translate
 from concord.search import other_scores, worse_elsewhere
-from concord.seed import IRRLICHT, _match, _place_called_sections, _register
+from concord.seed import IRRLICHT, _match, _place_bss, _place_called_sections, _register
 from concord.transforms import find_function
 
 
@@ -200,6 +200,33 @@ def place(harvest: Harvest, unit: str, literals: bool = False) -> dict:
     repaired = restore_literals(harvest, unit) if literals else []
     output = _match(root, unit, learn=True)
     return {"unit": unit, "sections": sections, "literals": repaired, "output": output}
+
+
+def place_bss(harvest: Harvest) -> list[dict]:
+    """Place every unplaced unit .bss whose static initializer proves its target address."""
+    root = harvest.root
+    config = tomllib.loads((root / "config" / BUILD / "units.toml").read_text())
+    proposals = []
+    for report_path in sorted(harvest.reports.glob("*.json")):
+        report = json.loads(report_path.read_text())
+        unit = report["unit"]
+        if ".bss" not in report.get("unplaced_sections", []) or ".bss" in config.get(unit, {}):
+            continue
+        text = next((section for section in report["sections"] if section["name"] == ".text"), None)
+        placed_by = text.get("placement", "") if text else ""
+        if not text or not text.get("address") or not placed_by.startswith("symbol: "):
+            continue
+        anchor = placed_by.removeprefix("symbol: ")
+        if not any(function.get("symbol") == anchor and function.get("address") == text["address"]
+                   and function.get("exact") for function in text.get("functions", [])):
+            continue
+        placement = _place_bss(root, unit).get(".bss")
+        if placement is not None:
+            proposals.append({"unit": unit, "address": placement})
+    for row in proposals:
+        placements = {**config.get(row["unit"], {}), ".bss": row["address"]}
+        _register(root, row["unit"], placements)
+    return proposals
 
 
 def candidate_claims(before: set[str], rows: list[dict], digest: str) -> dict[str, str]:
