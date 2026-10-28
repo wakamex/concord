@@ -109,5 +109,31 @@ class MainMenuUnitEvidenceTests(unittest.TestCase):
         self.assertIn("1 newly matched", evidence["Whole-build gate"])
 
 
+class PlayStateUnitEvidenceTests(unittest.TestCase):
+    def test_render_guidance_distinguishes_context_trials_from_source_fixes(self):
+        idioms = knowledge.for_causes(knowledge.load("gcc-4.4.3"), {Cause.BLOCK_ORDER})
+        idiom = next(item for item in idioms if item.id == "play-state-render-unit")
+        evidence = {item["function"]: item["note"] for item in idiom.evidence}
+
+        self.assertIn("31 declaration-count phases", evidence["Unit context"])
+        self.assertIn("22 same-layout", evidence["Unit context"])
+        self.assertIn("25 placed", evidence["Unit context"])
+        self.assertIn("mouseY", evidence["CPlayState::render"])
+        self.assertIn("5,000", evidence["CPlayState::render"])
+        self.assertIn("spacing", evidence["CPlayState::renderWaveButton"])
+        self.assertIn("getPosition", evidence["CPlayState::renderRangeCircleForEntity"])
+        self.assertIn("unchanged-source", evidence["CPlayState::renderRangeCircle"])
+        self.assertIn("5,000", evidence["CPlayState::performRectangleSelection"])
+        self.assertIn("0 worse", evidence["Whole-build gate"])
+        self.assertIn("unresolved", idiom.limits)
+        previous = next(
+            item["note"] for group in knowledge.load("gcc-4.4.3") for item in group.evidence
+            if item.get("function") == "harvest::states::CPlayState::render()"
+            and item.get("commit") == "9dff9df"
+        )
+        self.assertIn("play-state-render-unit", previous)
+        self.assertNotIn("no source line is missing or different", previous)
+
+
 if __name__ == "__main__":
     unittest.main()
