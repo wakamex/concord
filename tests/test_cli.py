@@ -192,6 +192,21 @@ class CliTest(unittest.TestCase):
             record = json.loads(log.read_text().splitlines()[0])
             self.assertEqual((record["symbol"], record["reason"]), ("slow", "oracle-baseline"))
 
+    def test_near_miss_sweep_keeps_only_the_named_unit(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            targets = [("a.cpp", "one", 99.5), ("b.cpp", "two", 99.4), ("a.cpp", "three", 99.1)]
+            with mock.patch("concord.cli.Harvest", return_value=SimpleNamespace(source=lambda unit: unit, root=Path(tmp))), \
+                    mock.patch("concord.cli.near_misses", return_value=targets), \
+                    mock.patch("concord.cli._permute_one", return_value=False) as run, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["permute", "--harvest", tmp, "--near-miss", "99", "--unit", "a.cpp"]), 0)
+            self.assertEqual([call.args[1:3] for call in run.call_args_list], [("a.cpp", "one"), ("a.cpp", "three")])
+
     def test_rename_gives_helpers_plain_names(self):
         import tempfile
         from pathlib import Path

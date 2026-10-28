@@ -114,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_permute.add_argument("--unit", help="Harvest unit, as a source path or report slug")
     p_permute.add_argument(
         "--near-miss", type=float, metavar="SCORE",
-        help="search every inexact function of its unit's own source scoring at least SCORE, best first",
+        help="search every inexact function of its unit's own source scoring at least SCORE, best first (only --unit's, when given)",
     )  # fmt: skip
     p_permute.add_argument("--budget", type=int, default=256, help="candidate sources to compile")
     p_permute.add_argument("--batch", type=int, default=32, help="candidates compiled per step")
@@ -1113,6 +1113,8 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     harvest = Harvest(args.harvest)
     if args.near_miss is not None:
         targets = [(unit, symbol) for unit, symbol, _ in near_misses(harvest, args.near_miss)]
+        if args.unit:
+            targets = [t for t in targets if t[0] == harvest.source(args.unit)]
     elif args.unit and args.function:
         targets = [(harvest.source(args.unit), args.function)]
     else:
