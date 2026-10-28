@@ -43,6 +43,33 @@ class EventDispatchEvidenceTests(unittest.TestCase):
         self.assertIn("52.809746", menu)
 
 
+class BspTreeSplitPolyEvidenceTests(unittest.TestCase):
+    def test_splitpoly_residual_records_data_audit_and_kept_overlay(self):
+        idiom = next(
+            item for item in knowledge.load("gcc-4.4.3")
+            if item.id == "bsp-tree-splitpoly-residual"
+        )
+        notes = {item["function"]: item["note"] for item in idiom.evidence}
+
+        self.assertEqual(idiom.status, "confirmed")
+        self.assertIn("21 data rows", idiom.symptom)
+        for function, facts in {
+            "Initial residual": ("3,527 target bytes", "0xbd8", "0xbc8", "303 register-choice rows"),
+            "Vertex local": ("94.51469 to 94.7765", "5,000-case oracle agrees", "50.79 to 50.92"),
+            "Intersection comparison": ("94.7765 to 99.9106", "5,000-case oracle agrees"),
+            "Index count": ("0x38e38e39", "0xaaaaaaab", "99.91571 to 99.9106", "99.91571 to 100.0"),
+            "Final unit audit": (
+                "1 functions changed: 1 newly matched, 0 worse; data bytes matched: +0 -0",
+                "232 passed and 3 skipped",
+                "findSplitter",
+                "polyExistsInNode",
+            ),
+        }.items():
+            with self.subTest(function=function):
+                for fact in facts:
+                    self.assertIn(fact, notes[function])
+
+
 class InlinedStringReferenceKnowledgeTests(unittest.TestCase):
     def test_dropship_call_distribution_evidence_is_recorded(self):
         path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
