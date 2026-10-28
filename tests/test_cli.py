@@ -142,7 +142,9 @@ class CliTest(unittest.TestCase):
 
     def test_parser_lists_the_commands(self):
         help_text = build_parser().format_help()
-        for command in ("seed", "match", "permute", "diff", "phase", "scores", "bench", "unguard"):
+        for command in (
+            "seed", "match", "permute", "diff", "phase", "scores", "bench", "unguard", "comparison-flips"
+        ):
             self.assertIn(command, help_text)
 
     def test_module_entrypoint_runs(self):

@@ -18,6 +18,7 @@ from concord import (
     calls_constants,
     causal,
     census,
+    comparison_flips,
     destructors,
     frames,
     initialization,
@@ -403,6 +404,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="also locate each finding's source line through a -g compile, and list the N lines with the most",
     )  # fmt: skip
 
+    p_comparison_flips = sub.add_parser(
+        "comparison-flips", help="list inexact functions differing only by reversed comparisons"
+    )
+    p_comparison_flips.add_argument("--harvest", type=Path, required=True, help="Harvest checkout after `hv match`")
+    p_comparison_flips.add_argument("--save", type=Path, help="write the census as JSON")
+
     return parser
 
 
@@ -427,6 +434,41 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "survey":
         return _survey(args)
+    if args.command == "comparison-flips":
+        report = comparison_flips.report(Harvest(args.harvest))
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        summary = report["summary"]
+        print(
+            f"{summary['functions']} distinct target functions, {summary['bytes']:,} target bytes; "
+            f"{summary['single_flip_functions']} have exactly one flip across "
+            f"{summary['unit_occurrences']} unit reports"
+        )
+        print(f"Scores use {report['score_kind']}.")
+        symbols = sorted({row["symbol"] for row in report["functions"]})
+        names = dict(zip(symbols, _short_names(set(symbols)), strict=True)) if symbols else {}
+        for row in report["functions"]:
+            score = f"{row['score']:.5f}%" if row["score"] is not None else "unknown"
+            copies = f" reported in {len(row['units'])} units" if len(row["units"]) > 1 else ""
+            print(f"{row['unit']}:{names[row['symbol']]} size {row['size']} score {score}{copies}")
+            for flip in row["flips"]:
+                offsets = ", ".join(f"+{offset:#x}" for offset in flip["differing_offsets"])
+                inline = flip["inlined_function"] or "inline source unavailable"
+                source = flip["source"]
+                location = f" at {source['path']}:{source['line']}" if source else ""
+                units = f" in {len(flip['units'])} units" if len(flip["units"]) > 1 else ""
+                print(
+                    f"  cmp +{flip['comparison_offset']:#x}, jump +{flip['jump_offset']:#x}; "
+                    f"bytes {offsets}; {inline}{location}{units}"
+                )
+        print("Ten largest:")
+        for row in report["functions"][:10]:
+            print(f"  {row['unit']}:{names[row['symbol']]} size {row['size']} score {row['score']}")
+            for flip in row["flips"]:
+                source = flip["source"]
+                location = f" at {source['path']}:{source['line']}" if source else ""
+                print(f"    {flip['inlined_function'] or 'inline source unavailable'}{location}")
+        return 0
     if args.command == "match":
         return _match(args)
     if args.command == "permute":
