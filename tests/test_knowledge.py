@@ -246,11 +246,17 @@ class HighscoreUnitResidualTests(unittest.TestCase):
         self.assertEqual(idiom["status"], "hypothesis")
         self.assertIn("10 emitted inline and template copies, all 10 placed", notes["Unit context"])
         self.assertIn("63.147266 to 99.81066", notes["parseHighscoreString"])
-        self.assertIn("4928 to 4784", notes["parseHighscoreString"])
+        self.assertIn("4,928 to 4,784", notes["parseHighscoreString"])
         self.assertIn("89.835526 to 89.5", notes["setVisible"])
         self.assertIn("A 32-candidate unit-scoped permutation search finds no score gain", notes["OnEvent"])
         self.assertIn("31 candidates, finds no rewrite", notes["update and parseSummaryPage"])
         self.assertIn("0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0", notes["Unchanged seed gate"])
+        evidence = {item["function"]: item["note"] for item in idiom["evidence"]}
+        self.assertIn("www.oxeyegames.com moves from +0x390 to +0x578", evidence["Pooled literal sections"])
+        self.assertIn("40 differing aligned rows", evidence["loadHighscores instruction differences"])
+        self.assertIn("five differing aligned rows", evidence["loadSummaryPage instruction differences"])
+        self.assertIn("does not correct the emitted data or instructions", evidence["Definition-order overlay"])
+        self.assertIn("saves 5,240 functions and 1,631 matched data runs", evidence["Clean source gate"])
 
 
 if __name__ == "__main__":
