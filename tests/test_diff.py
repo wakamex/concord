@@ -429,6 +429,28 @@ class KnowledgeBase(unittest.TestCase):
             with self.subTest(detail=detail):
                 self.assertIn(detail, notes[0])
 
+    def test_animation_player_register_allocation_trials_are_recorded(self):
+        from concord import knowledge
+
+        entries = [
+            i for i in knowledge.load("gcc-4.4.3")
+            if i.id == "animation-player-register-copy-order"
+        ]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry.cause, Cause.REGISTER_ALLOCATION)
+        self.assertEqual(entry.status, "hypothesis")
+        self.assertIn("0x583e60", entry.evidence[0]["function"])
+        self.assertIn("36 sibling placements", entry.limits)
+        self.assertIn("two-intervention limit", entry.limits)
+        note = entry.evidence[0]["note"]
+        for detail in (
+            "4d 89 cd 48 89 c3", "48 89 c3 4d 89 cd", "99.962616",
+            "lastTime", "0 functions changed: 0 newly matched, 0 worse",
+        ):
+            with self.subTest(detail=detail):
+                self.assertIn(detail, note)
+
 
 if __name__ == "__main__":
     unittest.main()
