@@ -436,6 +436,48 @@ class Keep(unittest.TestCase):
                 self.assertTrue(result['applied'])
                 self.assertEqual(path.read_bytes(), candidate)
 
+    @unittest.skipUnless(shutil.which("cc"), "needs a C compiler")
+    def test_external_candidate_that_compiles_to_the_same_code_is_kept_without_the_oracle(self):
+        import subprocess
+        from unittest.mock import Mock
+
+        def compile_c(directory: Path, name: str, text: str) -> Path:
+            source = directory / f"{name}.c"
+            source.write_text(text)
+            subprocess.run(["cc", "-O2", "-g", "-c", str(source), "-o", str(directory / f"{name}.o")], check=True)
+            return directory / f"{name}.o"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            path = root / 'src/u.cpp'
+            path.write_bytes(SOURCE)
+            body = "int f(int a) { int %s = a * 3; return %s + 1; }"
+            base = compile_c(root, "base", body % ("t", "t"))
+            renamed = compile_c(root, "renamed", body % ("tripled", "tripled"))
+            changed = compile_c(root, "changed", "int f(int a) { int t = a * 5; return t + 1; }")
+            harvest = Mock(root=root)
+            harvest.source.return_value = 'u.cpp'
+            candidate = SOURCE.replace(b'x.flagA = false;', b'x.flagA = false; /* named */', 1)
+
+            def measured(after: Path) -> dict:
+                before = evaluation({SYMBOL: False, 'other': True}, {SYMBOL: 90, 'other': 100})
+                row = evaluation({SYMBOL: False, 'other': True}, {SYMBOL: 90, 'other': 100})
+                before.object, row.object = base, after
+                return {'baseline': before, 'causal-candidate': row}
+
+            with patch('concord.authored.oracle.gate') as gate:
+                harvest.evaluate.return_value = measured(changed)
+                result = authored.apply(harvest, 'u.cpp', SYMBOL, True, candidate=candidate)
+                self.assertFalse(result['applied'])
+                self.assertEqual(path.read_bytes(), SOURCE)
+                harvest.evaluate.return_value = measured(renamed)
+                result = authored.apply(harvest, 'u.cpp', SYMBOL, True, candidate=candidate)
+                self.assertTrue(result['applied'])
+                self.assertTrue(result['candidates']['causal-candidate']['same_code'])
+                self.assertEqual(path.read_bytes(), candidate)
+                gate.assert_not_called()
+
     def test_unit_source_candidate_uses_the_function_and_unit_score_gates(self):
         from unittest.mock import Mock
 

@@ -671,6 +671,40 @@ def keep(before: Evaluation, after: Evaluation, symbol: str) -> bool:
     return before.exact_functions() <= after.exact_functions() and not worse_elsewhere(other_scores(before, symbol), after, symbol)
 
 
+# Sections whose bytes and relocations are the compiled program; debug sections,
+# which carry local names, are left out.
+CODE_SECTIONS = (".text", ".rodata", ".data", ".gcc_except_table")
+
+
+def _code(path: Path) -> dict[str, object]:
+    from elftools.elf.elffile import ELFFile
+    from elftools.elf.relocation import RelocationSection
+
+    with open(path, "rb") as stream:
+        elf = ELFFile(stream)
+        code: dict[str, object] = {}
+        for section in elf.iter_sections():
+            if isinstance(section, RelocationSection):
+                if section.name.removeprefix(".rela").startswith(CODE_SECTIONS):
+                    table = elf.get_section(section["sh_link"])
+                    rows = []
+                    for reloc in section.iter_relocations():
+                        symbol = table.get_symbol(reloc["r_info_sym"])
+                        name = symbol.name or elf.get_section(symbol["st_shndx"]).name
+                        rows.append((reloc["r_offset"], reloc["r_info_type"], name, reloc["r_addend"]))
+                    code[section.name] = tuple(rows)
+            elif section.name.startswith(CODE_SECTIONS):
+                code[section.name] = section.data()
+        return code
+
+
+def same_code(before: Evaluation, after: Evaluation) -> bool:
+    """Whether two compiles of a unit emit identical code, data and relocations, as a
+    change of local names or layout alone does: the same bytes, scores and behavior."""
+    return bool(not after.error and before.object and after.object
+                and _code(before.object) == _code(after.object))
+
+
 def _preserves(before: Evaluation, after: Evaluation) -> bool:
     return (not after.error and before.exact_functions() <= after.exact_functions()
             and all(name in after.fuzzy and after.fuzzy[name] >= score for name, score in before.fuzzy.items()))
@@ -820,7 +854,11 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | 
             data_layout = data_layout_improves(harvest, unit, baseline, row)
             kept = data_layout["improves"]
         evidence = None
-        if kept and not verdict.row["exact"]:
+        same = candidate is not None and not kept and same_code(baseline, row)
+        if same:
+            # A readability change: nothing compiled differs, so nothing needs the oracle.
+            kept = True
+        elif kept and not verdict.row["exact"]:
             kept, evidence = oracle.gate(harvest, unit, symbol, source, forms[name])
         verdicts[name] = {
             "error": row.error or None,
@@ -832,6 +870,7 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | 
             "object": str(row.object) if row.object else None,
             "kept": kept,
             "data_layout": data_layout,
+            "same_code": same,
             "oracle": evidence,
         }
     chosen = max(
