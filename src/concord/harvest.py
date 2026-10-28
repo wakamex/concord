@@ -56,6 +56,8 @@ class Evaluation:
     error: str = ""
     sections: list[dict] = field(default_factory=list)
     fuzzy: dict[str, float] = field(default_factory=dict)  # objdiff's score by symbol, as decomp.dev reports it
+    score_basis: str = ""
+    score_error: str = ""
 
     def verdict(self, symbol: str) -> FunctionVerdict | None:
         for section in self.sections:
@@ -178,11 +180,13 @@ class Harvest:
             )
         return evaluations
 
-    def evaluate_overlays(self, items: dict[str, tuple]) -> dict[str, Evaluation]:
+    def evaluate_overlays(self, items: dict[str, tuple], *, baseline_target_fallback: bool = False) -> dict[str, Evaluation]:
         """Compile each item, a unit source path with repository files replaced
         (path under the checkout -> new bytes), in one batch, and compare it with
         the target. An item is (unit, overlays) or (unit, overlays, flags) where
-        flags are extra compiler options for measuring, such as --param values."""
+        flags are extra compiler options for measuring, such as --param values.
+        A flag audit can fall back to its own freshly delinked baseline target
+        if a variant cannot be delinked; ordinary searches never use it."""
         out = self.root / "build" / "concord" / "overlays" / uuid.uuid4().hex
         out.mkdir(parents=True)
         files: dict[bytes, Path] = {}
@@ -196,7 +200,7 @@ class Harvest:
                     files[text].write_bytes(text)
                 mapped[path] = str(files[text])
             request_items[name] = {"unit": unit, "overlays": mapped, "flags": list(item[2]) if len(item) > 2 else []}
-        result = self._driver({"out": str(out), "items": request_items})
+        result = self._driver({"out": str(out), "items": request_items, "baseline_target_fallback": baseline_target_fallback})
         return {
             name: Evaluation(
                 name,
@@ -205,6 +209,8 @@ class Harvest:
                 row.get("error", ""),
                 row.get("sections", []),
                 row.get("fuzzy", {}),
+                row.get("score_basis", ""),
+                row.get("score_error", ""),
             )
             for name, row in result.items()
         }

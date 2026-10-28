@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import shlex
 import subprocess
 from collections import Counter
 from pathlib import Path
@@ -21,6 +22,7 @@ from concord import (
     comparison_flips,
     destructors,
     enumswitch,
+    flag_audit,
     frames,
     initialization,
     inline_budget,
@@ -187,6 +189,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_scores.add_argument("--ref", help="use the evidence committed at this git revision instead of the checkout's")
     p_scores.add_argument("--save", type=Path, help="write the snapshot to this JSON file")
     p_scores.add_argument("--against", type=Path, help="compare with a snapshot saved earlier")
+
+    p_flags = sub.add_parser("flag-audit", help="measure flag variations on unchanged units")
+    p_flags.add_argument("--harvest", type=Path, required=True, help="Harvest checkout after hv match")
+    p_flags.add_argument("--unit", action="append", required=True, help="source path under src/ (repeatable)")
+    p_flags.add_argument("--variant", action="append", required=True, metavar="NAME=FLAGS", help="named extra flags (repeatable)")
+    p_flags.add_argument("--save", type=Path, required=True, help="write scores and exact-function changes as JSON")
 
     p_audit = sub.add_parser("symbols-check", help="audit weak symbol names using emitted copies and target return-value evidence")
     p_audit.add_argument('--harvest', type=Path, required=True)
@@ -471,6 +479,28 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "seed":
         return _seed(args)
+    if args.command == "flag-audit":
+        variants = {}
+        for specification in args.variant:
+            name, separator, flags = specification.partition("=")
+            if not separator or not name or name == "baseline" or name in variants:
+                parser.error("each --variant needs a unique NAME=FLAGS, with baseline reserved")
+            variants[name] = tuple(shlex.split(flags))
+        report = flag_audit.audit(Harvest(args.harvest), args.unit, variants)
+        args.save.write_text(json.dumps(report, indent=2) + "\n")
+        failed = False
+        for unit in report["units"]:
+            for row in unit["variants"]:
+                if "error" in row:
+                    print(f"{unit['unit']} {row['name']}: {row['error']}")
+                    failed = True
+                else:
+                    print(f"{unit['unit']} {row['name']}: {row['exact']} exact, "
+                          f"{len(row['lost_exact'])} lost, {len(row['gained_exact'])} gained")
+                    if not row["scores"]:
+                        print(f"{unit['unit']} {row['name']}: scores unavailable")
+                        failed = True
+        return int(failed)
     if args.command == "diff":
         return _diff(parser, args)
     if args.command == "scratch-history":

@@ -20,8 +20,8 @@ shared by many units, for instance):
      "items": {"name": {"unit": "ox/gui/X.cpp", "overlays": {"src/ox/gui/Y.h": "/abs/dir/y.h"}}, ...}}
 
 With "debug": true, the items compile with -g added and are not compared: each
-name maps to {"object": path} or {"error": ...}. GCC 4.4 emits the same code with
-and without -g, so a debug object's line tables locate the code of a normal compile.
+name maps to {"object": path} or {"error": ...}. Debug line tables locate a
+normal compile only when their executable code corresponds.
 
 Either way every compile runs in the pinned toolchain at the unit's own path, in
 one container the driver keeps and in parallel lanes, and stdout gets one JSON object mapping each name to
@@ -82,13 +82,15 @@ def _compare(job: tuple[str, str, str]) -> dict:
     if project is not None:
         try:
             sections, symbols_ = delink.delink_unit(target, elf, out, known_list, extents_by_address)
-        except ValueError:
-            # a candidate whose sections the matcher placed outside the target cannot be delinked;
-            # it gets no objdiff scores, which ranks it last and rejects it, rather than ending the batch
+        except ValueError as error:
+            # Ordinary searches reject candidates that cannot be delinked. An audit
+            # may explicitly score them against the freshly delinked baseline target.
+            out["score_error"] = str(error)
             return out
         destination = project / f"{name}.target.o"
         delink.write_object(destination, sections, symbols_)
         out["target"] = str(destination)
+        out["score_basis"] = "candidate-target"
     return out
 
 
@@ -245,8 +247,8 @@ class Checkout:
         key = debug, flags
         if key not in self._compilers:
             for flag in flags:
-                if not re.fullmatch(r"(-f|-m|-O|-W|--?param)[^\s]*|[a-zA-Z0-9_-]+=[0-9]+", flag):
-                    raise ValueError(f"extra flags must be -f, -m, -O, -W or --param options: {flag}")
+                if not re.fullmatch(r"(-f|-m|-O|-W|--?param)[^\s]*|-g[0-3]?|-U_FORTIFY_SOURCE|[a-zA-Z0-9_-]+=[0-9]+", flag):
+                    raise ValueError(f"unsupported extra compiler option: {flag}")
             plain = self._compilers[False, ()]
             variant = copy.copy(plain)
             variant.flags = {**plain.flags, "flags": [*plain.flags["flags"], *(["-g"] if debug else []), *flags]}
@@ -314,6 +316,18 @@ def handle(request: dict, checkout: Checkout) -> object:
             compared = dict(zip([job[0] for job in distinct], pool.map(_compare, distinct), strict=True))
     else:
         compared = {job[0]: _compare(job) for job in distinct}
+    if request.get("baseline_target_fallback"):
+        baseline_targets = {}
+        for name, (_, unit) in jobs.items():
+            item = items[name]
+            result_ = compared[same[name]]
+            if not item["overlays"] and not item.get("flags") and "target" in result_:
+                baseline_targets[unit] = result_["target"]
+        for name, row in compared.items():
+            unit = jobs[name][1]
+            if "target" not in row and unit in baseline_targets:
+                row["target"] = baseline_targets[unit]
+                row["score_basis"] = "baseline-target"
     scores = fuzzy_scores(project, compared) if scoring else {}
     for name, (obj, _) in jobs.items():
         result[name] = {key: value for key, value in compared[same[name]].items() if key != "target"} | {"object": obj}
