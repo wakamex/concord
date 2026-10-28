@@ -8,10 +8,16 @@ oracle's agreement like `permute --apply-improved`, and the unit is no worse.
 A recovered header can also have an incorrect enum value or function body. Its
 registered correction is measured in every dependent unit and must improve the
 named function without lowering another score; the whole-build gate follows.
+
+Whole-unit source candidates may reorder complete function definitions or edit
+file-scope wide-string pointer tables. A static-table candidate must improve
+inferred object placement, preserve the unit's function scores, and pass the
+oracle when the named function remains inexact.
 """
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
 
@@ -488,45 +494,94 @@ def candidates(source: bytes, symbol: str, edits: list[Edit | BodyEdit]) -> dict
     return found
 
 
-def _function_order_candidate(source: bytes, candidate: bytes) -> bool:
-    """Accept a source-level candidate only when it permutes same-scope functions."""
-    def spans(text: bytes) -> list[tuple[int, int, tuple[bytes, ...]]]:
-        root = Parser(CPP).parse(text).root_node
-        found = []
-        for node in _descendants(root, "function_definition"):
-            parent = node.parent
-            nested = False
-            namespaces = []
-            while parent is not None:
-                if parent.type in {"class_specifier", "function_definition", "lambda_expression"}:
-                    nested = True
-                    break
-                if parent.type == "namespace_definition":
-                    name = parent.child_by_field_name("name")
-                    namespaces.append(text[name.start_byte:name.end_byte] if name else b"")
-                parent = parent.parent
-            if not nested:
-                declarator = node.child_by_field_name("declarator")
-                name = text[declarator.start_byte:declarator.end_byte].split(b"(", 1)[0] if declarator else b""
-                owner = name.rpartition(b"::")[0]
-                found.append((node.start_byte, node.end_byte, (*reversed(namespaces), owner)))
-        return sorted(found, key=lambda item: item[0])
+def _source_candidate(source: bytes, candidate: bytes) -> bool:
+    """Allow definition reordering and edits to file-scope wide-string pointer tables."""
+    def scope(node, text: bytes) -> tuple[bytes, ...] | None:
+        parent = node.parent
+        namespaces = []
+        while parent is not None:
+            if parent.type in {"class_specifier", "function_definition", "lambda_expression"}:
+                return None
+            if parent.type == "namespace_definition":
+                name = parent.child_by_field_name("name")
+                namespaces.append(text[name.start_byte:name.end_byte] if name else b"")
+            parent = parent.parent
+        return tuple(reversed(namespaces))
 
-    original_spans, candidate_spans = spans(source), spans(candidate)
-    if not original_spans or Counter((scope, source[a:b]) for a, b, scope in original_spans) != Counter(
-        (scope, candidate[a:b]) for a, b, scope in candidate_spans
+    def definitions(text: bytes):
+        root = Parser(CPP).parse(text).root_node
+        functions = []
+        tables = {}
+        for node in _descendants(root, "function_definition"):
+            namespaces = scope(node, text)
+            if namespaces is None:
+                continue
+            declarator = node.child_by_field_name("declarator")
+            name = text[declarator.start_byte:declarator.end_byte].split(b"(", 1)[0] if declarator else b""
+            functions.append((node.start_byte, node.end_byte, (*namespaces, name.rpartition(b"::")[0])))
+
+        for node in _descendants(root, "declaration"):
+            namespaces = scope(node, text)
+            if namespaces is None:
+                continue
+            raw = text[node.start_byte:node.end_byte]
+            if not re.match(rb"static\s+const\s+wchar_t\s*\*\s*const\s+", raw):
+                continue
+            type_node = node.child_by_field_name("type")
+            if type_node is None or text[type_node.start_byte:type_node.end_byte] != b"wchar_t":
+                continue
+            declarators = [child for child in node.named_children if child.type == "init_declarator"]
+            if len(declarators) != 1:
+                continue
+            declarator = declarators[0].child_by_field_name("declarator")
+            initializer = next(
+                (child for child in declarators[0].named_children if child.type == "initializer_list"), None
+            )
+            if declarator is None or initializer is None:
+                continue
+            name = re.search(rb"([A-Za-z_]\w*)\s*\[\s*\]\s*$", text[declarator.start_byte:declarator.end_byte])
+            entries = initializer.named_children
+            if (name is None or not entries
+                    or any(entry.type != "string_literal" or not text[entry.start_byte:entry.end_byte].startswith(b"L\"")
+                           for entry in entries)):
+                continue
+            key = (namespaces, name.group(1))
+            if key in tables:
+                return functions, None
+            signature = (
+                raw[:initializer.start_byte - node.start_byte]
+                + raw[initializer.end_byte - node.start_byte:]
+            )
+            tables[key] = (node.start_byte, node.end_byte, signature)
+        return functions, tables
+
+    original_functions, original_tables = definitions(source)
+    candidate_functions, candidate_tables = definitions(candidate)
+    if (not original_functions and not original_tables) or original_tables is None or candidate_tables is None:
+        return False
+    if Counter((scope, source[start:end]) for start, end, scope in original_functions) != Counter(
+        (scope, candidate[start:end]) for start, end, scope in candidate_functions
     ):
+        return False
+    if (original_tables.keys() != candidate_tables.keys()
+            or any(original_tables[key][2] != candidate_tables[key][2] for key in original_tables)):
         return False
 
     def outside(text: bytes, ranges: list[tuple[int, int, tuple[bytes, ...]]]) -> bytes:
         previous, chunks = 0, []
-        for start, end, _ in ranges:
+        for start, end, _ in sorted(ranges, key=lambda item: item[0]):
             chunks.append(text[previous:start])
             previous = end
         chunks.append(text[previous:])
         return b"".join(chunks)
 
-    return outside(source, original_spans) == outside(candidate, candidate_spans)
+    original_ranges = original_functions + [
+        (start, end, key[0]) for key, (start, end, _) in original_tables.items()
+    ]
+    candidate_ranges = candidate_functions + [
+        (start, end, key[0]) for key, (start, end, _) in candidate_tables.items()
+    ]
+    return outside(source, original_ranges) == outside(candidate, candidate_ranges)
 
 
 def keep(before: Evaluation, after: Evaluation, symbol: str) -> bool:
@@ -661,8 +716,8 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | 
     path = harvest.root / "src" / unit
     source = path.read_bytes()
     if source_candidate is not None:
-        if not _function_order_candidate(source, source_candidate):
-            raise ValueError("a source candidate may only reorder complete function definitions")
+        if not _source_candidate(source, source_candidate):
+            raise ValueError("a source candidate may only reorder complete function definitions or edit file-scope wide-string pointer tables")
         forms = {"causal-source-candidate": source_candidate} if source != source_candidate else {}
     elif candidate is None:
         forms = candidates(source, symbol, AUTHORED.get((unit, symbol), []))

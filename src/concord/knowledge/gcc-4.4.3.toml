@@ -670,6 +670,17 @@ evidence = [
 ]
 
 [[idiom]]
+id = "highscore-static-table-layout"
+cause = "reference"
+status = "hypothesis"
+symptom = "three status tables have correct string contents but their read-only data addresses are displaced by the type-name table"
+fix = "Use concord statics to read the target object order and pointer-run sizes, then measure source definition-order candidates through concord author. At CHighscoreScreen, the target type-name table has two pointers, `highscores:players` and `highscores:peers`. Shrinking it and moving setVisible before parseHighscoreString places the three status tables at their target offsets, but leaves the type table 16 bytes early and the oracle shows the candidate farther from the original. No gate-passing source form is established."
+limits = "At Harvest 0025594, two authored overlays were measured. Both leave setVisible at 89.835526. The size-only candidate has no static layout gain. The definition-order candidate improves three table placements but leaves HIGHSCORE_TYPE_NAMES at .rodata+0x2b0 instead of +0x2c0. Its setVisible candidate differs on two of 5,000 oracle cases, with zero baseline differences from the original and two candidate differences. Stop after these two failed interventions."
+evidence = [
+  { function = "harvest::gui::CHighscoreScreen static tables", note = "concord statics maps GAME_MODE_NAMES to .rodata+0x200/40, HIGHSCORE_PLANET_NAMES to +0x240/40, HIGHSCORE_SORT_MODES to +0x280/48 and HIGHSCORE_TYPE_NAMES to +0x2c0/16. The baseline emits the type table at +0x200/32, then the other tables at +0x220, +0x260 and +0x2a0. The two-entry type table preserves only the players and peers strings. Moving setVisible before parseHighscoreString and shrinking that table places the first three at their target offsets, with HIGHSCORE_TYPE_NAMES at +0x2b0/16. The author oracle agrees on 4,998 cases and differs on 2; at seed 3690, call 22's key argument changes from local data to 0x0. Original comparison is 0 differing cases before and 2 after, so the candidate is rejected." },
+]
+
+[[idiom]]
 id = "misplaced-image-constructor-reference"
 cause = "immediate-or-reloc"
 status = "confirmed"

@@ -397,6 +397,39 @@ class Keep(unittest.TestCase):
             self.assertTrue(result['candidates']['causal-source-candidate']['data_layout']['improves'])
             self.assertEqual(path.read_bytes(), candidate)
 
+    def test_unit_source_candidate_accepts_static_table_changes_through_the_layout_gate(self):
+        from unittest.mock import Mock
+
+        source = (
+            b'''static const wchar_t* const FIRST[] = { L"one", L"two", L"three" };\n'''
+            b'''static const wchar_t* const SECOND[] = { L"second" };\n'''
+            + SOURCE
+        )
+        candidate = (
+            b'''static const wchar_t* const SECOND[] = { L"second" };\n'''
+            b'''static const wchar_t* const FIRST[] = { L"one", L"two" };\n'''
+            + reordered_functions(SOURCE)
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            path = root / 'src/u.cpp'
+            path.write_bytes(source)
+            harvest = Mock(root=root)
+            harvest.source.return_value = 'u.cpp'
+            harvest.evaluate.return_value = {
+                'baseline': evaluation({SYMBOL: False, 'other': True}, {SYMBOL: 90, 'other': 100}),
+                'causal-source-candidate': evaluation({SYMBOL: False, 'other': True}, {SYMBOL: 90, 'other': 100}),
+            }
+            with patch('concord.authored.data_layout_improves', return_value={'improves': True, 'objects': ['FIRST']}), \
+                    patch('concord.authored.oracle.gate', return_value=(True, {'verdict': 'same'})) as gate:
+                result = authored.apply(harvest, 'u.cpp', SYMBOL, True, source_candidate=candidate)
+
+            self.assertTrue(result['applied'])
+            self.assertEqual(result['candidates']['causal-source-candidate']['data_layout']['objects'], ['FIRST'])
+            gate.assert_called_once()
+            self.assertEqual(path.read_bytes(), candidate)
+
     def test_unit_source_candidate_rejects_a_worse_function_in_the_unit(self):
         from unittest.mock import Mock
 

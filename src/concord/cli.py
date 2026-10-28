@@ -305,7 +305,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_author.add_argument("--apply", action="store_true", help="write an accepted candidate to its source file")
     p_author.add_argument("--variant", help="select a registered authored header spelling")
     p_author.add_argument("--candidate", type=Path, help="authored unit source changing only this function body")
-    p_author.add_argument("--source-candidate", type=Path, help="authored unit source candidate that reorders complete function definitions")
+    p_author.add_argument("--source-candidate", type=Path,
+                          help="authored source candidate with reordered functions or file-scope wide-string pointer tables")
     p_author.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_enum_switch = sub.add_parser(
