@@ -389,6 +389,36 @@ const char* example = "CG_PROGRAM = 4125";
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class HeaderFunction(unittest.TestCase):
+    def test_header_spelling_edits_an_inline_overload_and_scores_its_caller(self):
+        source = b'int Board::pick(int a) { return a; }\nint Board::skip() { return 0; }\n'
+        edit = authored.HeaderFunctionEdit(
+            'inline', 'board.h', (authored.Replacement(b'return 0;', b'return 1;', 1),),
+            declarator=b'Board::skip()',
+        )
+        result = authored.header_function_candidate(source, SYMBOL, edit)
+        self.assertEqual(result, source.replace(b'return 0;', b'return 1;'))
+        self.assertIsNone(authored.header_function_candidate(source + source, SYMBOL, edit))
+        with patch.dict(authored.HEADER_FUNCTION_VARIANTS, {('u.cpp', SYMBOL): [edit]}):
+            self.assertEqual(authored.header_edits('u.cpp', SYMBOL), [edit])
+            self.assertEqual(authored.header_edits('u.cpp', SYMBOL, 'inline'), [edit])
+            self.assertEqual(authored.header_edits('u.cpp', SYMBOL, 'missing'), [])
+
+    def test_author_requires_an_explicit_spelling_and_uses_the_selected_gate(self):
+        from unittest.mock import Mock
+
+        checkout = Mock()
+        checkout.source.return_value = 'u.cpp'
+        edits = [authored.HeaderFunctionEdit(name, 'board.h', ()) for name in ('first', 'second')]
+        with patch.dict(authored.HEADER_FUNCTION_VARIANTS, {('u.cpp', SYMBOL): edits}):
+            with self.assertRaisesRegex(ValueError, 'select one'):
+                authored.apply(checkout, 'u.cpp', SYMBOL, write=True)
+            with self.assertRaisesRegex(ValueError, 'no authored header variant'):
+                authored.apply(checkout, 'u.cpp', SYMBOL, write=True, variant='missing')
+            with patch.object(authored, 'apply_header_function', return_value={'applied': False}) as gate:
+                self.assertEqual(authored.apply(checkout, 'u.cpp', SYMBOL, write=True, variant='second'),
+                                 {'applied': False})
+                gate.assert_called_once_with(checkout, 'u.cpp', SYMBOL, edits[1], True)
+
     def test_replacements_are_atomic_and_confined_to_the_named_function(self):
         source = b'''void Board::pick(int a)
 {

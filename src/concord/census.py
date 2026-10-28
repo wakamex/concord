@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -168,13 +169,13 @@ def rewrites(source: bytes, line: int) -> list:
             if int(re.match(r'line (\d+):', rewrite.description)[1]) == line]
 
 
-def authored_rewrite(source: bytes, header: str, unit: str, symbol: str):
+def authored_rewrite(source: bytes, header: str, unit: str, symbol: str, edit=None):
     """Find a registered header correction and require its anchor and path."""
     from concord.authored import HEADER_FUNCTION_AUTHORED, header_function_candidate
     from concord.model import Cause
     from concord.transforms import Rewrite
 
-    edit = HEADER_FUNCTION_AUTHORED.get((unit, symbol))
+    edit = edit or HEADER_FUNCTION_AUTHORED.get((unit, symbol))
     if edit is None or f'src/{edit.header}' != header:
         raise ValueError(f'no authored correction for {unit} {symbol} in {header}')
     candidate = header_function_candidate(source, symbol, edit)
@@ -194,12 +195,21 @@ def delta(before, after) -> dict:
 
 
 def counterfactual(harvest, header: str, line: int | None, save: Path, units: list[str] | None = None,
-                   authored: tuple[str, str] | None = None) -> dict:
+                   authored: tuple[str, str] | None = None, variant: str | None = None) -> dict:
     """Measure line rewrites or a registered correction without writing the header."""
     source = (harvest.root / header).read_bytes()
+    started = time.monotonic()
+    if variant is not None and authored is None:
+        raise ValueError('--variant requires --authored')
     if authored is not None:
+        from concord.authored import header_edits
+
         unit, symbol = authored
-        candidates = [authored_rewrite(source, header, harvest.source(unit), symbol)]
+        unit = harvest.source(unit)
+        edits = header_edits(unit, symbol, variant)
+        if not edits:
+            raise ValueError(f'no authored header spellings for {unit} {symbol}')
+        candidates = [authored_rewrite(source, header, unit, symbol, edit) for edit in edits]
     elif line is not None:
         candidates = rewrites(source, line)
     else:
@@ -218,7 +228,7 @@ def counterfactual(harvest, header: str, line: int | None, save: Path, units: li
                      'sha256': hashlib.sha256(rewrite.source).hexdigest(), 'units': []})
     result = {'schema': 'concord.causal-trial.v1', 'header': header, 'line': line,
               'header_sha256': hashlib.sha256(source).hexdigest(), 'dependents': dependents,
-              'selected': selected, 'candidates': rows,
+              'selected': selected, 'candidates': rows, 'jobs': max(1, int(os.environ.get('CONCORD_JOBS', '8'))),
               'config': {name: hashlib.sha256((harvest.root / 'config' / harvest.build / name).read_bytes()).hexdigest()
                          for name in ('flags.json', 'units.toml', 'symbols.tsv')}}
     if authored is not None:
@@ -247,6 +257,7 @@ def counterfactual(harvest, header: str, line: int | None, save: Path, units: li
             row['units'].append(measured)
         if hashlib.sha256(unit_path.read_bytes()).hexdigest() != unit_hash:
             raise RuntimeError(f'unit changed during counterfactual measurement: {unit}')
+        result['elapsed_seconds'] = time.monotonic() - started
         save.write_text(json.dumps(result, indent=2) + '\n')
     if (harvest.root / header).read_bytes() != source:
         raise RuntimeError('header changed during counterfactual measurement')

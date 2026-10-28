@@ -50,7 +50,11 @@ class CliTest(unittest.TestCase):
         with mock.patch('concord.cli.Harvest') as harvest, mock.patch('concord.cli.census.counterfactual', return_value={'candidates': []}) as run:
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(main(['causal-trial', '--harvest', '/root', '--header', 'src/h.h', '--authored', 'u.cpp', 'symbol', '--save', '/tmp/trial.json']), 0)
-            run.assert_called_once_with(harvest.return_value, 'src/h.h', None, Path('/tmp/trial.json'), None, authored=('u.cpp', 'symbol'))
+            run.assert_called_once_with(harvest.return_value, 'src/h.h', None, Path('/tmp/trial.json'), None, authored=('u.cpp', 'symbol'), variant=None)
+            run.reset_mock()
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['causal-trial', '--harvest', '/root', '--header', 'src/h.h', '--authored', 'u.cpp', 'symbol', '--variant', 'pointer-source', '--save', '/tmp/trial.json']), 0)
+            self.assertEqual(run.call_args.kwargs['variant'], 'pointer-source')
 
     def test_causal_reuses_dumps_and_saves_structured_findings(self):
         import json

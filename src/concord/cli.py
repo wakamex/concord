@@ -301,6 +301,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_author.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_author.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
     p_author.add_argument("--apply", action="store_true", help="write an accepted candidate to its source file")
+    p_author.add_argument("--variant", help="select a registered authored header spelling")
     p_author.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_place = sub.add_parser("place", help="learn references and place called templates without re-seeding source")
@@ -386,6 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
     trial_source = p_trial.add_mutually_exclusive_group(required=True)
     trial_source.add_argument("--line", type=int, help="line with comparison or loop-form rewrites")
     trial_source.add_argument("--authored", nargs=2, metavar=("UNIT", "SYMBOL"), help="registered authored header-function correction")
+    p_trial.add_argument("--variant", help="measure only this authored header spelling")
     p_trial.add_argument("--unit", action="append", help="measure these including units first (default: every including unit)")
     p_trial.add_argument("--save", type=Path, required=True)
 
@@ -590,7 +592,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "causal-trial":
         report = census.counterfactual(Harvest(args.harvest), args.header, args.line, args.save, args.unit,
-                                       authored=tuple(args.authored) if args.authored else None)
+                                       authored=tuple(args.authored) if args.authored else None, variant=args.variant)
         for row in report['candidates']:
             gained = sum(len(u.get('gained_exact', [])) for u in row['units'])
             lost = sum(len(u.get('lost_exact', [])) for u in row['units'])
@@ -655,7 +657,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "author":
         harvest = Harvest(args.harvest)
         unit = harvest.source(args.unit)
-        report = authored.apply(harvest, unit, args.function, write=args.apply)
+        report = authored.apply(harvest, unit, args.function, write=args.apply, variant=args.variant)
         patch = (
             results.save_patch(args.results, report.get("path", unit), report["original"], report["source"]) if report["applied"] else None
         )

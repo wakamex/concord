@@ -33,7 +33,8 @@ class Census(unittest.TestCase):
     def test_authored_trial_reports_each_dependent_without_writing_the_header(self):
         symbol = '_ZN5Board4pickEi'
         units = ['u.cpp', 'v.cpp']
-        edit = authored.HeaderFunctionEdit('edit', 'board.h', (authored.Replacement(b'return 0;', b'return 1;', 1),))
+        edits = [authored.HeaderFunctionEdit(name, 'board.h', (authored.Replacement(b'return 0;', b'return 1;', 1),))
+                 for name in ('first', 'second')]
 
         class Checkout:
             build = 'build'
@@ -79,14 +80,24 @@ class Census(unittest.TestCase):
                 (config / name).write_text(name)
             checkout = Checkout(root)
             save = root / 'trial.json'
-            with patch.dict(authored.HEADER_FUNCTION_AUTHORED, {(units[0], symbol): edit}):
+            with patch.dict(authored.HEADER_FUNCTION_VARIANTS, {(units[0], symbol): edits}):
                 report = counterfactual(checkout, 'src/board.h', None, save, authored=(units[0], symbol))
             self.assertEqual(header.read_bytes(), source)
             self.assertEqual(report['selected'], units)
             self.assertEqual(len(checkout.calls), 2)
+            self.assertEqual([row['description'] for row in report['candidates']], ['first', 'second'])
             self.assertEqual([row['unit'] for row in report['candidates'][0]['units']], units)
             self.assertTrue(all(row['lost_exact'] == ['f'] for row in report['candidates'][0]['units']))
             self.assertEqual(json.loads(save.read_text()), report)
+            with patch.dict(authored.HEADER_FUNCTION_VARIANTS, {(units[0], symbol): edits}):
+                filtered = counterfactual(checkout, 'src/board.h', None, save,
+                                          authored=(units[0], symbol), variant='second')
+                self.assertEqual([row['description'] for row in filtered['candidates']], ['second'])
+                with self.assertRaisesRegex(ValueError, 'no authored header spellings'):
+                    counterfactual(checkout, 'src/board.h', None, save,
+                                   authored=(units[0], symbol), variant='missing')
+            with self.assertRaisesRegex(ValueError, 'requires --authored'):
+                counterfactual(checkout, 'src/board.h', 1, save, variant='second')
 
     def test_authored_header_trial_uses_the_registered_edit_and_validates_its_path(self):
         unit, symbol = 'u.cpp', '_ZN5Board4pickEi'

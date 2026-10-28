@@ -61,11 +61,16 @@ class BodyEdit:
 
 @dataclass(frozen=True)
 class HeaderFunctionEdit:
-    """An atomic correction to a function defined in a shared header."""
+    """An atomic correction to a function defined in a shared header.
+
+    A complete declarator anchors an inline overload when symbol names a
+    caller to score rather than the function being rewritten.
+    """
 
     name: str
     header: str
     replacements: tuple[Replacement, ...]
+    declarator: bytes | None = None
 
 
 AUTHORED: dict[tuple[str, str], list[Edit | BodyEdit]] = {
@@ -393,6 +398,19 @@ HEADER_FUNCTION_AUTHORED = {
     for name in ("CGUIClickArea", "CGUIEnvironment", "CGUIModalScreen", "CGUITabControl", "CGUIWindow")
 }
 
+# Several spellings of one header operation can be screened with causal-trial.
+# author requires an explicit name before measuring and writing a family member.
+HEADER_FUNCTION_VARIANTS: dict[tuple[str, str], list[HeaderFunctionEdit]] = {}
+
+
+def header_edits(unit: str, symbol: str, variant: str | None = None) -> list[HeaderFunctionEdit]:
+    from concord.cstring_spellings import registered
+
+    edits = HEADER_FUNCTION_VARIANTS.get((unit, symbol), registered().get((unit, symbol), []))
+    if edit := HEADER_FUNCTION_AUTHORED.get((unit, symbol)):
+        edits = [edit, *edits]
+    return [edit for edit in edits if variant is None or edit.name == variant]
+
 
 def constant_candidate(source: bytes, edit: ConstantEdit) -> bytes | None:
     """Replace exactly one matching enumerator's literal, leaving all other text."""
@@ -409,7 +427,14 @@ def constant_candidate(source: bytes, edit: ConstantEdit) -> bytes | None:
 
 def header_function_candidate(source: bytes, symbol: str, edit: HeaderFunctionEdit) -> bytes | None:
     """Apply every replacement inside the named function or make no change."""
-    scope = find_function(source, symbol)
+    if edit.declarator is None:
+        scope = find_function(source, symbol)
+    else:
+        scopes = [node for node in _descendants(Parser(CPP).parse(source).root_node, "function_definition")
+                  if node.child_by_field_name("declarator").text == edit.declarator]
+        if len(scopes) != 1:
+            return None
+        scope = scopes[0]
     body = source[scope.start_byte:scope.end_byte]
     for replacement in edit.replacements:
         if body.count(replacement.old) != replacement.count:
@@ -562,15 +587,19 @@ def apply_header_function(harvest: Harvest, unit: str, symbol: str, edit: Header
     }
 
 
-def apply(harvest: Harvest, unit: str, symbol: str, write: bool) -> dict:
+def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | None = None) -> dict:
     """Measure registered authored candidates and optionally write an accepted
     one. A function-body candidate is kept when the function is exact, or
     scores higher with the oracle's agreement, and no other function of the
     unit is worse; an exact candidate always wins, then the one applying more
     of the function's diagnosed edits, then the higher score."""
     unit = harvest.source(unit)
-    if edit := HEADER_FUNCTION_AUTHORED.get((unit, symbol)):
-        return apply_header_function(harvest, unit, symbol, edit, write)
+    if edits := header_edits(unit, symbol, variant):
+        if len(edits) != 1:
+            raise ValueError("select one authored header spelling with --variant")
+        return apply_header_function(harvest, unit, symbol, edits[0], write)
+    if variant is not None:
+        raise ValueError(f"no authored header variant {variant} for {unit} {symbol}")
     if edit := HEADER_AUTHORED.get((unit, symbol)):
         return apply_header(harvest, unit, symbol, edit, write)
     path = harvest.root / "src" / unit
