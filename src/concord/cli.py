@@ -32,6 +32,7 @@ from concord import (
     results,
     scores,
     scratch,
+    statics,
     symbol_audit,
     symbol_table,
 )
@@ -304,6 +305,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_author.add_argument("--apply", action="store_true", help="write an accepted candidate to its source file")
     p_author.add_argument("--variant", help="select a registered authored header spelling")
     p_author.add_argument("--candidate", type=Path, help="authored unit source changing only this function body")
+    p_author.add_argument("--source-candidate", type=Path, help="authored unit source candidate that reorders complete function definitions")
     p_author.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_enum_switch = sub.add_parser(
@@ -367,6 +369,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_cc.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_cc.add_argument("units", nargs="*", help="units to check (default: every unit hv match built)")
     p_cc.add_argument("--save", type=Path, help="write the ranked findings as JSON")
+
+    p_statics = sub.add_parser(
+        "statics", help="map static objects to target sections from aligned data references"
+    )
+    p_statics.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_statics.add_argument("units", nargs="+", help="units to analyze")
+    p_statics.add_argument("--save", type=Path, help="write object mappings and layout proposals as JSON")
 
     p_destructors = sub.add_parser("destructors", help="compare destructor definition forms as read-only header overlays")
     p_destructors.add_argument("--harvest", type=Path, required=True)
@@ -603,6 +612,12 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(calls_constants.show(result)))
         print(f"{result['compared']} inexact functions compared, {len(result['functions'])} differ, {len(result['skipped'])} skipped")
         return 0
+    if args.command == "statics":
+        result = statics.gather(Harvest(args.harvest), args.units)
+        if args.save:
+            args.save.write_text(json.dumps(result, indent=2) + "\n")
+        print("\n".join(statics.show(result)))
+        return 0
     if args.command == "causal-trial":
         report = census.counterfactual(Harvest(args.harvest), args.header, args.line, args.save, args.unit,
                                        authored=tuple(args.authored) if args.authored else None, variant=args.variant)
@@ -677,7 +692,8 @@ def main(argv: list[str] | None = None) -> int:
         harvest = Harvest(args.harvest)
         unit = harvest.source(args.unit)
         report = authored.apply(harvest, unit, args.function, write=args.apply, variant=args.variant,
-                                candidate=args.candidate.read_bytes() if args.candidate else None)
+                                candidate=args.candidate.read_bytes() if args.candidate else None,
+                                source_candidate=args.source_candidate.read_bytes() if args.source_candidate else None)
         patch = (
             results.save_patch(args.results, report.get("path", unit), report["original"], report["source"]) if report["applied"] else None
         )

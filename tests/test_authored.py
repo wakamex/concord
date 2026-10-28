@@ -10,7 +10,7 @@ from concord import authored
 from concord.authored import Edit, candidates, keep
 from concord.enumswitch import source_candidates
 from concord.harvest import Evaluation
-from concord.transforms import demangle
+from concord.transforms import demangle, find_function
 
 SOURCE = b"""int Board::pick(int a)
 {
@@ -26,6 +26,14 @@ int Board::skip()
 }
 """
 SYMBOL = "_ZN5Board4pickEi"  # Board::pick(int)
+
+
+def reordered_functions(source: bytes) -> bytes:
+    first = find_function(source, SYMBOL)
+    second = find_function(source, "_ZN5Board4skipEv")
+    return (source[:first.start_byte] + source[second.start_byte:second.end_byte]
+            + source[first.end_byte:second.start_byte] + source[first.start_byte:first.end_byte]
+            + source[second.end_byte:])
 
 
 def evaluation(exact: dict[str, bool], fuzzy: dict[str, float] | None = None, error: str = "") -> Evaluation:
@@ -363,6 +371,53 @@ class Keep(unittest.TestCase):
                 result = authored.apply(harvest, 'u.cpp', SYMBOL, True, candidate=candidate)
                 self.assertTrue(result['applied'])
                 self.assertEqual(path.read_bytes(), candidate)
+
+    def test_unit_source_candidate_uses_the_function_and_unit_score_gates(self):
+        from unittest.mock import Mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            path = root / 'src/u.cpp'
+            path.write_bytes(SOURCE)
+            harvest = Mock(root=root)
+            harvest.source.return_value = 'u.cpp'
+            candidate = reordered_functions(SOURCE)
+            with self.assertRaisesRegex(ValueError, 'reorder complete function definitions'):
+                authored.apply(harvest, 'u.cpp', SYMBOL, True,
+                               source_candidate=SOURCE.replace(b'x.flagA = false;', b'x.flagA = true;', 1))
+            harvest.evaluate.return_value = {
+                'baseline': evaluation({SYMBOL: False, 'other': True}, {SYMBOL: 90, 'other': 100}),
+                'causal-source-candidate': evaluation({SYMBOL: False, 'other': True}, {SYMBOL: 90, 'other': 100}),
+            }
+            with patch('concord.authored.data_layout_improves', return_value={'improves': True, 'objects': ['table']}), \
+                    patch('concord.authored.oracle.gate', return_value=(True, {'verdict': 'same'})):
+                result = authored.apply(harvest, 'u.cpp', SYMBOL, True, source_candidate=candidate)
+            self.assertTrue(result['applied'])
+            self.assertTrue(result['candidates']['causal-source-candidate']['data_layout']['improves'])
+            self.assertEqual(path.read_bytes(), candidate)
+
+    def test_unit_source_candidate_rejects_a_worse_function_in_the_unit(self):
+        from unittest.mock import Mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            path = root / 'src/u.cpp'
+            path.write_bytes(SOURCE)
+            harvest = Mock(root=root)
+            harvest.source.return_value = 'u.cpp'
+            candidate = reordered_functions(SOURCE)
+            harvest.evaluate.return_value = {
+                'baseline': evaluation({SYMBOL: False, 'other': True}, {SYMBOL: 90, 'other': 100}),
+                'causal-source-candidate': evaluation({SYMBOL: False, 'other': False}, {SYMBOL: 91, 'other': 99}),
+            }
+            with patch('concord.authored.data_layout_improves', return_value={'improves': True}), \
+                    patch('concord.authored.oracle.gate') as gate:
+                result = authored.apply(harvest, 'u.cpp', SYMBOL, True, source_candidate=candidate)
+            self.assertFalse(result['applied'])
+            self.assertEqual(path.read_bytes(), SOURCE)
+            gate.assert_not_called()
 
     def test_keeps_exact_with_no_function_worse(self):
         before = evaluation({SYMBOL: False, "other": True}, {SYMBOL: 90.0, "other": 100.0})

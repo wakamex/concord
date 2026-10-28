@@ -12,6 +12,7 @@ named function without lowering another score; the whole-build gate follows.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 from tree_sitter import Parser
@@ -19,6 +20,7 @@ from tree_sitter import Parser
 from concord import oracle
 from concord.harvest import Evaluation, Harvest
 from concord.search import other_scores, worse_elsewhere
+from concord.statics import data_layout_improves
 from concord.transforms import CPP, _descendants, find_function
 
 
@@ -486,6 +488,47 @@ def candidates(source: bytes, symbol: str, edits: list[Edit | BodyEdit]) -> dict
     return found
 
 
+def _function_order_candidate(source: bytes, candidate: bytes) -> bool:
+    """Accept a source-level candidate only when it permutes same-scope functions."""
+    def spans(text: bytes) -> list[tuple[int, int, tuple[bytes, ...]]]:
+        root = Parser(CPP).parse(text).root_node
+        found = []
+        for node in _descendants(root, "function_definition"):
+            parent = node.parent
+            nested = False
+            namespaces = []
+            while parent is not None:
+                if parent.type in {"class_specifier", "function_definition", "lambda_expression"}:
+                    nested = True
+                    break
+                if parent.type == "namespace_definition":
+                    name = parent.child_by_field_name("name")
+                    namespaces.append(text[name.start_byte:name.end_byte] if name else b"")
+                parent = parent.parent
+            if not nested:
+                declarator = node.child_by_field_name("declarator")
+                name = text[declarator.start_byte:declarator.end_byte].split(b"(", 1)[0] if declarator else b""
+                owner = name.rpartition(b"::")[0]
+                found.append((node.start_byte, node.end_byte, (*reversed(namespaces), owner)))
+        return sorted(found, key=lambda item: item[0])
+
+    original_spans, candidate_spans = spans(source), spans(candidate)
+    if not original_spans or Counter((scope, source[a:b]) for a, b, scope in original_spans) != Counter(
+        (scope, candidate[a:b]) for a, b, scope in candidate_spans
+    ):
+        return False
+
+    def outside(text: bytes, ranges: list[tuple[int, int, tuple[bytes, ...]]]) -> bytes:
+        previous, chunks = 0, []
+        for start, end, _ in ranges:
+            chunks.append(text[previous:start])
+            previous = end
+        chunks.append(text[previous:])
+        return b"".join(chunks)
+
+    return outside(source, original_spans) == outside(candidate, candidate_spans)
+
+
 def keep(before: Evaluation, after: Evaluation, symbol: str) -> bool:
     """Whether the authored candidate may replace the unit's source: it compiles,
     the named function is exact or scores higher than before, every previously
@@ -600,26 +643,28 @@ def apply_header_function(harvest: Harvest, unit: str, symbol: str, edit: Header
 
 
 def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | None = None,
-          candidate: bytes | None = None) -> dict:
-    """Measure registered authored candidates and optionally write an accepted
-    one. A function-body candidate is kept when the function is exact, or
-    scores higher with the oracle's agreement, and no other function of the
-    unit is worse; an exact candidate always wins, then the one applying more
-    of the function's diagnosed edits, then the higher score."""
+          candidate: bytes | None = None, source_candidate: bytes | None = None) -> dict:
+    """Measure authored candidates and optionally write an accepted one. A
+    candidate is kept when the named function is exact, or scores higher with
+    the oracle's agreement, and no other function of the unit is worse."""
     unit = harvest.source(unit)
-    if candidate is not None and variant is not None:
-        raise ValueError('a candidate and a registered variant are mutually exclusive')
-    if candidate is None and (edits := header_edits(unit, symbol, variant)):
+    if sum(value is not None for value in (candidate, source_candidate, variant)) > 1:
+        raise ValueError('choose one candidate source or a registered variant')
+    if candidate is None and source_candidate is None and (edits := header_edits(unit, symbol, variant)):
         if len(edits) != 1:
             raise ValueError("select one authored header spelling with --variant")
         return apply_header_function(harvest, unit, symbol, edits[0], write)
-    if variant is not None:
+    if variant is not None and source_candidate is None:
         raise ValueError(f"no authored header variant {variant} for {unit} {symbol}")
-    if candidate is None and (edit := HEADER_AUTHORED.get((unit, symbol))):
+    if candidate is None and source_candidate is None and (edit := HEADER_AUTHORED.get((unit, symbol))):
         return apply_header(harvest, unit, symbol, edit, write)
     path = harvest.root / "src" / unit
     source = path.read_bytes()
-    if candidate is None:
+    if source_candidate is not None:
+        if not _function_order_candidate(source, source_candidate):
+            raise ValueError("a source candidate may only reorder complete function definitions")
+        forms = {"causal-source-candidate": source_candidate} if source != source_candidate else {}
+    elif candidate is None:
         forms = candidates(source, symbol, AUTHORED.get((unit, symbol), []))
     else:
         old_scope, new_scope = find_function(source, symbol), find_function(candidate, symbol)
@@ -641,6 +686,10 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | 
             continue
         verdict = row.verdict(symbol)
         kept = keep(baseline, row, symbol)
+        data_layout = None
+        if source_candidate is not None and not kept and _preserves(baseline, row):
+            data_layout = data_layout_improves(harvest, unit, baseline, row)
+            kept = data_layout["improves"]
         evidence = None
         if kept and not verdict.row["exact"]:
             kept, evidence = oracle.gate(harvest, unit, symbol, source, forms[name])
@@ -653,6 +702,7 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | 
             "size": verdict.row.get("size") if verdict else None,
             "object": str(row.object) if row.object else None,
             "kept": kept,
+            "data_layout": data_layout,
             "oracle": evidence,
         }
     chosen = max(

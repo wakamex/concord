@@ -180,39 +180,30 @@ def _operand_sig(i, o) -> tuple:
     return ("imm",)
 
 
-def _ref_key(sym, names: dict[int, str], kind: int, addend: int, func_at: dict, object_at: dict,
+def _ref_key(sym, names: dict[int, str], kind: int, addend: int, func_at: dict,
              trailing: int = 0) -> tuple[str, int]:
-    """What a relocation points at: (canonical base, offset into it).
+    """What a relocation points at: (canonical section or function, offset).
 
-    Section symbols and local labels compare as their section plus offset, so
-    the delinked target's `.rodata.cst4+N` and our `.LCn` label at offset N are
-    the same reference; defined symbols compare the same way, so our `m_keys`
-    in `.bss` and the target's `.bss+N` agree when they land on the same slot.
-    A relocation against a defined object symbol names that object at the
-    offset within it, so GCC's jump-table load through `.rodata+N` and the
-    target's load through `Base64Alphabet2` at offset zero compare the same when
-    the object sits at N. PC-relative fields read at the instruction's end, so
-    their addend sits 4 bytes plus any trailing field below zero; absolute
-    fields read the stored value. A reference landing on a function symbol takes
-    that function's name.
+    Object symbols are resolved to their section position. That makes a
+    relocation through `m_keys+N` compare with the delinked target's
+    `.bss+M`, including references to an interior array element. Section
+    symbols and local labels likewise compare as section plus offset. A
+    reference landing on a function symbol keeps that function's name.
+    PC-relative fields read at the instruction's end, so their addend includes
+    4 bytes plus any trailing field; absolute fields read the stored value.
     """
     dest = addend + 4 + trailing if kind in (PC32, PLT32) else addend
     index = sym["st_shndx"]
     section = names.get(index, "") if isinstance(index, int) else ""
-    if sym["st_info"]["type"] == "STT_OBJECT" and sym.name:
-        return _canonical(sym.name), dest
     if isinstance(index, int):
         at = sym["st_value"] + dest
         if (function := func_at.get((index, at))) is not None:
             return function, 0
-        if (name := object_at.get((index, at))) is not None:
-            return _canonical(name), 0
         return _canonical(section), at
     return sym.name or section, dest
 
 
-def _function_refs(md, code: bytes, fields: dict[int, tuple], names: dict[int, str], func_at: dict,
-                   object_at: dict) -> FunctionRefs:
+def _function_refs(md, code: bytes, fields: dict[int, tuple], names: dict[int, str], func_at: dict) -> FunctionRefs:
     callees, constants, datarefs = [], [], []
     indirect = 0
     for i in md.disasm(code, 0):
@@ -239,7 +230,7 @@ def _function_refs(md, code: bytes, fields: dict[int, tuple], names: dict[int, s
                 if branch:
                     continue
                 if imm_hit is not None:
-                    base, dest = _ref_key(imm_hit[2], names, imm_hit[0], imm_hit[1], func_at, object_at, imm_hit[3])
+                    base, dest = _ref_key(imm_hit[2], names, imm_hit[0], imm_hit[1], func_at, imm_hit[3])
                     datarefs.append(DataRef(i.address, base, dest, i.mnemonic, text))
                     continue
                 width = i.imm_size * 8
@@ -248,7 +239,7 @@ def _function_refs(md, code: bytes, fields: dict[int, tuple], names: dict[int, s
                 constants.append(Constant(i.address, o.imm & ((1 << width) - 1) if width else o.imm, context, site, text))
             elif o.type == x86.X86_OP_MEM:
                 if disp_hit is not None:
-                    base, dest = _ref_key(disp_hit[2], names, disp_hit[0], disp_hit[1], func_at, object_at, disp_hit[3])
+                    base, dest = _ref_key(disp_hit[2], names, disp_hit[0], disp_hit[1], func_at, disp_hit[3])
                     datarefs.append(DataRef(i.address, base, dest, i.mnemonic, text, bool(o.mem.index)))
                 elif not o.mem.base and not o.mem.index and o.mem.disp:
                     datarefs.append(DataRef(i.address, "<absolute>", o.mem.disp, i.mnemonic, text))
@@ -272,11 +263,6 @@ def read_refs(path: Path, only: set[str] | None = None) -> dict[str, FunctionRef
         symbols = [s for s in symtab.iter_symbols()
                    if s["st_info"]["type"] == "STT_FUNC" and isinstance(s["st_shndx"], int) and s["st_size"]]
         func_at = {(s["st_shndx"], s["st_value"]): s.name for s in symbols}
-        object_at = {
-            (s["st_shndx"], s["st_value"]): s.name
-            for s in symtab.iter_symbols()
-            if s["st_info"]["type"] == "STT_OBJECT" and s.name and isinstance(s["st_shndx"], int)
-        }
         md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
         md.detail = True
         functions = {}
@@ -286,7 +272,7 @@ def read_refs(path: Path, only: set[str] | None = None) -> dict[str, FunctionRef
             index, start, size = sym["st_shndx"], sym["st_value"], sym["st_size"]
             code = sections[index].data()[start : start + size]
             fields = {o - start: f for o, f in rels[index].items() if start <= o < start + size}
-            functions[sym.name] = _function_refs(md, code, fields, names, func_at, object_at)
+            functions[sym.name] = _function_refs(md, code, fields, names, func_at)
         return functions
 
 

@@ -361,6 +361,17 @@ class Encode2TableReferences(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("CONCORD_HARVEST"), "needs a specified Harvest checkout")
 class HarvestGUIReferences(unittest.TestCase):
+    def test_static_object_and_section_references_compare_by_address(self):
+        root = Path(os.environ["CONCORD_HARVEST"])
+        slug = "HarvestFull__harvest__states__CMainMenuState"
+        symbol = "_ZN7harvest6states14CMainMenuState7OnEventERKN2ox5event6SEventE"
+        ours_path = root / "build/match/1.18-linux-amd64" / f"{slug}.o"
+        target_path = root / "build/objdiff/1.18-linux-amd64/target" / f"{slug}.o"
+        ours = read_refs(ours_path, {symbol})[symbol]
+        target = read_refs(target_path, {symbol})[symbol]
+        data = [row for row in compare(ours, target) if row["kind"] == "data"]
+        self.assertEqual(data, [])
+
     def test_baseline_gui_comparisons_are_not_selected_as_extras(self):
         root = Path(os.environ["CONCORD_HARVEST"])
         revision = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
