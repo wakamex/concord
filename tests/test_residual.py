@@ -56,6 +56,16 @@ class CallRows(unittest.TestCase):
                 self.assertEqual(source_pointing, expected_source_pointing)
 
 
+class Groups(unittest.TestCase):
+    def test_a_size_difference_alone_does_not_point_at_the_source(self):
+        from concord.residual import _group
+
+        self.assertEqual(_group({"size", "register-choice"}, set()), "other")
+        self.assertEqual(_group({"size", "data"}, set()), "source-pointing")
+        self.assertEqual(_group({"size"}, {"calls-constants"}), "source-pointing")
+        self.assertEqual(_group({"register-choice", "padding"}, set()), "no-source-change")
+
+
 class ProgressReconciliation(unittest.TestCase):
     def test_reconciliation_removes_exact_overlap_and_adds_missing_and_unclaimed_bytes(self):
         from concord.residual import _reconcile_progress

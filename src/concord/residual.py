@@ -31,7 +31,10 @@ NO_SOURCE_KINDS = {
     "padding",
     "inline-distribution",
 }
-SOURCE_KINDS = {"data", "calls", "size", "enum-check"}
+# A size difference alone is not one: register choice and instruction selection change
+# a function's size too, so it leaves a function unclassified unless a row or signal
+# points at the source.
+SOURCE_KINDS = {"data", "calls", "enum-check"}
 
 
 def _comparison_flip(finding) -> bool:
