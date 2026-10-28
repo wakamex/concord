@@ -9,9 +9,9 @@ BUILD = "1.18-linux-amd64"
 
 
 class CallRows(unittest.TestCase):
-    def test_call_row_kind_uses_multiset_evidence(self):
+    def test_call_rows_use_multiset_evidence(self):
         from concord.model import Cause, DiffFinding, DiffResult
-        from concord.residual import _call_row_kind, _kind_rows, _pattern_counts
+        from concord.residual import _kind_rows, _pattern_counts
 
         result = DiffResult(
             score=90.0,
@@ -19,22 +19,32 @@ class CallRows(unittest.TestCase):
             findings=[DiffFinding(Cause.INLINING, 0, "unaligned calls", 0, 2, (0, 4), (0, 4))],
         )
         cases = (
-            ([], "block-order", False),
-            ([{"kind": "call", "classification": "called-out-of-line", "inline_distribution": True}], "inline-distribution", False),
-            ([{"kind": "call", "classification": "different-callees"}], "calls", True),
-            ([{"kind": "call", "classification": "called-out-of-line", "count_difference": True}], "calls", True),
+            ([], {"block-order": 2}, False),
+            (
+                [{"kind": "call", "classification": "called-out-of-line", "inline_distribution": True}],
+                {"inline-distribution": 2},
+                False,
+            ),
+            (
+                [{"kind": "call", "classification": "different-callees", "ours": [{}], "target": [{}]}],
+                {"calls": 2},
+                True,
+            ),
+            (
+                [{"kind": "call", "classification": "called-out-of-line", "count_difference": True}],
+                {"calls": 1, "block-order": 1},
+                True,
+            ),
         )
         for differences, expected, expected_source_pointing in cases:
             with self.subTest(expected=expected, differences=differences):
                 counts, source_pointing = _pattern_counts(differences)
-                rows, _ = _kind_rows(result, set(), _call_row_kind(counts))
-                self.assertEqual(rows[expected], 2)
-                self.assertEqual(sum(rows.values()), 2)
+                rows, _ = _kind_rows(result, set(), counts)
+                self.assertEqual(dict(rows), expected)
                 self.assertEqual(source_pointing, expected_source_pointing)
 
 
-# The census covers the whole build and names functions inexact at Harvest 9a39d4d, so it runs
-# only against a checkout named explicitly.
+# The census covers the whole build, so these checks require an explicitly named checkout.
 @unittest.skipUnless(
     os.environ.get("CONCORD_HARVEST") and (HARVEST / "build" / "match" / BUILD).is_dir(),
     "needs CONCORD_HARVEST naming a Harvest checkout after `hv match`",
@@ -57,7 +67,7 @@ class HarvestResidual(unittest.TestCase):
             "_ZN2ox4core16CStringFunctions18millisecondsToWideEfb": "comparison-flip",
             "_ZN7harvest6states11CIntroState7OnEventERKN2ox5event6SEventE": "enum-check",
             "_ZN7harvest6entity12CAlienEntity25replaceWithMagnetoSpritesEv": "data",
-            "_ZN7harvest6entity19CDefenseTowerEntityC2Eff": "calls",
+            "_ZN7harvest6entity19CDefenseTowerEntityC2Eff": "inline-distribution",
         }
         for symbol, kind in expected.items():
             with self.subTest(symbol=symbol):
@@ -78,6 +88,11 @@ class HarvestResidual(unittest.TestCase):
         signedness = self.functions["_ZN5daisy3gui14CGUIStaticText9breakTextEv"]
         self.assertIn("signedness", signedness["source_signals"])
         self.assertEqual(len(self.census["top_source_pointing"]), 20)
+        on_event = self.functions["_ZN7harvest6states10CPlayState7OnEventERKN2ox5event6SEventE"]
+        on_event_kinds = {item["kind"]: item["rows"] for item in on_event["kinds"]}
+        self.assertEqual(on_event_kinds["calls"], 7)
+        self.assertEqual(on_event["group"], "source-pointing")
+        self.assertIn(on_event, self.census["top_source_pointing"])
 
 
 @unittest.skipUnless(
@@ -96,6 +111,11 @@ class HarvestResidualCallRows(unittest.TestCase):
             "HarvestFull/harvest/entity/CDropshipEntity.cpp",
             "_ZN7harvest6entity15CDropshipEntity10loadSpriteEb",
         ),
+        (
+            "on_event",
+            "HarvestFull/harvest/states/CPlayState.cpp",
+            "_ZN7harvest6states10CPlayState7OnEventERKN2ox5event6SEventE",
+        ),
     )
 
     @classmethod
@@ -103,7 +123,7 @@ class HarvestResidualCallRows(unittest.TestCase):
         from concord.calls_constants import gather
         from concord.diff import diff_code, read_functions
         from concord.harvest import Harvest
-        from concord.residual import _call_row_kind, _group, _kind_rows, _pattern_counts
+        from concord.residual import _group, _kind_rows, _pattern_counts
 
         cls.harvest = Harvest(HARVEST)
         references = gather(cls.harvest, [unit for _, unit, _ in cls.CASES])
@@ -117,7 +137,7 @@ class HarvestResidualCallRows(unittest.TestCase):
             call_differences = call_report.get("differences", [])
             pattern_counts, source_pointing = _pattern_counts(call_differences)
             result = diff_code(target, candidate)
-            rows, _ = _kind_rows(result, set(), _call_row_kind(pattern_counts))
+            rows, _ = _kind_rows(result, set(), pattern_counts)
             kinds = set(rows) | set(pattern_counts)
             signals = {"calls-constants"} if source_pointing else set()
             cls.rows[name] = {
@@ -137,6 +157,13 @@ class HarvestResidualCallRows(unittest.TestCase):
 
         self.assertEqual(row["counts"]["inline-distribution"], 32)
         self.assertNotIn("calls", row["counts"])
+
+    def test_on_event_counts_only_call_multiset_differences(self):
+        row = self.rows["on_event"]
+
+        self.assertEqual(row["counts"]["calls"], 7)
+        self.assertGreater(row["counts"]["block-order"], 0)
+        self.assertEqual(row["group"], "source-pointing")
 
 
 if __name__ == "__main__":

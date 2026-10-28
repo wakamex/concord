@@ -151,13 +151,16 @@ def _pattern_counts(differences: list[dict]) -> tuple[Counter, bool]:
     for difference in differences:
         kind = difference["kind"]
         if kind == "call":
-            if difference["classification"] == "different-callees" or difference.get("count_difference"):
+            if difference["classification"] == "different-callees":
+                counts["calls"] += len(difference.get("ours", [])) + len(difference.get("target", []))
+                source_pointing = True
+            elif difference.get("count_difference"):
                 counts["calls"] += 1
                 source_pointing = True
             else:
                 counts["inline-distribution"] += 1
         elif kind == "indirect":
-            counts["calls"] += 1
+            counts["calls"] += abs(difference["ours"] - difference["target"])
             source_pointing = True
         else:
             counts["data"] += 1
@@ -165,28 +168,43 @@ def _pattern_counts(differences: list[dict]) -> tuple[Counter, bool]:
     return counts, source_pointing
 
 
-def _call_row_kind(pattern_counts: Counter) -> str:
-    if pattern_counts["calls"]:
-        return "calls"
-    if pattern_counts["inline-distribution"]:
-        return "inline-distribution"
-    return "block-order"
-
-
 def _kind_rows(
     result: DiffResult,
     enum_offsets: set[int],
-    call_kind: str,
+    pattern_counts: Counter,
 ) -> tuple[Counter, dict[str, list[str]]]:
     counts: Counter = Counter()
     evidence: dict[str, list[str]] = defaultdict(list)
+    inlining_findings = []
     for finding in result.findings:
-        kind = call_kind if finding.cause == Cause.INLINING else _finding_kind(finding)
+        if finding.cause == Cause.INLINING:
+            inlining_findings.append(finding)
+            continue
+
+        kind = _finding_kind(finding)
         for index in range(finding.rows):
             offset = finding.target_offsets[index] if index < len(finding.target_offsets) else None
             row_kind = "enum-check" if offset in enum_offsets else kind
             counts[row_kind] += 1
             evidence[row_kind].append(finding.detail)
+
+    inlining_rows = sum(finding.rows for finding in inlining_findings)
+    if pattern_counts["calls"]:
+        call_rows = min(inlining_rows, pattern_counts["calls"])
+        block_rows = inlining_rows - call_rows
+        if call_rows:
+            counts["calls"] += call_rows
+            evidence["calls"].append("calls-constants identified the remaining callee multiset difference")
+        if block_rows:
+            counts["block-order"] += block_rows
+            evidence["block-order"].append("unaligned rows beyond the callee multiset difference")
+    elif pattern_counts["inline-distribution"]:
+        if inlining_rows:
+            counts["inline-distribution"] += inlining_rows
+            evidence["inline-distribution"].extend(finding.detail for finding in inlining_findings)
+    elif inlining_rows:
+        counts["block-order"] += inlining_rows
+        evidence["block-order"].extend(finding.detail for finding in inlining_findings)
     return counts, evidence
 
 
@@ -225,8 +243,7 @@ def _occurrence(
             "source_signals": sorted(signals),
         }
 
-    call_kind = _call_row_kind(pattern_counts)
-    rows, evidence = _kind_rows(result, enum_offsets, call_kind)
+    rows, evidence = _kind_rows(result, enum_offsets, pattern_counts)
     target_offsets_in_findings = {
         offset for finding in result.findings for offset in finding.target_offsets
     }
