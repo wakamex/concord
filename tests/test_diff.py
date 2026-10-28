@@ -180,6 +180,25 @@ class KnowledgeBase(unittest.TestCase):
                 self.assertTrue(i.fix and i.symptom)
                 self.assertTrue(all("commit" in e or "note" in e for e in i.evidence), i.id)
 
+    def test_new_game_random_sum_diagnosis_is_recorded(self):
+        from concord import knowledge
+
+        entries = {i.id: i for i in knowledge.load("gcc-4.4.3")}
+        entry = entries["new-game-random-sum"]
+        self.assertEqual(entry.status, "hypothesis")
+        self.assertEqual(entry.cause.value, "instruction-selection")
+        notes = [e["note"] for e in entry.evidence if e.get("function")]
+        self.assertEqual(len(notes), 1)
+        record = entry.limits + " " + notes[0]
+        for fact in (
+            "0x4ae210",
+            "99.77819",
+            "132 legal positions",
+            "expand",
+            "0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0",
+        ):
+            self.assertIn(fact, record)
+
     def test_operand_order_noop_trials_are_recorded(self):
         from concord import knowledge
 

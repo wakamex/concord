@@ -811,6 +811,17 @@ evidence = [
 ]
 
 [[idiom]]
+id = "new-game-random-sum"
+cause = "instruction-selection"
+status = "hypothesis"
+symptom = "At +0x43 in CPlayState::initializeNewGame, the target emits `lea edx, [rax + rdx]` where the candidate emits `add edx, eax`; the other diff row is target `nop` against candidate `xchg ax, ax`."
+fix = "Keep the current expression while the measured operand reorder and all legal definition placements leave the function at 99.77819. A replacement needs to improve the function and pass the whole-build score gate."
+limits = "At Harvest 9a39d4d, initializeNewGame is 2,466 bytes at 0x4ae210 and hv diff reports 99.78% with two differing rows. symbols.tsv maps the correct symbol and address. concord diff attributes the instruction at +0x43 to instruction selection. enum-switch finds no enum range check; statics has no function-specific mapping; signedness finds zero pairs in the unit; calls-constants compares 23 inexact functions and excludes initializeNewGame from its 12 with differences. phase finds no exact declaration-count phase for this function among 31 counts, with zero locked functions or witnesses in the unit. concord author measures `random + ((random & 0xff00) >> 8) + ((random & 0xff0000) >> 16)` as 99.77819, equal to the existing 99.77819, and rejects it; the inexact-candidate oracle is not run because there is no gain. definition-placement evaluates all 132 legal positions, selects the current source, and finds no placement above 99.77819. The canonical-byte-verified causal trace ties the candidate `addl %eax, %edx` to source line 848 in the expand pass, with no inline chain and no operand reorder. It does not include a compiler trace for the target, so it cannot distinguish the target source spelling from other compiler inputs. Harvest's [GNU Compiler Collection (GCC)](https://gcc.gnu.org/) 4.4.3 toolchain uses -O2, flags.json SHA-256 9ebb8c16c904108ddb5cbaa50345a733d400ee2bd3994c72e5545e676fb03ad8; units.toml SHA-256 fb93f20b48037862b2815dba879eed0da5c6f0f6f0237fe0c8e1affc7e9c9c38; symbols.tsv SHA-256 eee6d7bb4ffa45d3ab3c9078b3fe841606b867ae1153c8d0402044fffd1aa5d8; CPlayState.cpp SHA-256 3c46780ce5968f1710177713e197451d82c2d1113a00737d67214c0a3ae7c1de; toolchain image SHA-256 b94ef6033199879fb811edc1d642923532b9213f245eb081646157559e3d45dd; causal code SHA-256 f7d141d23d0ed3f19419fdbd1b6755be533043f380c7806a0bb12e854c7c3e68. The unchanged-source gate against 9a39d4d reports: 0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0. No source or placement correction is retained."
+evidence = [
+  { commit = "9a39d4d", function = "harvest::states::CPlayState::initializeNewGame at 0x4ae210", note = "The source is Harvest game code without an Irrlicht 0.7 ancestor. hv diff shows target `lea edx, [rax + rdx]` versus candidate `add edx, eax`, then target `nop` versus candidate `xchg ax, ax`. The source candidate reverses the addition operand order but compiles identically. All 132 method positions also leave it at 99.77819. The target's symbol name and address match the source. The evidence localizes the candidate instruction to the random sum at line 848; it does not establish a target source form or a unit-context cause." },
+]
+
+[[idiom]]
 id = "gui-flow-cursor-and-extents"
 cause = "register-allocation"
 status = "confirmed"
