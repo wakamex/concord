@@ -250,13 +250,13 @@ def _translate(source: str, namespace: str) -> str:
     )
     source = re.sub(
         r"(\w+)\.rotateXYBy\(([^,]+),\s*([^;\n]+)\);",
-        r"{ double deg = (\2) * ox::core::GRAD_PI2; float cs = (float)cos(deg); float sn = (float)sin(deg); "
+        r"{ double deg = (\2) * 0.017453290522098541; float cs = (float)cos(deg); float sn = (float)sin(deg); "
         r"\1.X -= (\3).X; \1.Y -= (\3).Y; \1.set(\1.X*cs - \1.Y*sn, \1.X*sn + \1.Y*cs, \1.Z); \1.X += (\3).X; \1.Y += (\3).Y; }",
         source,
     )
     source = re.sub(
         r"(\w+)\.rotateXZBy\(([^,]+),\s*([^;\n]+)\);",
-        r"{ double deg = (\2) * ox::core::GRAD_PI2; float cs = (float)cos(deg); float sn = (float)sin(deg); "
+        r"{ double deg = (\2) * 0.017453290522098541; float cs = (float)cos(deg); float sn = (float)sin(deg); "
         r"\1.X -= (\3).X; \1.Z -= (\3).Z; \1.set(\1.X*cs - \1.Z*sn, \1.Y, \1.X*sn + \1.Z*cs); \1.X += (\3).X; \1.Z += (\3).Z; }",
         source,
     )

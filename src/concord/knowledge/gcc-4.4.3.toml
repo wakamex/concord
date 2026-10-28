@@ -213,6 +213,17 @@ evidence = [
 ]
 
 [[idiom]]
+id = "maya-vector-register-allocation"
+cause = "register-allocation"
+status = "hypothesis"
+symptom = "a translation vector's X and Z components occupy each other's SIMD registers across a near-exact function"
+fix = "The source construct responsible for the register assignment is not established. Trace the first differing instruction through the compiler and compare constants independently before attempting a source or placement change."
+limits = "At Harvest 823b979, CCameraMayaSceneNode::animate at 0x550570 has a 4,673-byte function extent and a 4,688-byte aligned span. The target uses xmm9 where the candidate uses xmm7 and vice versa in 26 instruction rows. GCC 4.4.3 IRA introduces the first choice at function offset 0xbb for tvectX$Y.1507; this is an observed candidate decision, not a reconstruction of the target's compiler state. A six-byte target nop and eight-byte candidate nop account for a subsequent alignment difference. The other differing row loads a target double with bytes 0000008046df913f, while the translated source produces 399d52a246df913f. The 31 declaration-count phases leave animate inexact, with 40 of 41 unit functions exact at every phase. A complete, object-verified scratch trace records no scratch searches in animate; its only two searches occur in the exact ISceneNode::setName. All 26 emitted inline copies are placed and show no differences. Combining the tvectX construction and cross product leaves animate's code and relocation offsets identical at report score 99.82095. Moving animate before the constructor also leaves its code and relocation offsets identical and loses the exact static initializer. These are the two failed source and placement interventions."
+evidence = [
+  { function = "daisy::scene::CCameraMayaSceneNode::animate", note = "The target-relative offsets of the 26 register rows are 0xbb, 0xd0, 0x116, 0x11a, 0x150, 0x163, 0x173, 0x182, 0x18b, 0x194, 0x19d, 0x1a0, 0x1cd, 0x1d7, 0xea9, 0xeb3, 0xec6, 0xecf, 0xedd, 0xee2, 0x11d1, 0x11db, 0x11e4, 0x11ed, 0x11fb and 0x1200. The first instruction is 450f28cf in the target and 410f28ff in the candidate. The target nop at 0x6da is 660f1f440000; the candidate nop at 0x6d8 is 0f1f840000000000. The code SHA-256 for both unchanged overlays is ce16f0317b11ce5381ecbf07a05d03c3c44d2076d63b024909f0d5c323c146de. The pinned Ubuntu 4.4.3-4ubuntu5 compiler image is b94ef6033199879fb811edc1d642923532b9213f245eb081646157559e3d45dd. Correcting the two ancestor-derived rotation expansions to 0.017453290522098541 removes the constant-reference difference at 0x722: the direct instruction diff rises from 99.81432 to 99.82095, while the progress-report score stays 99.82095. The 5,000-case original-image oracle reports 88 differences before and zero after, with 3,073 matching crashes on each side and no undefined or layout-dependent cases. Concord proves the function address from the exact OnPostRender call. The normalized whole-build gate reports 0 changed functions, 0 worse and 0 matched data bytes lost or gained." },
+]
+
+[[idiom]]
 id = "header-definition-order"
 cause = "register-allocation"
 status = "hypothesis"
