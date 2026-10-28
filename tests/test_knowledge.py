@@ -373,5 +373,22 @@ class ScenarioEventInliningKnowledgeTests(unittest.TestCase):
             self.assertIn(fact, evidence["note"])
 
 
+class HarvestGameLayerResidualTests(unittest.TestCase):
+    def test_game_layer_data_and_gate_evidence_is_recorded(self):
+        path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
+        data = tomllib.loads(path.read_text())
+        idiom = next(item for item in data["idiom"] if item["id"] == "harvest-game-layer-data-residuals")
+        notes = {item["function"]: item["note"] for item in idiom["evidence"]}
+
+        self.assertEqual(idiom["cause"], "block-order")
+        self.assertEqual(idiom["status"], "hypothesis")
+        self.assertIn("45.85%", idiom["limits"])
+        self.assertIn("56.09%", idiom["limits"])
+        self.assertIn("87.54417 to 89.14984", idiom["limits"])
+        self.assertIn("0 bases differ", notes["CWorld::update field pairing"])
+        self.assertIn("5,000 of 5,000 cases", notes["CWorld::update rejected source forms"])
+        self.assertIn("data bytes matched: +0 -11", notes["CWorld::update rejected source forms"])
+
+
 if __name__ == "__main__":
     unittest.main()
