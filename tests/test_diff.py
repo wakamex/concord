@@ -180,6 +180,23 @@ class KnowledgeBase(unittest.TestCase):
                 self.assertTrue(i.fix and i.symptom)
                 self.assertTrue(all("commit" in e or "note" in e for e in i.evidence), i.id)
 
+    def test_copy_loop_advice_records_ssa_recycling_and_the_unresolved_source(self):
+        from concord import knowledge
+
+        entries = [
+            i for i in knowledge.for_causes(knowledge.load("gcc-4.4.3"), {Cause.OPERAND_ORDER})
+            if i.id == "inliner-pass-operand-order"
+        ]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertIn("SSA", entry.fix)
+        self.assertIn("source correction remains unidentified", entry.fix)
+        notes = [e["note"] for e in entry.evidence if e.get("function") == "CStringFunctions::millisecondsToWide"]
+        self.assertEqual(len(notes), 1)
+        self.assertIn("len_929", notes[0])
+        self.assertIn("31", notes[0])
+        self.assertIn("0x5e0e48", notes[0])
+
     def test_opengl_source_causes_and_bounded_blockers_are_recorded(self):
         from concord import knowledge
 
