@@ -6,7 +6,7 @@ from concord.diff import read_function
 from concord.enumswitch import enum_members, missing_range_checks, source_candidates
 from concord.harvest import Harvest
 
-HARVEST = Path(os.environ.get("HARVEST_ROOT", "/code/harvest-swe2c"))
+HARVEST = Path(os.environ.get("CONCORD_HARVEST", "../harvest"))
 UNIT = "daisy/scene/CShadowVolumeSceneNode.cpp"
 SYMBOL = "_ZN5daisy5scene22CShadowVolumeSceneNode19setMeshToRenderFromEPN2ox5scene5IMeshE"
 
