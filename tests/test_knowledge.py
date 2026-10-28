@@ -158,6 +158,31 @@ class MissileTurretUnitResidualTests(unittest.TestCase):
         self.assertIn("5,000 oracle cases", notes["Accepted source corrections"])
         self.assertIn("mov qword ptr [rsp + 0x58], 0", notes["CMissileTurretEntity::findPriorityAlien"])
         self.assertIn("32 explicitly unit-scoped rewrite candidates", notes["CMissileTurretEntity::render"])
+        self.assertIn("all 30 placed", notes["Unit context recheck"])
+        self.assertIn("CAlienPriorities.h", notes["Header order and Mac map"])
+        self.assertIn("TargetPosition.X before the BurstTime reset", notes["CMissileTurretEntity::updateLogic accepted reorder"])
+        self.assertIn("97.24306 to 97.52546", notes["CMissileTurretEntity::updateLogic accepted reorder"])
+        self.assertIn("1 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0", notes["Whole-build gate for 35e7c39"])
+        self.assertIn("position2 and position3", notes["CMissileTurretEntity::updateLogic named temporaries"])
+        self.assertIn("97.52546 to 97.90278", notes["CMissileTurretEntity::updateLogic named temporaries"])
+        self.assertIn("32 candidates", notes["CMissileTurretEntity::findPriorityAlien permutation"])
+        self.assertIn("existing best = 0", notes["CMissileTurretEntity::findPriorityAlien permutation"])
+        self.assertIn("97.24 to 97.90", notes["Second whole-build gate"])
+
+
+class StaticTextBreakTextEvidenceTests(unittest.TestCase):
+    def test_rejected_loop_translations_and_unit_cost_are_recorded(self):
+        idiom = next(
+            item for item in knowledge.load("gcc-4.4.3")
+            if item.id == "igui-static-text-breaktext-residual"
+        )
+        notes = {item["function"]: item["note"] for item in idiom.evidence}
+
+        self.assertEqual(idiom.status, "hypothesis")
+        self.assertIn("506 block-order rows", notes["IGUIStaticText::breakText"])
+        self.assertIn("rejected before an oracle check", idiom.limits)
+        for fact in ("34.03512 to 71.4539", "51.0198 to 37.0099", "34.03512 to 33.62423", "oracle check"):
+            self.assertIn(fact, notes["Rejected loop translations"])
 
     def test_seed_context_and_residual_snapshot_is_recorded(self):
         path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
