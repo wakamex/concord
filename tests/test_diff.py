@@ -366,7 +366,9 @@ class KnowledgeBase(unittest.TestCase):
         self.assertIn("CG_PROGRAM = 4109", entry.fix)
         self.assertIn("CG_LINE", entry.symptom)
         self.assertIn("99.48623", entry.limits)
-        self.assertEqual(len(entry.evidence), 2)
+        self.assertEqual(len(entry.evidence), 3)
+        self.assertIn("12 call rows", entry.evidence[-1]["note"])
+        self.assertIn("nor a fresh calls-constants run finds a direct-callee difference for printVariables", entry.evidence[-1]["note"])
 
     def test_misplaced_image_constructor_is_available_for_reference_diagnosis(self):
         from concord import knowledge
