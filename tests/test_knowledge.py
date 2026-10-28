@@ -92,5 +92,22 @@ class LuaManagerUnitEvidenceTests(unittest.TestCase):
         self.assertIn("124", evidence["CLuaManager::hookWaveButton"])
 
 
+class MainMenuUnitEvidenceTests(unittest.TestCase):
+    def test_unit_audit_keeps_unresolved_causes_and_rejected_trials_visible(self):
+        idioms = knowledge.for_causes(knowledge.load("gcc-4.4.3"), {Cause.BLOCK_ORDER})
+        idiom = next(item for item in idioms if item.id == "main-menu-unit-context")
+        evidence = {item["function"]: item["note"] for item in idiom.evidence}
+
+        self.assertEqual(idiom.status, "hypothesis")
+        self.assertIn("97 aligned", evidence["Unit context"])
+        self.assertIn("31 declaration-count phases", evidence["Unit context"])
+        self.assertIn("59.48062", evidence["CMainMenuState::secondInit"])
+        self.assertIn("combined condition", evidence["CMainMenuState::secondInit"])
+        self.assertIn("52.809746", evidence["CMainMenuState::OnEvent"])
+        self.assertIn("59 overlays", evidence["CMainMenuState::enterGameModeSelectMode"])
+        self.assertIn("recycled", evidence["CMainMenuState::enterGameModeSelectMode"])
+        self.assertIn("1 newly matched", evidence["Whole-build gate"])
+
+
 if __name__ == "__main__":
     unittest.main()
