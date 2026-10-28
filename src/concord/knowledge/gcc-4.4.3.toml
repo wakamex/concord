@@ -116,6 +116,17 @@ evidence = [
 ]
 
 [[idiom]]
+id = "enum-switch-integer-default"
+cause = "block-order"
+status = "confirmed"
+symptom = "a switch on a two-value enum lacks the target's check for the second value and its default path"
+fix = "Cast the switch expression to int when the target checks both enumerators and skips the cases for other values. GCC 4.4 then retains the default path instead of treating the enum switch as exhaustive."
+limits = "The cast changes how the compiled function handles values outside the recovered enum's range, so require a byte-exact match or oracle evidence against the original."
+evidence = [
+  { function = "daisy::scene::CShadowVolumeSceneNode::setMeshToRenderFrom at 0x57a010", note = "At Harvest 0d482f0, the target tests zero at +0x1fa and checks for one at +0x1070; the 4,377-byte candidate tests for one and treats every other value as standard. The 4,393-byte target skips the vertex copy for other values. An integer cast on the existing switch produces an exact overlay, while the previous nested-guard and standard-first if forms scored 92.0941 against 99.45. GCC 4.4.3 also retains the default path in a reduced switch test with the cast but not when a third case is added to the two-value enum." },
+]
+
+[[idiom]]
 id = "branch-sense"
 cause = "block-order"
 status = "confirmed"

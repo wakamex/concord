@@ -39,6 +39,28 @@ def evaluation(exact: dict[str, bool], fuzzy: dict[str, float] | None = None, er
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class Candidates(unittest.TestCase):
+    def test_shadow_mesh_vertex_dispatch_converts_the_switch_to_int(self):
+        symbol = "_ZN5daisy5scene22CShadowVolumeSceneNode19setMeshToRenderFromEPN2ox5scene5IMeshE"
+        key = ("daisy/scene/CShadowVolumeSceneNode.cpp", symbol)
+        source = b"""void CShadowVolumeSceneNode::setMeshToRenderFrom(IMesh* mesh)
+{
+    switch(b->getVertexType())
+    {
+    case ox::video::EVT_STANDARD: copyStandard(); break;
+    case ox::video::EVT_2TCOORDS: copyTwoCoords(); break;
+    }
+}
+void CShadowVolumeSceneNode::anotherMethod()
+{
+    switch(b->getVertexType()) { }
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertEqual(set(forms), {"vertex-type-int-switch"})
+        candidate = forms["vertex-type-int-switch"]
+        self.assertEqual(candidate, source.replace(b"switch(b->getVertexType())", b"switch((int)b->getVertexType())", 1))
+        self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
+
     def test_opengl_glx_version_outputs_have_no_initial_stores(self):
         symbol = "_ZN5daisy5video12CVideoOpenGL14loadExtensionsEv"
         source = b"""void CVideoOpenGL::loadExtensions()

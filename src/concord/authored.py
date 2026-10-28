@@ -74,6 +74,18 @@ class HeaderFunctionEdit:
 
 
 AUTHORED: dict[tuple[str, str], list[Edit | BodyEdit]] = {
+    # GCC treats a switch on the two-value enum as exhaustive. The target
+    # checks both values and skips the vertex copy for other values.
+    (
+        "daisy/scene/CShadowVolumeSceneNode.cpp",
+        "_ZN5daisy5scene22CShadowVolumeSceneNode19setMeshToRenderFromEPN2ox5scene5IMeshE",
+    ): [
+        Edit(
+            "vertex-type-int-switch",
+            b"switch(b->getVertexType())",
+            b"switch((int)b->getVertexType())",
+        ),
+    ],
     # The target's A1R5G5B5 path branches on the signed 16-bit pixel: alpha is
     # either absent or 0xff, while the RGB fields use the same shifts in both
     # arms. This form comes from the target disassembly rather than Irrlicht's
