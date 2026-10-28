@@ -122,6 +122,16 @@ class PlayStateUnitEvidenceTests(unittest.TestCase):
         self.assertIn("5,000", evidence["CPlayState::render"])
         self.assertIn("spacing", evidence["CPlayState::renderWaveButton"])
         self.assertIn("getPosition", evidence["CPlayState::renderRangeCircleForEntity"])
+        minimap = evidence["CPlayState::renderMinimap follow-up"]
+        for fact in (
+            "35e7c39",
+            "0xffff2020",
+            "unchanged at 88.927734",
+            "lowers objdiff to 88.86471",
+            "returned reference",
+            "without an oracle",
+        ):
+            self.assertIn(fact, minimap)
         self.assertIn("unchanged-source", evidence["CPlayState::renderRangeCircle"])
         self.assertIn("5,000", evidence["CPlayState::performRectangleSelection"])
         self.assertIn("0 worse", evidence["Whole-build gate"])
@@ -148,6 +158,30 @@ class MissileTurretUnitResidualTests(unittest.TestCase):
         self.assertIn("5,000 oracle cases", notes["Accepted source corrections"])
         self.assertIn("mov qword ptr [rsp + 0x58], 0", notes["CMissileTurretEntity::findPriorityAlien"])
         self.assertIn("32 explicitly unit-scoped rewrite candidates", notes["CMissileTurretEntity::render"])
+
+    def test_seed_context_and_residual_snapshot_is_recorded(self):
+        path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
+        data = tomllib.loads(path.read_text())
+        idiom = next(item for item in data["idiom"] if item["id"] == "harvest-missile-turret-unit-residuals")
+        note = next(
+            item["note"] for item in idiom["evidence"]
+            if item.get("function") == "Harvest 35e7c39 unit context and residuals"
+        )
+
+        for fact in (
+            "30 emitted inline and template copies, all 30 placed",
+            "12 Mac-map rows without emitted matches",
+            "an unnamed 4-byte target extent at 0x435fb0",
+            "0 called sections verified",
+            "statics finds four objects, all same-layout",
+            "0 locked functions and 0 witnesses",
+            "CMissileEntity::updateLogic target 2930, candidate 2954",
+            "CMissileTurretEntity::updateLogic target and candidate 1842",
+            "findPriorityAlien target 1484, candidate 1485",
+            "render target and candidate 163",
+            "signedness finds 0 aligned pairs",
+        ):
+            self.assertIn(fact, note)
 
 
 class DropshipUnitEvidenceTests(unittest.TestCase):
