@@ -223,6 +223,27 @@ class KnowledgeBase(unittest.TestCase):
         self.assertIn("606", note)
         self.assertIn("522", note)
 
+    def test_filesystem_alias_operand_order_attempts_are_recorded(self):
+        from concord import knowledge
+
+        entries = [
+            evidence
+            for idiom in knowledge.load("gcc-4.4.3")
+            for evidence in idiom.evidence
+            if evidence.get("function") == "daisy::io::CFileSystem::intern_resolveAliases"
+        ]
+        self.assertEqual(len(entries), 1)
+        note = entries[0]["note"]
+        for detail in (
+            "0x7ad",
+            "cmp al, cl",
+            "split-start-initializer",
+            "split-end-initializer",
+            "99.985794",
+        ):
+            with self.subTest(detail=detail):
+                self.assertIn(detail, note)
+
     def test_the_reader_size_diagnosis_is_recorded(self):
         from concord import knowledge
 
