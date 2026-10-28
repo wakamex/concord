@@ -302,6 +302,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_author.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
     p_author.add_argument("--apply", action="store_true", help="write an accepted candidate to its source file")
     p_author.add_argument("--variant", help="select a registered authored header spelling")
+    p_author.add_argument("--candidate", type=Path, help="authored unit source changing only this function body")
     p_author.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
 
     p_place = sub.add_parser("place", help="learn references and place called templates without re-seeding source")
@@ -373,6 +374,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_causal.add_argument("--limit", type=int, default=8, help="maximum differing instructions to trace")
     p_causal.add_argument("--offset", type=lambda value: int(value, 0), action="append", help="trace this target byte offset (repeatable, accepts 0x)")
     p_causal.add_argument("--save", type=Path, help="write structured findings and compiler metadata")
+    p_causal.add_argument("--search", action="store_true", help="measure caller rewrites at traced operand origins")
+    p_causal.add_argument("--budget", type=int, default=64, help="maximum caller overlays to measure")
+    p_causal.add_argument("--apply", action="store_true", help="apply a measured improvement through author (requires --search)")
 
     p_census = sub.add_parser("causal-census", help="rank source constructs behind near-exact functions")
     p_census.add_argument("--harvest", type=Path, required=True)
@@ -606,10 +610,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{report['analyzed_functions']}/{report['selected_functions']} functions analyzed; {len(report['failures'])} failures")
         return 0
     if args.command == "causal":
+        if args.apply and not args.search:
+            raise ValueError('--apply requires --search')
+        if args.search and args.budget < 1:
+            raise ValueError('the causal search budget must be positive')
         harvest = Harvest(args.harvest)
         directory = args.dumps or causal.collect(harvest, args.unit)
         report = causal.analyze(harvest, args.unit, args.symbol, directory, limit=args.limit,
                                 offsets=set(args.offset) if args.offset else None)
+        if args.search:
+            report['search'] = causal.search(harvest, report, budget=args.budget, apply=args.apply)
         if args.save:
             args.save.write_text(json.dumps(report, indent=2) + "\n")
         print('\n'.join(causal.show(report)))
@@ -657,7 +667,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "author":
         harvest = Harvest(args.harvest)
         unit = harvest.source(args.unit)
-        report = authored.apply(harvest, unit, args.function, write=args.apply, variant=args.variant)
+        report = authored.apply(harvest, unit, args.function, write=args.apply, variant=args.variant,
+                                candidate=args.candidate.read_bytes() if args.candidate else None)
         patch = (
             results.save_patch(args.results, report.get("path", unit), report["original"], report["source"]) if report["applied"] else None
         )

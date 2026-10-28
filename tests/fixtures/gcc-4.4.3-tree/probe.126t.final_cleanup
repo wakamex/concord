@@ -1,0 +1,66 @@
+
+;; Function int f(const char*, int) (_Z1fPKci)
+
+int f(const char*, int) (const charD.3 * sD.2069, intD.2 nD.2070)
+{
+  long unsigned intD.7 ivtmp.46D.2145;
+  long unsigned intD.7 ivtmp.44D.2143;
+  long unsigned intD.7 ivtmp.39D.2134;
+  intD.2 sumD.2074;
+  intD.2 lenD.2073;
+  const charD.3 D.2081;
+
+  # BLOCK 2 freq:900
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] if ([/out/probe.cpp : 1] *sD.2069 != 0)
+    goto <bb 4>;
+  else
+    goto <bb 3>;
+  # SUCC: 4 [91.0%]  (true,exec) 3 [9.0%]  (false,exec)
+
+  # BLOCK 3 freq:81, starting at line 0
+  # PRED: 2 [9.0%]  (false,exec)
+  lenD.2073 = 0;
+  goto <bb 6>;
+  # SUCC: 6 [100.0%]  (fallthru)
+
+  # BLOCK 4 freq:819, starting at line 0
+  # PRED: 2 [91.0%]  (true,exec)
+  ivtmp.44D.2143 = (long unsigned intD.7) sD.2069;
+  lenD.2073 = 0;
+  # SUCC: 5 [100.0%]  (fallthru,exec)
+
+  # BLOCK 5 freq:9100, starting at line 0
+  # PRED: 5 [91.0%]  (dfs_back,true,exec) 4 [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] lenD.2073 = lenD.2073 + 1;
+  [/out/probe.cpp : 1] D.2081 = MEM[index: ivtmp.44D.2143, offset: 1]{[/out/probe.cpp : 1] *D.2080};
+  ivtmp.44D.2143 = ivtmp.44D.2143 + 1;
+  [/out/probe.cpp : 1] if (D.2081 != 0)
+    goto <bb 5>;
+  else
+    goto <bb 6>;
+  # SUCC: 5 [91.0%]  (dfs_back,true,exec) 6 [9.0%]  (false,exec)
+
+  # BLOCK 6 freq:900, starting at line 0
+  # PRED: 5 [9.0%]  (false,exec) 3 [100.0%]  (fallthru)
+  ivtmp.39D.2134 = (long unsigned intD.7) sD.2069;
+  ivtmp.46D.2145 = ivtmp.39D.2134;
+  sumD.2074 = 0;
+  # SUCC: 7 [100.0%]  (fallthru,exec)
+
+  # BLOCK 7 freq:9100, starting at line 0
+  # PRED: 7 [90.1%]  (dfs_back,true,exec) 6 [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] sumD.2074 = sumD.2074 + (intD.2) MEM[index: ivtmp.46D.2145]{[/out/probe.cpp : 1] *D.2089};
+  ivtmp.46D.2145 = ivtmp.46D.2145 + 1;
+  [/out/probe.cpp : 1] if (lenD.2073 >= (intD.2) ((unsigned intD.6) ivtmp.46D.2145 - (unsigned intD.6) ivtmp.39D.2134))
+    goto <bb 7>;
+  else
+    goto <bb 8>;
+  # SUCC: 7 [90.1%]  (dfs_back,true,exec) 8 [9.9%]  (false,exec)
+
+  # BLOCK 8 freq:900, starting at line 0
+  # PRED: 7 [9.9%]  (false,exec)
+  return sumD.2074 + nD.2070;
+  # SUCC: EXIT [100.0%]
+
+}

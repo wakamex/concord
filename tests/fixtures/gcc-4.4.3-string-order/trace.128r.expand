@@ -1,0 +1,51 @@
+;; Function traced (_ZN2ox4core16CStringFunctions18millisecondsToWideEfb)
+
+;; Generating RTL for gimple basic block 196
+
+;; MEM[index: ivtmp.549] = MEM[index: ivtmp.546];
+
+(insn 1195 1194 1196 src/ox/core/CString.h:160 (set (reg:SI 515)
+        (mem:SI (reg:DI 141 [ ivtmp.546 ]) [16 S4 A32])) -1 (nil))
+
+(insn 1196 1195 0 src/ox/core/CString.h:160 (set (mem:SI (reg:DI 140 [ ivtmp.549 ]) [16 S4 A32])
+        (reg:SI 515)) -1 (nil))
+
+;; l = l + 1;
+
+(insn 1197 1196 0 src/ox/core/CString.h:159 (parallel [
+            (set (reg/v:SI 211 [ l ])
+                (plus:SI (reg/v:SI 211 [ l ])
+                    (const_int 1 [0x1])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+;; ivtmp.546 = ivtmp.546 + 4;
+
+(insn 1198 1197 0 src/ox/core/CString.h:159 (parallel [
+            (set (reg:DI 141 [ ivtmp.546 ])
+                (plus:DI (reg:DI 141 [ ivtmp.546 ])
+                    (const_int 4 [0x4])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+;; ivtmp.549 = ivtmp.549 + 4;
+
+(insn 1199 1198 0 src/ox/core/CString.h:159 (parallel [
+            (set (reg:DI 140 [ ivtmp.549 ])
+                (plus:DI (reg:DI 140 [ ivtmp.549 ])
+                    (const_int 4 [0x4])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+;; if (l <= len)
+
+(insn 1201 1199 1202 src/ox/core/CString.h:159 (set (reg:CCGC 17 flags)
+        (compare:CCGC (reg/v:SI 211 [ l ])
+            (reg/v:SI 212 [ len ]))) -1 (nil))
+
+(jump_insn 1202 1201 0 src/ox/core/CString.h:159 (set (pc)
+        (if_then_else (le (reg:CCGC 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 1200)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 9011 [0x2333])
+        (nil)))

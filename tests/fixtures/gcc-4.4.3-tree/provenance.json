@@ -1,0 +1,28 @@
+{
+  "compiler_version": "g++ (Ubuntu 4.4.3-4ubuntu5) 4.4.3",
+  "container_image_id": "b94ef6033199879fb811edc1d642923532b9213f245eb081646157559e3d45dd",
+  "command": [
+    "g++",
+    "-O2",
+    "-g",
+    "-c",
+    "/out/probe.cpp",
+    "-o",
+    "/out/probe.o",
+    "-dumpbase",
+    "/out/probe",
+    "-fdump-tree-all-details-lineno-uid-blocks",
+    "-fdump-rtl-expand-details-lineno-uid"
+  ],
+  "description": "Unmodified dumps of the adjacent original probe from the pinned offline Harvest compiler. The temporary /out mount contains probe.cpp. Trailing whitespace is removed.",
+  "artifacts": {
+    "probe.cpp": "e7aaf2b1820f9721c17e529b338a675ba44d2842b5dde95ec1aebfbe93007c04",
+    "probe.059t.mergephi2": "148cd531b3c6aecf89c822a844971ab462306db2ce99488b4086344bbf636bed",
+    "probe.060t.vrp1": "c81ead99ba981c846d57b00c6959ac89e6867757d71832341251fd04ab065dea",
+    "probe.066t.ch": "4def64b03fff18dabeabe14da21f6d39631e655a56679475b309038d3150c6d5",
+    "probe.122t.uncprop": "a2c8639ee83d07daa10aff382c21d2bfef82d7437e5e71e004a044b7d4de1ee6",
+    "probe.126t.final_cleanup": "45e295c7698360146e7b565e6c69c861126cd0f236dde93766a241c4be7b8895",
+    "probe.128r.expand": "fddeae31634e75f7679f7140e4708d65542b144e41aa94a9b635bd8a5c10005f",
+    "probe.123t.optimized": "7495bd254fb9793dc1ee1c7d2e8373acc1d49124cec10e49e83557de9e2269a8"
+  }
+}

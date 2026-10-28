@@ -1,0 +1,118 @@
+;; Function traced (_ZN2ox4core16CStringFunctions18millisecondsToWideEfb)
+
+  # BLOCK 180 freq:4277
+  # PRED: 179 [91.0%]  (true,exec) 180 [91.0%]  (dfs_back,true,exec)
+  # lenD.27349_63 = PHI <0(179), lenD.27349_676(180)>
+  # cD.27346_62 = PHI <&"."[0](179), cD.27346_678(180)>
+  [src/ox/core/CString.h : 148] lenD.27349_676 = lenD.27349_63 + 1;
+  [src/ox/core/CString.h : 149] cD.27346_678 = cD.27346_62 + 4;
+  [src/ox/core/CString.h : 146] D.27355_679 = MEM[base: cD.27346_678]{*cD.27346};
+  [src/ox/core/CString.h : 146] if (D.27355_679 != 0)
+    goto <bb 180>;
+  else
+    goto <bb 181>;
+  # SUCC: 180 [91.0%]  (dfs_back,true,exec) 181 [9.0%]  (false,exec)
+
+  # BLOCK 181 freq:385, starting at line 0
+  # PRED: 180 [9.0%]  (false,exec)
+  # lenD.27349_1842 = PHI <lenD.27349_676(180)>
+  pretmp.391D.27834_1660 = lenD.27349_1842 + 1;
+  pretmp.393D.27836_1662 = (long unsigned intD.7) pretmp.391D.27834_1660;
+  prephitmp.394D.27837_1664 = pretmp.393D.27836_1662 * 4;
+  # SUCC: 182 [100.0%]  (fallthru,exec)
+
+  # BLOCK 182 freq:423
+  # PRED: 181 [100.0%]  (fallthru,exec) 179 [9.0%]  (false,exec)
+  # lenD.27349_929 = PHI <lenD.27349_676(181), 0(179)>
+  # prephitmp.394D.27837_1665 = PHI <prephitmp.394D.27837_1664(181), 4(179)>
+  [src/ox/core/CString.h : 157] D.27360_686 = operator new []D.2015 (prephitmp.394D.27837_1665);
+  # SUCC: 183 [100.0%]  (fallthru,exec) 263 (ab,eh,exec)
+
+  # BLOCK 184 freq:4277, starting at line 0
+  # PRED: 184 [90.1%]  (dfs_back,true,exec) 183 [100.0%]  (fallthru,exec)
+  # lD.27351_123 = PHI <lD.27351_697(184), 0(183)>
+  # ivtmp.546D.28017_743 = PHI <ivtmp.546D.28017_741(184), ivtmp.546D.28017_738(183)>
+  # ivtmp.549D.28020_737 = PHI <ivtmp.549D.28020_736(184), ivtmp.549D.28020_68(183)>
+  [src/ox/core/CString.h : 160] D.27366_696 = MEM[index: ivtmp.546D.28017_743]{*D.27365};
+  [src/ox/core/CString.h : 160] MEM[index: ivtmp.549D.28020_737]{*D.27364} = D.27366_696;
+  [src/ox/core/CString.h : 159] lD.27351_697 = lD.27351_123 + 1;
+  ivtmp.546D.28017_741 = ivtmp.546D.28017_743 + 4;
+  ivtmp.549D.28020_736 = ivtmp.549D.28020_737 + 4;
+  [src/ox/core/CString.h : 159] if (lD.27351_697 <= lenD.27349_929)
+    goto <bb 184>;
+  else
+    goto <bb 185>;
+  # SUCC: 184 [90.1%]  (dfs_back,true,exec) 185 [9.9%]  (false,exec)
+
+  # BLOCK 185 freq:471
+  # PRED: 184 [9.9%]  (false,exec)
+  [src/ox/core/CString.h : 263] D.27388_700 = resultD.26218.usedD.8813;
+  [src/ox/core/CString.h : 263] prephitmp.398D.27841_701 = D.27388_700 + -1;
+  [src/ox/core/CString.h : 263] resultD.26218.usedD.8813 = prephitmp.398D.27841_701;
+  [src/ox/core/CString.h : 267] D.27386_705 = lenD.27349_929 + prephitmp.398D.27841_701;
+  [src/ox/core/CString.h : 267] D.27385_706 = resultD.26218.allocatedD.8812;
+  [src/ox/core/CString.h : 267] if (D.27386_705 >= D.27385_706)
+    goto <bb 186>;
+  else
+    goto <bb 195>;
+  # SUCC: 186 [29.0%]  (true,exec) 195 [71.0%]  (false,exec)
+
+  # BLOCK 195 freq:471, starting at line 0
+  # PRED: 193 [100.0%]  (fallthru,exec) 194 [100.0%]  (fallthru,exec) 185 [71.0%]  (false,exec)
+  # prephitmp.398D.27841_1672 = PHI <prephitmp.398D.27841_1670(193), prephitmp.398D.27841_1671(194), prephitmp.398D.27841_701(185)>
+  pretmp.401D.27844_1681 = resultD.26218.arrayD.8811;
+  [src/ox/core/CStringFunctions.cpp : 10] D.27998_723 = (long unsigned intD.7) prephitmp.398D.27841_1672;
+  [src/ox/core/CStringFunctions.cpp : 10] D.27999_710 = D.27998_723 * 4;
+  [src/ox/core/CStringFunctions.cpp : 10] D.28000_711 = pretmp.401D.27844_1681 + D.27999_710;
+  ivtmp.538D.27997_681 = (long unsigned intD.7) D.28000_711;
+  [src/ox/core/CStringFunctions.cpp : 10] D.28001_684 = (unsigned intD.6) lenD.27349_929;
+  [src/ox/core/CStringFunctions.cpp : 10] D.28002_685 = (long unsigned intD.7) D.28001_684;
+  [src/ox/core/CStringFunctions.cpp : 10] D.28003_625 = D.28002_685 + 1;
+  [src/ox/core/CStringFunctions.cpp : 10] D.28004_626 = D.28003_625 * 4;
+  # SUCC: 196 [100.0%]  (fallthru,exec)
+
+  # BLOCK 197 freq:471
+  # PRED: 196 [9.0%]  (false,exec)
+  [src/ox/core/CString.h : 273] D.27386_724 = lenD.27349_929 + 1;
+  [src/ox/core/CString.h : 273] prephitmp.398D.27841_725 = D.27386_724 + prephitmp.398D.27841_1672;
+  [src/ox/core/CString.h : 273] resultD.26218.usedD.8813 = prephitmp.398D.27841_725;
+  [src/ox/core/CString.h : 105] if (SR.143D.27582_687 != 0B)
+    goto <bb 201>;
+  else
+    goto <bb 225>;
+  # SUCC: 201 [78.3%]  (true,exec) 225 [21.6%]  (false,exec)
+
+  # BLOCK 245 freq:137
+  # PRED: 244 [29.0%]  (true,exec)
+  [src/ox/core/CString.h : 321] amountD.27533_870 = prephitmp.369D.27812_866 + 1;
+  [src/ox/core/CString.h : 533] old_arrayD.27532_909 = resultD.26218.arrayD.8811;
+  [src/ox/core/CString.h : 535] D.27546_910 = (long unsigned intD.7) amountD.27533_870;
+  [src/ox/core/CString.h : 535] D.27545_911 = D.27546_910 * 4;
+  [src/ox/core/CString.h : 535] D.27544_912 = operator new []D.2015 (D.27545_911);
+  # SUCC: 246 [100.0%]  (fallthru,exec) 263 (ab,eh,exec)
+
+  # BLOCK 246 freq:137, starting at line 0
+  # PRED: 245 [100.0%]  (fallthru,exec)
+  [src/ox/core/CString.h : 535] D.27543_913 = (wchar_tD.43 *) D.27544_912;
+  [src/ox/core/CString.h : 535] resultD.26218.arrayD.8811 = D.27543_913;
+  [src/ox/core/CString.h : 536] resultD.26218.allocatedD.8812 = amountD.27533_870;
+  [src/ox/core/CString.h : 538] D.27542_914 = resultD.26218.usedD.8813;
+  amountD.27533_986 = MIN_EXPR <amountD.27533_870, D.27542_914>;
+  [src/ox/core/CString.h : 539] if (amountD.27533_986 > 0)
+    goto <bb 247>;
+  else
+    goto <bb 249>;
+  # SUCC: 247 [91.0%]  (true,exec) 249 [9.0%]  (false,exec)
+
+  # BLOCK 249 freq:137
+  # PRED: 248 [9.0%]  (false,exec) 246 [9.0%]  (false,exec)
+  [src/ox/core/CString.h : 542] if (amountD.27533_870 < D.27542_914)
+    goto <bb 250>;
+  else
+    goto <bb 251>;
+  # SUCC: 250 [50.0%]  (true,exec) 251 [50.0%]  (false,exec)
+
+  # BLOCK 250 freq:68
+  # PRED: 249 [50.0%]  (true,exec)
+  [src/ox/core/CString.h : 543] resultD.26218.usedD.8813 = amountD.27533_870;
+  # SUCC: 251 [100.0%]  (fallthru,exec)

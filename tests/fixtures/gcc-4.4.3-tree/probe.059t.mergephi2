@@ -1,0 +1,78 @@
+
+;; Function int f(const char*, int) (_Z1fPKci)
+
+Removing basic block 5
+;; basic block 5, loop depth 0, count 0
+;; prev block 4, next block 6
+;; pred:
+;; succ:       7 [100.0%]  (fallthru,exec)
+<bb 5>:
+Invalid sum of incoming frequencies 0, should be 900
+# sum_11 = PHI <>
+# i_12 = PHI <>
+goto <bb 7>;
+
+
+int f(const char*, int) (const charD.3 * sD.2069, intD.2 nD.2070)
+{
+  intD.2 iD.2075;
+  intD.2 sumD.2074;
+  intD.2 lenD.2073;
+  intD.2 D.2092;
+  intD.2 D.2091;
+  const charD.3 D.2090;
+  const charD.3 * D.2089;
+  long unsigned intD.7 D.2088;
+  const charD.3 D.2081;
+  const charD.3 * D.2080;
+  long unsigned intD.7 D.2079;
+
+  # BLOCK 2 freq:900
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] goto <bb 4>;
+  # SUCC: 4 [100.0%]  (fallthru,exec)
+
+  # BLOCK 3 freq:9100
+  # PRED: 4 [91.0%]  (true,exec)
+  [/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_1 + 1;
+  # SUCC: 4 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 4 freq:10000
+  # PRED: 2 [100.0%]  (fallthru,exec) 3 [100.0%]  (fallthru,dfs_back,exec)
+  # lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+  [/out/probe.cpp : 1] D.2079_5 = (long unsigned intD.7) lenD.2073_1;
+  [/out/probe.cpp : 1] D.2080_7 = sD.2069_6(D) + D.2079_5;
+  [/out/probe.cpp : 1] D.2081_8 = [/out/probe.cpp : 1] *D.2080_7;
+  [/out/probe.cpp : 1] if (D.2081_8 != 0)
+    goto <bb 3>;
+  else
+    goto <bb 7>;
+  # SUCC: 3 [91.0%]  (true,exec) 7 [9.0%]  (false,exec)
+
+  # BLOCK 6 freq:9100
+  # PRED: 7 [91.0%]  (true,exec)
+  [/out/probe.cpp : 1] D.2088_14 = (long unsigned intD.7) iD.2075_3;
+  [/out/probe.cpp : 1] D.2089_15 = sD.2069_6(D) + D.2088_14;
+  [/out/probe.cpp : 1] D.2090_16 = [/out/probe.cpp : 1] *D.2089_15;
+  [/out/probe.cpp : 1] D.2091_17 = (intD.2) D.2090_16;
+  [/out/probe.cpp : 1] sumD.2074_18 = D.2091_17 + sumD.2074_2;
+  [/out/probe.cpp : 1] iD.2075_19 = iD.2075_3 + 1;
+  # SUCC: 7 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 7 freq:10000
+  # PRED: 4 [9.0%]  (false,exec) 6 [100.0%]  (fallthru,dfs_back,exec)
+  # sumD.2074_2 = PHI <0(4), sumD.2074_18(6)>
+  # iD.2075_3 = PHI <0(4), iD.2075_19(6)>
+  [/out/probe.cpp : 1] if (lenD.2073_1 >= iD.2075_3)
+    goto <bb 6>;
+  else
+    goto <bb 8>;
+  # SUCC: 6 [91.0%]  (true,exec) 8 [9.0%]  (false,exec)
+
+  # BLOCK 8 freq:900, starting at line 0
+  # PRED: 7 [9.0%]  (false,exec)
+  [/out/probe.cpp : 1] D.2092_21 = sumD.2074_2 + nD.2070_20(D);
+  return D.2092_21;
+  # SUCC: EXIT [100.0%]
+
+}

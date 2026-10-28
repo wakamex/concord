@@ -1,0 +1,97 @@
+;; Function traced (_ZN2ox4core16CStringFunctions18millisecondsToWideEfb)
+
+  # BLOCK 201 freq:4277
+  # PRED: 202 [91.0%]  (true,exec)
+  [src/ox/core/CString.h : 148] lenD.27349_676 = lenD.27349_675 + 1;
+  [src/ox/core/CString.h : 149] cD.27346_678 = cD.27346_677 + 4;
+  # SUCC: 202 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 202 freq:4700
+  # PRED: 200 [100.0%]  (fallthru,exec) 201 [100.0%]  (fallthru,dfs_back,exec)
+  # lenD.27349_675 = PHI <0(200), lenD.27349_676(201)>
+  # cD.27346_677 = PHI <&"."[0](200), cD.27346_678(201)>
+  [src/ox/core/CString.h : 146] D.27355_679 = *cD.27346_677;
+  [src/ox/core/CString.h : 146] if (D.27355_679 != 0)
+    goto <bb 201>;
+  else
+    goto <bb 203>;
+  # SUCC: 201 [91.0%]  (true,exec) 203 [9.0%]  (false,exec)
+
+  # BLOCK 203 freq:423
+  # PRED: 202 [9.0%]  (false,exec)
+  # lenD.27349_929 = PHI <lenD.27349_675(202)>
+  [src/ox/core/CString.h : 156] D.27356_681 = lenD.27349_929 + 1;
+  [src/ox/core/CString.h : 156] D.26237.usedD.8813 = D.27356_681;
+  [src/ox/core/CString.h : 156] D.26237.allocatedD.8812 = D.27356_681;
+  [src/ox/core/CString.h : 157] D.27358_684 = (long unsigned intD.7) D.27356_681;
+  [src/ox/core/CString.h : 157] D.27359_685 = D.27358_684 * 4;
+  [src/ox/core/CString.h : 157] D.27360_686 = operator new []D.2015 (D.27359_685);
+  # SUCC: 204 [100.0%]  (fallthru,exec) 292 (ab,eh,exec)
+
+  # BLOCK 205 freq:4277
+  # PRED: 206 [90.1%]  (true,exec) 301 [100.0%]  (fallthru)
+  # lD.27351_123 = PHI <lD.27351_689(206), lD.27351_756(301)>
+  [src/ox/core/CString.h : 160] D.27362_690 = (long unsigned intD.7) lD.27351_123;
+  [src/ox/core/CString.h : 160] D.27363_691 = D.27362_690 * 4;
+  [src/ox/core/CString.h : 160] D.27364_692 = D.27361_687 + D.27363_691;
+  [src/ox/core/CString.h : 160] D.27365_695 = &"."[0] + D.27363_691;
+  [src/ox/core/CString.h : 160] D.27366_696 = *D.27365_695;
+  [src/ox/core/CString.h : 160] *D.27364_692 = D.27366_696;
+  [src/ox/core/CString.h : 159] lD.27351_697 = lD.27351_123 + 1;
+  # SUCC: 206 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 206 freq:4277
+  # PRED: 205 [100.0%]  (fallthru,dfs_back,exec)
+  # lD.27351_689 = PHI <lD.27351_697(205)>
+  [src/ox/core/CString.h : 159] if (lenD.27349_929 >= lD.27351_689)
+    goto <bb 205>;
+  else
+    goto <bb 207>;
+  # SUCC: 205 [90.1%]  (true,exec) 207 [9.9%]  (false,exec)
+
+  # BLOCK 273 freq:137
+  # PRED: 272 [29.0%]  (true,exec)
+  [src/ox/core/CString.h : 321] amountD.27533_870 = D.27497_866 + 1;
+  [src/ox/core/CString.h : 533] old_arrayD.27532_909 = resultD.26218.arrayD.8811;
+  [src/ox/core/CString.h : 535] D.27546_910 = (long unsigned intD.7) amountD.27533_870;
+  [src/ox/core/CString.h : 535] D.27545_911 = D.27546_910 * 4;
+  [src/ox/core/CString.h : 535] D.27544_912 = operator new []D.2015 (D.27545_911);
+  # SUCC: 274 [100.0%]  (fallthru,exec) 292 (ab,eh,exec)
+
+  # BLOCK 274 freq:137
+  # PRED: 273 [100.0%]  (fallthru,exec)
+  [src/ox/core/CString.h : 535] D.27543_913 = (wchar_tD.43 *) D.27544_912;
+  [src/ox/core/CString.h : 535] resultD.26218.arrayD.8811 = D.27543_913;
+  [src/ox/core/CString.h : 536] resultD.26218.allocatedD.8812 = amountD.27533_870;
+  [src/ox/core/CString.h : 538] D.27542_914 = resultD.26218.usedD.8813;
+  [src/ox/core/CString.h : 538] if (amountD.27533_870 > D.27542_914)
+    goto <bb 276>;
+  else
+    goto <bb 275>;
+  # SUCC: 276 [50.0%]  (true,exec) 275 [50.0%]  (false,exec)
+
+  # BLOCK 276 freq:137
+  # PRED: 275 [100.0%]  (fallthru,exec) 274 [50.0%]  (true,exec)
+  # amountD.27533_926 = PHI <amountD.27533_870(275), D.27542_914(274)>
+  goto <bb 278>;
+  # SUCC: 278 [100.0%]  (fallthru,exec)
+
+  # BLOCK 279 freq:137
+  # PRED: 278 [9.0%]  (false,exec)
+  [src/ox/core/CString.h : 542] D.27542_928 = resultD.26218.usedD.8813;
+  [src/ox/core/CString.h : 542] if (amountD.27533_870 < D.27542_928)
+    goto <bb 280>;
+  else
+    goto <bb 281>;
+  # SUCC: 280 [50.0%]  (true,exec) 281 [50.0%]  (false,exec)
+
+  # BLOCK 280 freq:68
+  # PRED: 279 [50.0%]  (true,exec)
+  [src/ox/core/CString.h : 543] resultD.26218.usedD.8813 = amountD.27533_870;
+  # SUCC: 281 [100.0%]  (fallthru,exec)
+
+  # BLOCK 301 freq:423
+  # PRED: 204 [100.0%]  (fallthru,exec)
+  # lD.27351_756 = PHI <0(204)>
+  goto <bb 205>;
+  # SUCC: 205 [100.0%]  (fallthru)

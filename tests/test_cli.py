@@ -72,6 +72,29 @@ class CliTest(unittest.TestCase):
                 analyze.assert_called_once_with(harvest.return_value, 'u.cpp', 'f', Path(tmp), limit=8, offsets=None)
                 self.assertEqual(json.loads(save.read_text()), report)
 
+    def test_causal_rejects_invalid_search_before_collecting_dumps(self):
+        from unittest import mock
+
+        with mock.patch('concord.cli.causal.collect') as collect:
+            with self.assertRaisesRegex(ValueError, '--apply requires --search'):
+                main(['causal', '--harvest', '/root', '--unit', 'u.cpp', 'f', '--apply'])
+            with self.assertRaisesRegex(ValueError, 'budget must be positive'):
+                main(['causal', '--harvest', '/root', '--unit', 'u.cpp', 'f', '--search', '--budget', '0'])
+            collect.assert_not_called()
+
+    def test_causal_search_uses_the_existing_report_and_author_option(self):
+        from unittest import mock
+
+        report = {'schema': 'concord.causal.v1', 'unit': 'u.cpp', 'symbol': 'f', 'findings': []}
+        searched = {'candidates': [], 'chosen': None, 'applied': False}
+        with (mock.patch('concord.cli.Harvest') as harvest,
+              mock.patch('concord.cli.causal.analyze', return_value=report),
+              mock.patch('concord.cli.causal.search', return_value=searched) as search):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(['causal', '--harvest', '/root', '--unit', 'u.cpp', 'f', '--dumps', '/dumps', '--search', '--budget', '12', '--apply']), 0)
+            search.assert_called_once_with(harvest.return_value, report, budget=12, apply=True)
+            self.assertIn('0 overlays', output.getvalue())
+
     def test_refresh_requires_explicit_methods_and_preserves_other_bodies(self):
         from unittest import mock
 

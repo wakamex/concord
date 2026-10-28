@@ -1,0 +1,418 @@
+
+;; Function int f(const char*, int) (_Z1fPKci)
+
+int f(const char*, int) (const charD.3 * sD.2069, intD.2 nD.2070)
+{
+  long unsigned intD.7 ivtmp.44D.2143;
+  unsigned intD.6 D.2136;
+  unsigned intD.6 D.2138;
+  unsigned intD.6 D.2139;
+  long unsigned intD.7 ivtmp.39D.2134;
+  intD.2 iD.2075;
+  intD.2 sumD.2074;
+  intD.2 lenD.2073;
+  intD.2 D.2092;
+  intD.2 D.2091;
+  const charD.3 D.2090;
+  const charD.3 D.2081;
+
+  # BLOCK 2 freq:900
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] D.2081_25 = [/out/probe.cpp : 1] *sD.2069_6(D);
+  [/out/probe.cpp : 1] if (D.2081_25 != 0)
+    goto <bb 3>;
+  else
+    goto <bb 5>;
+  # SUCC: 3 [91.0%]  (true,exec) 5 [9.0%]  (false,exec)
+
+  # BLOCK 3 freq:819, starting at line 0
+  # PRED: 2 [91.0%]  (true,exec)
+  ivtmp.44D.2143_15 = (long unsigned intD.7) sD.2069_6(D);
+  # SUCC: 4 [100.0%]  (fallthru,exec)
+
+  # BLOCK 4 freq:9100, starting at line 0
+  # PRED: 4 [91.0%]  (dfs_back,true,exec) 3 [100.0%]  (fallthru,exec)
+  # lenD.2073_11 = PHI <lenD.2073_10(4), 0(3)>
+  # ivtmp.44D.2143_28 = PHI <ivtmp.44D.2143_19(4), ivtmp.44D.2143_15(3)>
+  [/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_11 + 1;
+  [/out/probe.cpp : 1] D.2081_8 = MEM[index: ivtmp.44D.2143_28, offset: 1];
+  ivtmp.44D.2143_19 = ivtmp.44D.2143_28 + 1;
+  [/out/probe.cpp : 1] if (D.2081_8 != 0)
+    goto <bb 4>;
+  else
+    goto <bb 5>;
+  # SUCC: 4 [91.0%]  (dfs_back,true,exec) 5 [9.0%]  (false,exec)
+
+  # BLOCK 5 freq:900, starting at line 0
+  # PRED: 4 [9.0%]  (false,exec) 2 [9.0%]  (false,exec)
+  # lenD.2073_23 = PHI <lenD.2073_10(4), 0(2)>
+  ivtmp.39D.2134_37 = (long unsigned intD.7) sD.2069_6(D);
+  # SUCC: 6 [100.0%]  (fallthru,exec)
+
+  # BLOCK 6 freq:9100, starting at line 0
+  # PRED: 6 [90.1%]  (dfs_back,true,exec) 5 [100.0%]  (fallthru,exec)
+  # sumD.2074_27 = PHI <sumD.2074_18(6), 0(5)>
+  # ivtmp.39D.2134_39 = PHI <ivtmp.39D.2134_38(6), ivtmp.39D.2134_37(5)>
+  [/out/probe.cpp : 1] D.2090_16 = MEM[index: ivtmp.39D.2134_39];
+  [/out/probe.cpp : 1] D.2091_17 = (intD.2) D.2090_16;
+  [/out/probe.cpp : 1] sumD.2074_18 = sumD.2074_27 + D.2091_17;
+  ivtmp.39D.2134_38 = ivtmp.39D.2134_39 + 1;
+  [/out/probe.cpp : 1] D.2136_41 = (unsigned intD.6) ivtmp.39D.2134_38;
+  [/out/probe.cpp : 1] D.2138_43 = (unsigned intD.6) ivtmp.39D.2134_37;
+  [/out/probe.cpp : 1] D.2139_44 = D.2136_41 - D.2138_43;
+  iD.2075_45 = (intD.2) D.2139_44;
+  [/out/probe.cpp : 1] if (lenD.2073_23 >= iD.2075_45)
+    goto <bb 6>;
+  else
+    goto <bb 7>;
+  # SUCC: 6 [90.1%]  (dfs_back,true,exec) 7 [9.9%]  (false,exec)
+
+  # BLOCK 7 freq:900, starting at line 0
+  # PRED: 6 [9.9%]  (false,exec)
+  # sumD.2074_24 = PHI <sumD.2074_18(6)>
+  [/out/probe.cpp : 1] D.2092_21 = sumD.2074_24 + nD.2070_20(D);
+  return D.2092_21;
+  # SUCC: EXIT [100.0%]
+
+}
+
+
+
+Partition map
+
+Partition 6 (s_6(D) - 6 )
+Partition 8 (D.2081_8 - 8 )
+Partition 10 (len_10 - 10 )
+Partition 11 (len_11 - 11 )
+Partition 15 (ivtmp.44_15 - 15 )
+Partition 16 (D.2090_16 - 16 )
+Partition 17 (D.2091_17 - 17 )
+Partition 18 (sum_18 - 18 )
+Partition 19 (ivtmp.44_19 - 19 )
+Partition 20 (n_20(D) - 20 )
+Partition 21 (D.2092_21 - 21 )
+Partition 23 (len_23 - 23 )
+Partition 24 (sum_24 - 24 )
+Partition 25 (D.2081_25 - 25 )
+Partition 27 (sum_27 - 27 )
+Partition 28 (ivtmp.44_28 - 28 )
+Partition 37 (ivtmp.39_37 - 37 )
+Partition 38 (ivtmp.39_38 - 38 )
+Partition 39 (ivtmp.39_39 - 39 )
+Partition 41 (D.2136_41 - 41 )
+Partition 43 (D.2138_43 - 43 )
+Partition 44 (D.2139_44 - 44 )
+Partition 45 (i_45 - 45 )
+
+
+Partition map
+
+Partition 0 (s_6(D) - 6 )
+Partition 1 (len_10 - 10 )
+Partition 2 (len_11 - 11 )
+Partition 3 (ivtmp.44_15 - 15 )
+Partition 4 (sum_18 - 18 )
+Partition 5 (ivtmp.44_19 - 19 )
+Partition 6 (n_20(D) - 20 )
+Partition 7 (len_23 - 23 )
+Partition 8 (sum_24 - 24 )
+Partition 9 (sum_27 - 27 )
+Partition 10 (ivtmp.44_28 - 28 )
+Partition 11 (ivtmp.39_37 - 37 )
+Partition 12 (ivtmp.39_38 - 38 )
+Partition 13 (ivtmp.39_39 - 39 )
+
+
+Live on entry to BB2 : s_6(D)  n_20(D)
+
+Live on entry to BB3 : s_6(D)  n_20(D)
+
+Live on entry to BB4 : s_6(D)  n_20(D)
+
+Live on entry to BB5 : s_6(D)  n_20(D)
+
+Live on entry to BB6 : n_20(D)  len_23  ivtmp.39_37
+
+Live on entry to BB7 : n_20(D)
+
+Conflict graph:
+11: 12, 13
+12: 11
+13: 11
+
+After sorting:
+Sorted Coalesce list:
+(819) ivtmp.44_15 <-> ivtmp.44_28
+(900) sum_18 <-> sum_24
+(900) ivtmp.39_37 <-> ivtmp.39_39
+(1638) len_10 <-> len_23
+(16400) sum_18 <-> sum_27
+(16400) ivtmp.39_38 <-> ivtmp.39_39
+(16562) len_10 <-> len_11
+(16562) ivtmp.44_19 <-> ivtmp.44_28
+Must coalesce s_6(D) with the root variable s.
+Must coalesce n_20(D) with the root variable n.
+
+Partition map
+
+Partition 0 (s - 6 )
+Partition 1 (len_10 - 10 )
+Partition 2 (len_11 - 11 )
+Partition 3 (ivtmp.44_15 - 15 )
+Partition 4 (sum_18 - 18 )
+Partition 5 (ivtmp.44_19 - 19 )
+Partition 6 (n - 20 )
+Partition 7 (len_23 - 23 )
+Partition 8 (sum_24 - 24 )
+Partition 9 (sum_27 - 27 )
+Partition 10 (ivtmp.44_28 - 28 )
+Partition 11 (ivtmp.39_37 - 37 )
+Partition 12 (ivtmp.39_38 - 38 )
+Partition 13 (ivtmp.39_39 - 39 )
+
+Coalesce list: (15)ivtmp.44_15 & (28)ivtmp.44_28 [map: 3, 10] : Success -> 3
+Coalesce list: (18)sum_18 & (24)sum_24 [map: 4, 8] : Success -> 4
+Coalesce list: (37)ivtmp.39_37 & (39)ivtmp.39_39 [map: 11, 13] : Fail due to conflict
+Coalesce list: (10)len_10 & (23)len_23 [map: 1, 7] : Success -> 1
+Coalesce list: (18)sum_18 & (27)sum_27 [map: 4, 9] : Success -> 4
+Coalesce list: (38)ivtmp.39_38 & (39)ivtmp.39_39 [map: 12, 13] : Success -> 12
+Coalesce list: (10)len_10 & (11)len_11 [map: 1, 2] : Success -> 1
+Coalesce list: (19)ivtmp.44_19 & (28)ivtmp.44_15 [map: 5, 3] : Success -> 3
+After Coalescing:
+
+Partition map
+
+Partition 0 (s - 6 )
+Partition 1 (D.2081_8 - 8 )
+Partition 2 (len_10 - 10 11 23 )
+Partition 3 (ivtmp.44_15 - 15 19 28 )
+Partition 4 (D.2090_16 - 16 )
+Partition 5 (D.2091_17 - 17 )
+Partition 6 (sum_18 - 18 24 27 )
+Partition 7 (n - 20 )
+Partition 8 (D.2092_21 - 21 )
+Partition 9 (D.2081_25 - 25 )
+Partition 10 (ivtmp.39_37 - 37 )
+Partition 11 (ivtmp.39_38 - 38 39 )
+Partition 12 (D.2136_41 - 41 )
+Partition 13 (D.2138_43 - 43 )
+Partition 14 (D.2139_44 - 44 )
+Partition 15 (i_45 - 45 )
+
+
+Replacing Expressions
+D.2090_16 replace with --> D.2090_16 = MEM[index: ivtmp.39_39];
+
+D.2091_17 replace with --> D.2091_17 = (int) D.2090_16;
+
+D.2092_21 replace with --> D.2092_21 = sum_24 + n_20(D);
+
+D.2081_25 replace with --> D.2081_25 = *s_6(D);
+
+D.2136_41 replace with --> D.2136_41 = (unsigned int) ivtmp.39_38;
+
+D.2138_43 replace with --> D.2138_43 = (unsigned int) ivtmp.39_37;
+
+D.2139_44 replace with --> D.2139_44 = D.2136_41 - D.2138_43;
+
+i_45 replace with --> i_45 = (int) D.2139_44;
+
+
+partition 0 already has variable s assigned to it.
+Partition 1 is assigned to var D.2081
+Partition 2 is assigned to var len
+Partition 3 is assigned to var ivtmp.44
+Partition 4 is assigned to var D.2090
+Partition 5 is assigned to var D.2091
+Partition 6 is assigned to var sum
+partition 7 already has variable n assigned to it.
+Partition 8 is assigned to var D.2092
+Partition 9 is assigned to var temp.45
+Partition 10 is assigned to var ivtmp.39
+Partition 11 is assigned to var ivtmp.46
+Partition 12 is assigned to var D.2136
+Partition 13 is assigned to var D.2138
+Partition 14 is assigned to var D.2139
+Partition 15 is assigned to var i
+After Base variable replacement:
+
+Partition map
+
+Partition 0 (s - 6 )
+Partition 1 (D.2081 - 8 )
+Partition 2 (len - 10 11 23 )
+Partition 3 (ivtmp.44 - 15 19 28 )
+Partition 4 (D.2090 - 16 )
+Partition 5 (D.2091 - 17 )
+Partition 6 (sum - 18 24 27 )
+Partition 7 (n - 20 )
+Partition 8 (D.2092 - 21 )
+Partition 9 (temp.45 - 25 )
+Partition 10 (ivtmp.39 - 37 )
+Partition 11 (ivtmp.46 - 38 39 )
+Partition 12 (D.2136 - 41 )
+Partition 13 (D.2138 - 43 )
+Partition 14 (D.2139 - 44 )
+Partition 15 (i - 45 )
+
+Inserting a copy on edge BB3->BB4 :lenD.2073 = 0;
+
+Inserting a copy on edge BB2->BB5 :lenD.2073 = 0;
+
+Inserting a copy on edge BB5->BB6 :ivtmp.46D.2145 = ivtmp.39D.2134;
+
+Inserting a copy on edge BB5->BB6 :sumD.2074 = 0;
+
+Analyzing Edge Insertions.
+int f(const char*, int) (const charD.3 * sD.2069, intD.2 nD.2070)
+{
+  long unsigned intD.7 ivtmp.46D.2145;
+  const charD.3 temp.45D.2144;
+  long unsigned intD.7 ivtmp.44D.2143;
+  unsigned intD.6 D.2136;
+  unsigned intD.6 D.2138;
+  unsigned intD.6 D.2139;
+  long unsigned intD.7 ivtmp.39D.2134;
+  intD.2 iD.2075;
+  intD.2 sumD.2074;
+  intD.2 lenD.2073;
+  intD.2 D.2092;
+  intD.2 D.2091;
+  const charD.3 D.2090;
+  const charD.3 D.2081;
+
+  # BLOCK 2 freq:900
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] if ([/out/probe.cpp : 1] *sD.2069 != 0)
+    goto <bb 3>;
+  else
+    goto <bb 8>;
+  # SUCC: 3 [91.0%]  (true,exec) 8 [9.0%]  (false,exec)
+
+  # BLOCK 8 freq:81, starting at line 0
+  # PRED: 2 [9.0%]  (false,exec)
+  lenD.2073 = 0;
+  goto <bb 5>;
+  # SUCC: 5 [100.0%]  (fallthru)
+
+  # BLOCK 3 freq:819, starting at line 0
+  # PRED: 2 [91.0%]  (true,exec)
+  ivtmp.44D.2143 = (long unsigned intD.7) sD.2069;
+  lenD.2073 = 0;
+  # SUCC: 4 [100.0%]  (fallthru,exec)
+
+  # BLOCK 4 freq:9100, starting at line 0
+  # PRED: 4 [91.0%]  (dfs_back,true,exec) 3 [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] lenD.2073 = lenD.2073 + 1;
+  [/out/probe.cpp : 1] D.2081 = MEM[index: ivtmp.44D.2143, offset: 1];
+  ivtmp.44D.2143 = ivtmp.44D.2143 + 1;
+  [/out/probe.cpp : 1] if (D.2081 != 0)
+    goto <bb 4>;
+  else
+    goto <bb 5>;
+  # SUCC: 4 [91.0%]  (dfs_back,true,exec) 5 [9.0%]  (false,exec)
+
+  # BLOCK 5 freq:900, starting at line 0
+  # PRED: 4 [9.0%]  (false,exec) 8 [100.0%]  (fallthru)
+  ivtmp.39D.2134 = (long unsigned intD.7) sD.2069;
+  ivtmp.46D.2145 = ivtmp.39D.2134;
+  sumD.2074 = 0;
+  # SUCC: 6 [100.0%]  (fallthru,exec)
+
+  # BLOCK 6 freq:9100, starting at line 0
+  # PRED: 6 [90.1%]  (dfs_back,true,exec) 5 [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] sumD.2074 = sumD.2074 + (intD.2) MEM[index: ivtmp.46D.2145];
+  ivtmp.46D.2145 = ivtmp.46D.2145 + 1;
+  [/out/probe.cpp : 1] if (lenD.2073 >= (intD.2) ((unsigned intD.6) ivtmp.46D.2145 - (unsigned intD.6) ivtmp.39D.2134))
+    goto <bb 6>;
+  else
+    goto <bb 7>;
+  # SUCC: 6 [90.1%]  (dfs_back,true,exec) 7 [9.9%]  (false,exec)
+
+  # BLOCK 7 freq:900, starting at line 0
+  # PRED: 6 [9.9%]  (false,exec)
+  return sumD.2074 + nD.2070;
+  # SUCC: EXIT [100.0%]
+
+}
+
+
+Scope blocks after cleanups:
+
+{ Scope block #0
+
+  { Scope block #0
+    intD.2 lenD.2073;
+    intD.2 sumD.2074;
+
+    { Scope block #0
+      intD.2 iD.2075; (unused)
+
+    }
+
+  }
+
+}
+int f(const char*, int) (const charD.3 * sD.2069, intD.2 nD.2070)
+{
+  long unsigned intD.7 ivtmp.46D.2145;
+  long unsigned intD.7 ivtmp.44D.2143;
+  long unsigned intD.7 ivtmp.39D.2134;
+  intD.2 sumD.2074;
+  intD.2 lenD.2073;
+  const charD.3 D.2081;
+
+  # BLOCK 2 freq:900
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] if ([/out/probe.cpp : 1] *sD.2069 != 0)
+    goto <bb 3>;
+  else
+    goto <bb 8>;
+  # SUCC: 3 [91.0%]  (true,exec) 8 [9.0%]  (false,exec)
+
+  # BLOCK 8 freq:81, starting at line 0
+  # PRED: 2 [9.0%]  (false,exec)
+  lenD.2073 = 0;
+  goto <bb 5>;
+  # SUCC: 5 [100.0%]  (fallthru)
+
+  # BLOCK 3 freq:819, starting at line 0
+  # PRED: 2 [91.0%]  (true,exec)
+  ivtmp.44D.2143 = (long unsigned intD.7) sD.2069;
+  lenD.2073 = 0;
+  # SUCC: 4 [100.0%]  (fallthru,exec)
+
+  # BLOCK 4 freq:9100, starting at line 0
+  # PRED: 4 [91.0%]  (dfs_back,true,exec) 3 [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] lenD.2073 = lenD.2073 + 1;
+  [/out/probe.cpp : 1] D.2081 = MEM[index: ivtmp.44D.2143, offset: 1]{[/out/probe.cpp : 1] *D.2080};
+  ivtmp.44D.2143 = ivtmp.44D.2143 + 1;
+  [/out/probe.cpp : 1] if (D.2081 != 0)
+    goto <bb 4>;
+  else
+    goto <bb 5>;
+  # SUCC: 4 [91.0%]  (dfs_back,true,exec) 5 [9.0%]  (false,exec)
+
+  # BLOCK 5 freq:900, starting at line 0
+  # PRED: 4 [9.0%]  (false,exec) 8 [100.0%]  (fallthru)
+  ivtmp.39D.2134 = (long unsigned intD.7) sD.2069;
+  ivtmp.46D.2145 = ivtmp.39D.2134;
+  sumD.2074 = 0;
+  # SUCC: 6 [100.0%]  (fallthru,exec)
+
+  # BLOCK 6 freq:9100, starting at line 0
+  # PRED: 6 [90.1%]  (dfs_back,true,exec) 5 [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] sumD.2074 = sumD.2074 + (intD.2) MEM[index: ivtmp.46D.2145]{[/out/probe.cpp : 1] *D.2089};
+  ivtmp.46D.2145 = ivtmp.46D.2145 + 1;
+  [/out/probe.cpp : 1] if (lenD.2073 >= (intD.2) ((unsigned intD.6) ivtmp.46D.2145 - (unsigned intD.6) ivtmp.39D.2134))
+    goto <bb 6>;
+  else
+    goto <bb 7>;
+  # SUCC: 6 [90.1%]  (dfs_back,true,exec) 7 [9.9%]  (false,exec)
+
+  # BLOCK 7 freq:900, starting at line 0
+  # PRED: 6 [9.9%]  (false,exec)
+  return sumD.2074 + nD.2070;
+  # SUCC: EXIT [100.0%]
+
+}

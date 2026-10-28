@@ -1,0 +1,67 @@
+{
+  "compiler_version": "g++ (Ubuntu 4.4.3-4ubuntu5) 4.4.3",
+  "description": "Verbatim selected basic blocks from canonical-byte-verified Harvest diagnostic dumps. Other blocks are omitted. The final function body is selected after the pass diagnostics. Trailing whitespace is removed.",
+  "symbol": "_ZN2ox4core16CStringFunctions18millisecondsToWideEfb",
+  "instructions": [
+    1201,
+    1202
+  ],
+  "inputs": {
+    "trace.057t.fre": {
+      "original_sha256": "3d56c2358cba627b8e328a268ec4352542e09f383af7d3d80ae663f87f519b38",
+      "fixture_sha256": "1638fb0b2404d69a345d344b940962abd55592cdc9cff988fd797d3349091d4d"
+    },
+    "trace.059t.mergephi2": {
+      "original_sha256": "ffb9c70e8cfb340a85378eef9cec89bfa65b838a835b07b48601387bd0ea62c5",
+      "fixture_sha256": "769a37dca39d1bd7d667f78bbf8ed65bda78abcfb094331fdbbff2143f04f073"
+    },
+    "trace.060t.vrp1": {
+      "original_sha256": "a0210511003ed63df3acc26115b88e24823f72de61a295d3178f2cb7a8affcdb",
+      "fixture_sha256": "ba8859e12f370b2b94cb95905d949fbc73672730729713ab5a8ae35d0852a023"
+    },
+    "trace.061t.dce1": {
+      "original_sha256": "8231251eb4368d3980c35978be38a85774d61460e98e0fe5419c3d74b4499285",
+      "fixture_sha256": "0bc4fbf2d461b546327fd80067bd78d021d5ec899ea4a5245d39ac7e451db220"
+    },
+    "trace.066t.ch": {
+      "original_sha256": "c2dbabb1ba12b62277fe5d2b0c592c76c047d780cd6b20b133633d76c544b987",
+      "fixture_sha256": "95b63541f2b1c946d81c121cbc3446799e97362a112f3620a187388288855b49"
+    },
+    "trace.122t.uncprop": {
+      "original_sha256": "79b69f8d6c762ad5047da6725ca7a78f49e9c2efa9d29ecc779e7a615752e6eb",
+      "fixture_sha256": "aaf8f704e6e9aaef4ed28c25a92a2acd232f2eb9025e605647b5029150c6cdcd"
+    },
+    "trace.126t.final_cleanup": {
+      "original_sha256": "677c17845ef264464e7379f95aac380ec88208794cb0621c4a40080a89ecea6e",
+      "fixture_sha256": "15721a79023423da20405eb56113bab79e998b19d20e1e3d0f8bb59a4ed2e753"
+    },
+    "trace.128r.expand": {
+      "original_sha256": "a8158a4cc44b40b4dff99513608d97bcc9aa8ee3f11090e621efc02279603127",
+      "fixture_sha256": "68fb247a4ef27ec8c9f615ff3bd4aa7e9dfc6007d5e8fb07f91cc754011840e8"
+    }
+  },
+  "command": [
+    "g++",
+    "-O2",
+    "-Isrc",
+    "-Isrc/HarvestFull",
+    "-Ithird_party/luajit-2.0.0-beta8/include",
+    "-MD",
+    "-MF",
+    "/out/trace.d",
+    "-S",
+    "src/ox/core/CStringFunctions.cpp",
+    "-o",
+    "/out/trace.s",
+    "-g",
+    "-dp",
+    "-fdump-tree-all-details-lineno-uid-blocks",
+    "-fdump-rtl-all",
+    "-fdump-rtl-expand-details",
+    "-fdump-ipa-inline",
+    "-dumpbase",
+    "/out/trace"
+  ],
+  "container_image_id": "b94ef6033199879fb811edc1d642923532b9213f245eb081646157559e3d45dd",
+  "package_manifest_sha256": "e379f2252a8cdda9e94b71c872e83c863e7e7961180fa62ea95e8f763fafaf5e"
+}

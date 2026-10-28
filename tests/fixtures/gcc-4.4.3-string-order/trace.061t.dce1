@@ -1,0 +1,92 @@
+;; Function traced (_ZN2ox4core16CStringFunctions18millisecondsToWideEfb)
+
+  # BLOCK 194 freq:4277
+  # PRED: 195 [91.0%]  (true,exec)
+  [src/ox/core/CString.h : 148] lenD.27349_676 = lenD.27349_675 + 1;
+  [src/ox/core/CString.h : 149] cD.27346_678 = cD.27346_677 + 4;
+  # SUCC: 195 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 195 freq:4700
+  # PRED: 193 [100.0%]  (fallthru,exec) 194 [100.0%]  (fallthru,dfs_back,exec)
+  # lenD.27349_675 = PHI <0(193), lenD.27349_676(194)>
+  # cD.27346_677 = PHI <&"."[0](193), cD.27346_678(194)>
+  [src/ox/core/CString.h : 146] D.27355_679 = *cD.27346_677;
+  [src/ox/core/CString.h : 146] if (D.27355_679 != 0)
+    goto <bb 194>;
+  else
+    goto <bb 196>;
+  # SUCC: 194 [91.0%]  (true,exec) 196 [9.0%]  (false,exec)
+
+  # BLOCK 196 freq:423
+  # PRED: 195 [9.0%]  (false,exec)
+  # lenD.27349_929 = PHI <lenD.27349_675(195)>
+  [src/ox/core/CString.h : 156] D.27356_681 = lenD.27349_929 + 1;
+  [src/ox/core/CString.h : 156] D.26237.usedD.8813 = D.27356_681;
+  [src/ox/core/CString.h : 156] D.26237.allocatedD.8812 = D.27356_681;
+  [src/ox/core/CString.h : 157] D.27358_684 = (long unsigned intD.7) D.27356_681;
+  [src/ox/core/CString.h : 157] D.27359_685 = D.27358_684 * 4;
+  [src/ox/core/CString.h : 157] D.27360_686 = operator new []D.2015 (D.27359_685);
+  # SUCC: 197 [100.0%]  (fallthru,exec) 283 (ab,eh,exec)
+
+  # BLOCK 198 freq:4277
+  # PRED: 198 [90.1%]  (true,exec) 292 [100.0%]  (fallthru)
+  # lD.27351_123 = PHI <lD.27351_697(198), lD.27351_756(292)>
+  [src/ox/core/CString.h : 160] D.27362_690 = (long unsigned intD.7) lD.27351_123;
+  [src/ox/core/CString.h : 160] D.27363_691 = D.27362_690 * 4;
+  [src/ox/core/CString.h : 160] D.27364_692 = D.27361_687 + D.27363_691;
+  [src/ox/core/CString.h : 160] D.27365_695 = &"."[0] + D.27363_691;
+  [src/ox/core/CString.h : 160] D.27366_696 = *D.27365_695;
+  [src/ox/core/CString.h : 160] *D.27364_692 = D.27366_696;
+  [src/ox/core/CString.h : 159] lD.27351_697 = lD.27351_123 + 1;
+  [src/ox/core/CString.h : 159] if (lD.27351_697 <= lenD.27349_929)
+    goto <bb 198>;
+  else
+    goto <bb 199>;
+  # SUCC: 198 [90.1%]  (true,exec) 199 [9.9%]  (false,exec)
+
+  # BLOCK 264 freq:137
+  # PRED: 263 [29.0%]  (true,exec)
+  [src/ox/core/CString.h : 321] amountD.27533_870 = D.27497_866 + 1;
+  [src/ox/core/CString.h : 533] old_arrayD.27532_909 = resultD.26218.arrayD.8811;
+  [src/ox/core/CString.h : 535] D.27546_910 = (long unsigned intD.7) amountD.27533_870;
+  [src/ox/core/CString.h : 535] D.27545_911 = D.27546_910 * 4;
+  [src/ox/core/CString.h : 535] D.27544_912 = operator new []D.2015 (D.27545_911);
+  # SUCC: 265 [100.0%]  (fallthru,exec) 283 (ab,eh,exec)
+
+  # BLOCK 265 freq:137
+  # PRED: 264 [100.0%]  (fallthru,exec)
+  [src/ox/core/CString.h : 535] D.27543_913 = (wchar_tD.43 *) D.27544_912;
+  [src/ox/core/CString.h : 535] resultD.26218.arrayD.8811 = D.27543_913;
+  [src/ox/core/CString.h : 536] resultD.26218.allocatedD.8812 = amountD.27533_870;
+  [src/ox/core/CString.h : 538] D.27542_914 = resultD.26218.usedD.8813;
+  [src/ox/core/CString.h : 538] if (amountD.27533_870 > D.27542_914)
+    goto <bb 267>;
+  else
+    goto <bb 266>;
+  # SUCC: 267 [50.0%]  (true,exec) 266 [50.0%]  (false,exec)
+
+  # BLOCK 267 freq:137
+  # PRED: 266 [100.0%]  (fallthru,exec) 265 [50.0%]  (true,exec)
+  # amountD.27533_926 = PHI <amountD.27533_870(266), D.27542_914(265)>
+  goto <bb 269>;
+  # SUCC: 269 [100.0%]  (fallthru,exec)
+
+  # BLOCK 270 freq:137
+  # PRED: 269 [9.0%]  (false,exec)
+  [src/ox/core/CString.h : 542] D.27542_928 = resultD.26218.usedD.8813;
+  [src/ox/core/CString.h : 542] if (amountD.27533_870 < D.27542_928)
+    goto <bb 271>;
+  else
+    goto <bb 272>;
+  # SUCC: 271 [50.0%]  (true,exec) 272 [50.0%]  (false,exec)
+
+  # BLOCK 271 freq:68
+  # PRED: 270 [50.0%]  (true,exec)
+  [src/ox/core/CString.h : 543] resultD.26218.usedD.8813 = amountD.27533_870;
+  # SUCC: 272 [100.0%]  (fallthru,exec)
+
+  # BLOCK 292 freq:423
+  # PRED: 197 [100.0%]  (fallthru,exec)
+  # lD.27351_756 = PHI <0(197)>
+  goto <bb 198>;
+  # SUCC: 198 [100.0%]  (fallthru)

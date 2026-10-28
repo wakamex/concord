@@ -1,0 +1,77 @@
+
+;; Function int f(const char*, int) (_Z1fPKci)
+
+int f(const char*, int) (const charD.3 * sD.2069, intD.2 nD.2070)
+{
+  long unsigned intD.7 ivtmp.44D.2143;
+  unsigned intD.6 D.2136;
+  unsigned intD.6 D.2138;
+  unsigned intD.6 D.2139;
+  long unsigned intD.7 ivtmp.39D.2134;
+  intD.2 iD.2075;
+  intD.2 sumD.2074;
+  intD.2 lenD.2073;
+  intD.2 D.2092;
+  intD.2 D.2091;
+  const charD.3 D.2090;
+  const charD.3 D.2081;
+
+  # BLOCK 2 freq:900
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] D.2081_25 = [/out/probe.cpp : 1] *sD.2069_6(D);
+  [/out/probe.cpp : 1] if (D.2081_25 != 0)
+    goto <bb 3>;
+  else
+    goto <bb 5>;
+  # SUCC: 3 [91.0%]  (true,exec) 5 [9.0%]  (false,exec)
+
+  # BLOCK 3 freq:819, starting at line 0
+  # PRED: 2 [91.0%]  (true,exec)
+  ivtmp.44D.2143_15 = (long unsigned intD.7) sD.2069_6(D);
+  # SUCC: 4 [100.0%]  (fallthru,exec)
+
+  # BLOCK 4 freq:9100, starting at line 0
+  # PRED: 4 [91.0%]  (dfs_back,true,exec) 3 [100.0%]  (fallthru,exec)
+  # lenD.2073_11 = PHI <lenD.2073_10(4), 0(3)>
+  # ivtmp.44D.2143_28 = PHI <ivtmp.44D.2143_19(4), ivtmp.44D.2143_15(3)>
+  [/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_11 + 1;
+  [/out/probe.cpp : 1] D.2081_8 = MEM[index: ivtmp.44D.2143_28, offset: 1]{[/out/probe.cpp : 1] *D.2080};
+  ivtmp.44D.2143_19 = ivtmp.44D.2143_28 + 1;
+  [/out/probe.cpp : 1] if (D.2081_8 != 0)
+    goto <bb 4>;
+  else
+    goto <bb 5>;
+  # SUCC: 4 [91.0%]  (dfs_back,true,exec) 5 [9.0%]  (false,exec)
+
+  # BLOCK 5 freq:900, starting at line 0
+  # PRED: 4 [9.0%]  (false,exec) 2 [9.0%]  (false,exec)
+  # lenD.2073_23 = PHI <lenD.2073_10(4), 0(2)>
+  ivtmp.39D.2134_37 = (long unsigned intD.7) sD.2069_6(D);
+  # SUCC: 6 [100.0%]  (fallthru,exec)
+
+  # BLOCK 6 freq:9100, starting at line 0
+  # PRED: 6 [90.1%]  (dfs_back,true,exec) 5 [100.0%]  (fallthru,exec)
+  # sumD.2074_27 = PHI <sumD.2074_18(6), 0(5)>
+  # ivtmp.39D.2134_39 = PHI <ivtmp.39D.2134_38(6), ivtmp.39D.2134_37(5)>
+  [/out/probe.cpp : 1] D.2090_16 = MEM[index: ivtmp.39D.2134_39]{[/out/probe.cpp : 1] *D.2089};
+  [/out/probe.cpp : 1] D.2091_17 = (intD.2) D.2090_16;
+  [/out/probe.cpp : 1] sumD.2074_18 = sumD.2074_27 + D.2091_17;
+  ivtmp.39D.2134_38 = ivtmp.39D.2134_39 + 1;
+  [/out/probe.cpp : 1] D.2136_41 = (unsigned intD.6) ivtmp.39D.2134_38;
+  [/out/probe.cpp : 1] D.2138_43 = (unsigned intD.6) ivtmp.39D.2134_37;
+  [/out/probe.cpp : 1] D.2139_44 = D.2136_41 - D.2138_43;
+  iD.2075_45 = (intD.2) D.2139_44;
+  [/out/probe.cpp : 1] if (lenD.2073_23 >= iD.2075_45)
+    goto <bb 6>;
+  else
+    goto <bb 7>;
+  # SUCC: 6 [90.1%]  (dfs_back,true,exec) 7 [9.9%]  (false,exec)
+
+  # BLOCK 7 freq:900, starting at line 0
+  # PRED: 6 [9.9%]  (false,exec)
+  # sumD.2074_24 = PHI <sumD.2074_18(6)>
+  [/out/probe.cpp : 1] D.2092_21 = sumD.2074_24 + nD.2070_20(D);
+  return D.2092_21;
+  # SUCC: EXIT [100.0%]
+
+}

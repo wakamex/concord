@@ -1,0 +1,1685 @@
+
+;; Function int f(const char*, int) (_Z1fPKci)
+
+Created preheader block for loop 2
+;; 3 loops found
+;;
+;; Loop 0
+;;  header 0, latch 1
+;;  depth 0, outer -1
+;;  nodes: 0 1 2 3 4 7 6 9 8
+;;
+;; Loop 2
+;;  header 9, latch 6
+;;  depth 1, outer 0
+;;  nodes: 9 6
+;;
+;; Loop 1
+;;  header 4, latch 3
+;;  depth 1, outer 0
+;;  nodes: 4 3
+;; 2 succs { 4 }
+;; 3 succs { 4 }
+;; 4 succs { 3 7 }
+;; 7 succs { 9 }
+;; 6 succs { 9 }
+;; 9 succs { 6 8 }
+;; 8 succs { 1 }
+
+
+Registering new PHI nodes in block #4
+
+Updating SSA information for statement D.2079_5 = (long unsigned int) len_1;
+
+
+
+Registering new PHI nodes in block #3
+
+Updating SSA information for statement len_10 = len_1 + 1;
+
+
+
+Registering new PHI nodes in block #7
+
+
+
+Registering new PHI nodes in block #9
+
+Updating SSA information for statement if (len_1 >= i_3)
+
+
+
+Registering new PHI nodes in block #8
+
+Updating SSA information for statement D.2092_21 = sum_2 + n_20(D);
+
+
+
+Registering new PHI nodes in block #6
+
+Updating SSA information for statement sum_18 = D.2091_17 + sum_2;
+
+
+SSA replacement table
+N_i -> { O_1 ... O_j } means that N_i replaces O_1, ..., O_j
+
+len_23 -> { len_1 }
+sum_24 -> { sum_2 }
+
+Number of virtual NEW -> OLD mappings:       0
+Number of real NEW -> OLD mappings:          2
+Number of total NEW -> OLD mappings:         2
+
+Number of virtual symbols: 0
+
+
+Incremental SSA update started at block: 4
+
+Number of blocks in CFG: 10
+Number of blocks to update: 6 ( 60%)
+
+Affected blocks: 3 4 6 7 8 9
+
+
+
+ASSERT_EXPRs to be inserted
+
+Assertions to be inserted for i_3
+	if (len_23 >= i_3)
+
+	BB #6
+	EDGE 9->6 9 [91.0%]  (true,exec)
+	PREDICATE: i_3 le_expr len_23
+
+
+
+
+
+Registering new PHI nodes in block #9
+
+Updating SSA information for statement if (len_23 >= i_3)
+
+
+
+Registering new PHI nodes in block #8
+
+
+
+Registering new PHI nodes in block #6
+
+Updating SSA information for statement i_25 = ASSERT_EXPR <i_3, i_3 <= len_23>;
+
+Updating SSA information for statement D.2088_14 = (long unsigned int) i_3;
+
+Updating SSA information for statement i_19 = i_3 + 1;
+
+
+SSA replacement table
+N_i -> { O_1 ... O_j } means that N_i replaces O_1, ..., O_j
+
+i_25 -> { i_3 }
+
+Number of virtual NEW -> OLD mappings:       0
+Number of real NEW -> OLD mappings:          1
+Number of total NEW -> OLD mappings:         1
+
+Number of virtual symbols: 0
+
+
+Incremental SSA update started at block: 9
+
+Number of blocks in CFG: 10
+Number of blocks to update: 2 ( 20%)
+
+Affected blocks: 6 9
+
+
+
+SSA form after inserting ASSERT_EXPRs
+int f(const char*, int) (const charD.3 * sD.2069, intD.2 nD.2070)
+{
+  intD.2 iD.2075;
+  intD.2 sumD.2074;
+  intD.2 lenD.2073;
+  intD.2 D.2092;
+  intD.2 D.2091;
+  const charD.3 D.2090;
+  const charD.3 * D.2089;
+  long unsigned intD.7 D.2088;
+  const charD.3 D.2081;
+  const charD.3 * D.2080;
+  long unsigned intD.7 D.2079;
+
+  # BLOCK 2 freq:900
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] goto <bb 4>;
+  # SUCC: 4 [100.0%]  (fallthru,exec)
+
+  # BLOCK 3 freq:9100
+  # PRED: 4 [91.0%]  (true,exec)
+  [/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_1 + 1;
+  # SUCC: 4 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 4 freq:10000
+  # PRED: 2 [100.0%]  (fallthru,exec) 3 [100.0%]  (fallthru,dfs_back,exec)
+  # lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+  [/out/probe.cpp : 1] D.2079_5 = (long unsigned intD.7) lenD.2073_1;
+  [/out/probe.cpp : 1] D.2080_7 = sD.2069_6(D) + D.2079_5;
+  [/out/probe.cpp : 1] D.2081_8 = [/out/probe.cpp : 1] *D.2080_7;
+  [/out/probe.cpp : 1] if (D.2081_8 != 0)
+    goto <bb 3>;
+  else
+    goto <bb 7>;
+  # SUCC: 3 [91.0%]  (true,exec) 7 [9.0%]  (false,exec)
+
+  # BLOCK 7 freq:900
+  # PRED: 4 [9.0%]  (false,exec)
+  # sumD.2074_12 = PHI <0(4)>
+  # iD.2075_11 = PHI <0(4)>
+  # lenD.2073_23 = PHI <lenD.2073_1(4)>
+  goto <bb 9>;
+  # SUCC: 9 [100.0%]  (fallthru)
+
+  # BLOCK 6 freq:9100, starting at line 0
+  # PRED: 9 [91.0%]  (true,exec)
+  iD.2075_25 = ASSERT_EXPR <iD.2075_3, iD.2075_3 <= lenD.2073_23>;
+  [/out/probe.cpp : 1] D.2088_14 = (long unsigned intD.7) iD.2075_25;
+  [/out/probe.cpp : 1] D.2089_15 = sD.2069_6(D) + D.2088_14;
+  [/out/probe.cpp : 1] D.2090_16 = [/out/probe.cpp : 1] *D.2089_15;
+  [/out/probe.cpp : 1] D.2091_17 = (intD.2) D.2090_16;
+  [/out/probe.cpp : 1] sumD.2074_18 = D.2091_17 + sumD.2074_2;
+  [/out/probe.cpp : 1] iD.2075_19 = iD.2075_25 + 1;
+  # SUCC: 9 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 9 freq:10000
+  # PRED: 7 [100.0%]  (fallthru) 6 [100.0%]  (fallthru,dfs_back,exec)
+  # sumD.2074_2 = PHI <sumD.2074_12(7), sumD.2074_18(6)>
+  # iD.2075_3 = PHI <iD.2075_11(7), iD.2075_19(6)>
+  [/out/probe.cpp : 1] if (lenD.2073_23 >= iD.2075_3)
+    goto <bb 6>;
+  else
+    goto <bb 8>;
+  # SUCC: 6 [91.0%]  (true,exec) 8 [9.0%]  (false,exec)
+
+  # BLOCK 8 freq:900, starting at line 0
+  # PRED: 9 [9.0%]  (false,exec)
+  # sumD.2074_24 = PHI <sumD.2074_2(9)>
+  [/out/probe.cpp : 1] D.2092_21 = sumD.2074_24 + nD.2070_20(D);
+  return D.2092_21;
+  # SUCC: EXIT [100.0%]
+
+}
+
+
+Immediate_uses:
+
+len_1 : -->3 uses.
+len_23 = PHI <len_1(4)>
+D.2079_5 = (long unsigned int) len_1;
+len_10 = len_1 + 1;
+
+sum_2 : -->2 uses.
+sum_24 = PHI <sum_2(9)>
+sum_18 = D.2091_17 + sum_2;
+
+i_3 : -->3 uses.
+i_25 = ASSERT_EXPR <i_3, i_3 <= len_23>;
+i_25 = ASSERT_EXPR <i_3, i_3 <= len_23>;
+if (len_23 >= i_3)
+
+D.2079_5 : --> single use.
+D.2080_7 = s_6(D) + D.2079_5;
+
+s_6(D) : -->2 uses.
+D.2089_15 = s_6(D) + D.2088_14;
+D.2080_7 = s_6(D) + D.2079_5;
+
+D.2080_7 : --> single use.
+D.2081_8 = *D.2080_7;
+
+D.2081_8 : --> single use.
+if (D.2081_8 != 0)
+
+len_10 : --> single use.
+len_1 = PHI <0(2), len_10(3)>
+
+i_11 : --> single use.
+i_3 = PHI <i_11(7), i_19(6)>
+
+sum_12 : --> single use.
+sum_2 = PHI <sum_12(7), sum_18(6)>
+
+D.2088_14 : --> single use.
+D.2089_15 = s_6(D) + D.2088_14;
+
+D.2089_15 : --> single use.
+D.2090_16 = *D.2089_15;
+
+D.2090_16 : --> single use.
+D.2091_17 = (int) D.2090_16;
+
+D.2091_17 : --> single use.
+sum_18 = D.2091_17 + sum_2;
+
+sum_18 : --> single use.
+sum_2 = PHI <sum_12(7), sum_18(6)>
+
+i_19 : --> single use.
+i_3 = PHI <i_11(7), i_19(6)>
+
+n_20(D) : --> single use.
+D.2092_21 = sum_24 + n_20(D);
+
+D.2092_21 : --> single use.
+return D.2092_21;
+
+SMT.10_22(D) : -->2 uses.
+# VUSE <SMT.10_22(D)> { SMT.10 }
+D.2090_16 = *D.2089_15;
+# VUSE <SMT.10_22(D)> { SMT.10 }
+D.2081_8 = *D.2080_7;
+
+len_23 : -->2 uses.
+i_25 = ASSERT_EXPR <i_3, i_3 <= len_23>;
+if (len_23 >= i_3)
+
+sum_24 : --> single use.
+D.2092_21 = sum_24 + n_20(D);
+
+i_25 : -->2 uses.
+i_19 = i_25 + 1;
+D.2088_14 = (long unsigned int) i_25;
+
+Adding Destination of edge (0 -> 2) to worklist
+
+
+Simulating block 2
+Adding Destination of edge (2 -> 4) to worklist
+
+
+Simulating block 4
+
+Visiting PHI node: lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+
+    Argument #0 (2 -> 4 executable)
+	0
+	Value: [0, 0]
+
+    Argument #1 (3 -> 4 not executable)
+
+Visiting statement:
+[/out/probe.cpp : 1] D.2079_5 = (long unsigned intD.7) lenD.2073_1;
+
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2079_5)
+(get_scalar_evolution
+  (scalar = D.2079_5)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = len_1)
+(get_scalar_evolution
+  (scalar = len_1)
+  (scalar_evolution = ))
+(analyze_initial_condition
+  (loop_phi_node =
+len_1 = PHI <0(2), len_10(3)>
+)
+  (init_cond = 0))
+(analyze_evolution_in_loop
+  (loop_phi_node = len_1 = PHI <0(2), len_10(3)>
+)
+(add_to_evolution
+  (loop_nb = 1)
+  (chrec_before = 0)
+  (to_add = 1)
+  (res = {0, +, 1}_1))
+  (evolution_function = {0, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = len_1)
+  (scalar_evolution = {0, +, 1}_1))
+)
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2079_5)
+  (scalar_evolution = {0, +, 1}_1))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = {0, +, 1}_1)
+  (res = {0, +, 1}_1))
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2081_8)
+(get_scalar_evolution
+  (scalar = D.2081_8)
+  (scalar_evolution = ))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+)
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2081_8)
+(get_scalar_evolution
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+)
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2081_8)
+(get_scalar_evolution
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = D.2081_8)
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2081_8)
+(get_scalar_evolution
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+)
+  (res = scev_not_known))
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = len_10)
+(get_scalar_evolution
+  (scalar = len_10)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = len_1)
+(get_scalar_evolution
+  (scalar = len_1)
+  (scalar_evolution = {0, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = len_1)
+  (scalar_evolution = {0, +, 1}_1))
+)
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = 1)
+(get_scalar_evolution
+  (scalar = 1)
+  (scalar_evolution = 1))
+)
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = len_10)
+  (scalar_evolution = {1, +, 1}_1))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = {1, +, 1}_1)
+  (res = {1, +, 1}_1))
+Induction variable (int) 1 + 1 * iteration does not wrap in statement len_10 = len_1 + 1;
+ in loop 1.
+Statement len_10 = len_1 + 1;
+ is executed at most 2147483646 (bounded by 2147483646) + 1 times in loop 1.
+Found new range for D.2079_5: [0, 0]
+
+
+Visiting statement:
+[/out/probe.cpp : 1] D.2080_7 = sD.2069_6(D) + D.2079_5;
+
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2080_7)
+(get_scalar_evolution
+  (scalar = D.2080_7)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = s_6(D))
+(get_scalar_evolution
+  (scalar = s_6(D))
+  (scalar_evolution = ))
+)
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2079_5)
+(get_scalar_evolution
+  (scalar = D.2079_5)
+  (scalar_evolution = {0, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2079_5)
+  (scalar_evolution = {0, +, 1}_1))
+)
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2080_7)
+  (scalar_evolution = {s_6(D), +, 1}_1))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = {s_6(D), +, 1}_1)
+  (res = {s_6(D), +, 1}_1))
+Found new range for D.2080_7: [s_6(D), -1B]
+
+
+Visiting statement:
+[/out/probe.cpp : 1] if (D.2081_8 != 0)
+
+
+Visiting conditional with predicate: if (D.2081_8 != 0)
+
+With known ranges
+	D.2081_8: VARYING
+
+Predicate evaluates to: DON'T KNOW
+Adding Destination of edge (4 -> 3) to worklist
+
+Adding Destination of edge (4 -> 7) to worklist
+
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_1 + 1;
+
+Simulating statement (from ssa_edges): lenD.2073_23 = PHI <lenD.2073_1(4)>
+
+Visiting PHI node: lenD.2073_23 = PHI <lenD.2073_1(4)>
+
+    Argument #0 (4 -> 7 executable)
+	lenD.2073_1
+	Value: [0, 0]
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] if (lenD.2073_23 >= iD.2075_3)
+
+Simulating statement (from ssa_edges): iD.2075_25 = ASSERT_EXPR <iD.2075_3, iD.2075_3 <= lenD.2073_23>;
+
+Simulating block 3
+
+Visiting statement:
+[/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_1 + 1;
+
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = len_10)
+(get_scalar_evolution
+  (scalar = len_10)
+  (scalar_evolution = {1, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = len_10)
+  (scalar_evolution = {1, +, 1}_1))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = {1, +, 1}_1)
+  (res = {1, +, 1}_1))
+Found new range for len_10: [1, 1]
+
+Adding Destination of edge (3 -> 4) to worklist
+
+
+Simulating statement (from ssa_edges): lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+
+Visiting PHI node: lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+
+    Argument #0 (2 -> 4 executable)
+	0
+	Value: [0, 0]
+
+    Argument #1 (3 -> 4 executable)
+	lenD.2073_10
+	Value: [1, 1]
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_1 + 1;
+
+Visiting statement:
+[/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_1 + 1;
+
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = len_10)
+(get_scalar_evolution
+  (scalar = len_10)
+  (scalar_evolution = {1, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = len_10)
+  (scalar_evolution = {1, +, 1}_1))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = {1, +, 1}_1)
+  (res = {1, +, 1}_1))
+Found new range for len_10: [1, 2]
+
+
+Simulating statement (from ssa_edges): lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+
+Visiting PHI node: lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+
+    Argument #0 (2 -> 4 executable)
+	0
+	Value: [0, 0]
+
+    Argument #1 (3 -> 4 executable)
+	lenD.2073_10
+	Value: [1, 2]
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = len_1)
+(get_scalar_evolution
+  (scalar = len_1)
+  (scalar_evolution = {0, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = len_1)
+  (scalar_evolution = {0, +, 1}_1))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = {0, +, 1}_1)
+  (res = {0, +, 1}_1))
+len_1: loop information indicates does not overflow
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_1 + 1;
+
+Visiting statement:
+[/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_1 + 1;
+
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = len_10)
+(get_scalar_evolution
+  (scalar = len_10)
+  (scalar_evolution = {1, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = len_10)
+  (scalar_evolution = {1, +, 1}_1))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = {1, +, 1}_1)
+  (res = {1, +, 1}_1))
+Found new range for len_10: [1, +INF]
+
+
+Simulating statement (from ssa_edges): lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+
+Visiting PHI node: lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+
+    Argument #0 (2 -> 4 executable)
+	0
+	Value: [0, 0]
+
+    Argument #1 (3 -> 4 executable)
+	lenD.2073_10
+	Value: [1, +INF]
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] D.2079_5 = (long unsigned intD.7) lenD.2073_1;
+
+Visiting statement:
+[/out/probe.cpp : 1] D.2079_5 = (long unsigned intD.7) lenD.2073_1;
+
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2079_5)
+(get_scalar_evolution
+  (scalar = D.2079_5)
+  (scalar_evolution = {0, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2079_5)
+  (scalar_evolution = {0, +, 1}_1))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = {0, +, 1}_1)
+  (res = {0, +, 1}_1))
+Found new range for D.2079_5: [0, 2147483647]
+
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] D.2080_7 = sD.2069_6(D) + D.2079_5;
+
+Visiting statement:
+[/out/probe.cpp : 1] D.2080_7 = sD.2069_6(D) + D.2079_5;
+
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2080_7)
+(get_scalar_evolution
+  (scalar = D.2080_7)
+  (scalar_evolution = {s_6(D), +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2080_7)
+  (scalar_evolution = {s_6(D), +, 1}_1))
+)
+(instantiate_scev
+  (instantiate_below = 2)
+  (evolution_loop = 1)
+  (chrec = {s_6(D), +, 1}_1)
+  (res = {s_6(D), +, 1}_1))
+
+Simulating statement (from ssa_edges): lenD.2073_23 = PHI <lenD.2073_1(4)>
+
+Visiting PHI node: lenD.2073_23 = PHI <lenD.2073_1(4)>
+
+    Argument #0 (4 -> 7 executable)
+	lenD.2073_1
+	Value: [0, +INF]
+(analyze_scalar_evolution
+  (loop_nb = 0)
+  (scalar = len_23)
+(get_scalar_evolution
+  (scalar = len_23)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 0)
+  (scalar = len_1)
+(get_scalar_evolution
+  (scalar = len_1)
+  (scalar_evolution = ))
+(analyze_initial_condition
+  (loop_phi_node =
+len_1 = PHI <0(2), len_10(3)>
+)
+  (init_cond = 0))
+(analyze_evolution_in_loop
+  (loop_phi_node = len_1 = PHI <0(2), len_10(3)>
+)
+(add_to_evolution
+  (loop_nb = 1)
+  (chrec_before = 0)
+  (to_add = 1)
+  (res = {0, +, 1}_1))
+  (evolution_function = {0, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = len_1)
+  (scalar_evolution = {0, +, 1}_1))
+(number_of_iterations_in_loop
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2081_8)
+(get_scalar_evolution
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+)
+(analyze_scalar_evolution
+  (loop_nb = 1)
+  (scalar = D.2081_8)
+(get_scalar_evolution
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = D.2081_8)
+  (scalar_evolution = D.2081_8))
+)
+  (set_nb_iterations_in_loop = scev_not_known))
+)
+(set_scalar_evolution
+  instantiated_below = 0
+  (scalar = len_23)
+  (scalar_evolution = len_1))
+)
+(instantiate_scev
+  (instantiate_below = 0)
+  (evolution_loop = 0)
+  (chrec = len_1)
+(analyze_scalar_evolution
+  (loop_nb = 0)
+  (scalar = len_1)
+(get_scalar_evolution
+  (scalar = len_1)
+  (scalar_evolution = ))
+(analyze_initial_condition
+  (loop_phi_node =
+len_1 = PHI <0(2), len_10(3)>
+)
+  (init_cond = 0))
+(analyze_evolution_in_loop
+  (loop_phi_node = len_1 = PHI <0(2), len_10(3)>
+)
+(add_to_evolution
+  (loop_nb = 1)
+  (chrec_before = 0)
+  (to_add = 1)
+  (res = {0, +, 1}_1))
+  (evolution_function = {0, +, 1}_1))
+(set_scalar_evolution
+  instantiated_below = 2
+  (scalar = len_1)
+  (scalar_evolution = {0, +, 1}_1))
+)
+  (res = len_23))
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] if (lenD.2073_23 >= iD.2075_3)
+
+Simulating statement (from ssa_edges): iD.2075_25 = ASSERT_EXPR <iD.2075_3, iD.2075_3 <= lenD.2073_23>;
+
+Simulating block 7
+
+Visiting PHI node: sumD.2074_12 = PHI <0(4)>
+
+    Argument #0 (4 -> 7 executable)
+	0
+	Value: [0, 0]
+
+Visiting PHI node: iD.2075_11 = PHI <0(4)>
+
+    Argument #0 (4 -> 7 executable)
+	0
+	Value: [0, 0]
+
+Visiting PHI node: lenD.2073_23 = PHI <lenD.2073_1(4)>
+
+    Argument #0 (4 -> 7 executable)
+	lenD.2073_1
+	Value: [0, +INF]
+Adding Destination of edge (7 -> 9) to worklist
+
+
+Simulating statement (from ssa_edges): iD.2075_3 = PHI <iD.2075_11(7), iD.2075_19(6)>
+
+Visiting PHI node: iD.2075_3 = PHI <iD.2075_11(7), iD.2075_19(6)>
+
+    Argument #0 (7 -> 9 executable)
+	iD.2075_11
+	Value: [0, 0]
+
+    Argument #1 (6 -> 9 not executable)
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] if (lenD.2073_23 >= iD.2075_3)
+
+Simulating statement (from ssa_edges): iD.2075_25 = ASSERT_EXPR <iD.2075_3, iD.2075_3 <= lenD.2073_23>;
+
+Simulating statement (from ssa_edges): sumD.2074_2 = PHI <sumD.2074_12(7), sumD.2074_18(6)>
+
+Visiting PHI node: sumD.2074_2 = PHI <sumD.2074_12(7), sumD.2074_18(6)>
+
+    Argument #0 (7 -> 9 executable)
+	sumD.2074_12
+	Value: [0, 0]
+
+    Argument #1 (6 -> 9 not executable)
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] sumD.2074_18 = D.2091_17 + sumD.2074_2;
+
+Simulating statement (from ssa_edges): sumD.2074_24 = PHI <sumD.2074_2(9)>
+
+Visiting PHI node: sumD.2074_24 = PHI <sumD.2074_2(9)>
+
+    Argument #0 (9 -> 8 not executable)
+
+Simulating block 4
+
+Visiting PHI node: lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+
+    Argument #0 (2 -> 4 executable)
+	0
+	Value: [0, 0]
+
+    Argument #1 (3 -> 4 executable)
+	lenD.2073_10
+	Value: [1, +INF]
+
+Simulating block 9
+
+Visiting PHI node: sumD.2074_2 = PHI <sumD.2074_12(7), sumD.2074_18(6)>
+
+    Argument #0 (7 -> 9 executable)
+	sumD.2074_12
+	Value: [0, 0]
+
+    Argument #1 (6 -> 9 not executable)
+
+Visiting PHI node: iD.2075_3 = PHI <iD.2075_11(7), iD.2075_19(6)>
+
+    Argument #0 (7 -> 9 executable)
+	iD.2075_11
+	Value: [0, 0]
+
+    Argument #1 (6 -> 9 not executable)
+
+Visiting statement:
+[/out/probe.cpp : 1] if (lenD.2073_23 >= iD.2075_3)
+
+
+Visiting conditional with predicate: if (len_23 >= i_3)
+
+With known ranges
+	len_23: [0, +INF(OVF)]	i_3: [0, 0]
+
+Ignoring predicate evaluation because it assumes that signed overflow is undefined
+Predicate evaluates to: DON'T KNOW
+Adding Destination of edge (9 -> 6) to worklist
+
+Adding Destination of edge (9 -> 8) to worklist
+
+
+Simulating block 6
+
+Visiting statement:
+iD.2075_25 = ASSERT_EXPR <iD.2075_3, iD.2075_3 <= lenD.2073_23>;
+
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = i_25)
+(get_scalar_evolution
+  (scalar = i_25)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = i_3)
+(get_scalar_evolution
+  (scalar = i_3)
+  (scalar_evolution = ))
+(analyze_initial_condition
+  (loop_phi_node =
+i_3 = PHI <i_11(7), i_19(6)>
+)
+  (init_cond = i_11))
+(analyze_evolution_in_loop
+  (loop_phi_node = i_3 = PHI <i_11(7), i_19(6)>
+)
+(add_to_evolution
+  (loop_nb = 2)
+  (chrec_before = i_11)
+  (to_add = 1)
+  (res = {i_11, +, 1}_2))
+  (evolution_function = {i_11, +, 1}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = i_3)
+  (scalar_evolution = {i_11, +, 1}_2))
+)
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = i_25)
+  (scalar_evolution = {i_11, +, 1}_2))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = {i_11, +, 1}_2)
+  (res = {i_11, +, 1}_2))
+Found new range for i_25: [i_11, +INF]
+
+
+Visiting statement:
+[/out/probe.cpp : 1] D.2088_14 = (long unsigned intD.7) iD.2075_25;
+
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = D.2088_14)
+(get_scalar_evolution
+  (scalar = D.2088_14)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = i_25)
+(get_scalar_evolution
+  (scalar = i_25)
+  (scalar_evolution = {i_11, +, 1}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = i_25)
+  (scalar_evolution = {i_11, +, 1}_2))
+)
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = D.2088_14)
+  (scalar_evolution = {(long unsigned int) i_11, +, 1}_2))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = {(long unsigned int) i_11, +, 1}_2)
+  (res = {(long unsigned int) i_11, +, 1}_2))
+Found new range for D.2088_14: [0, +INF]
+
+
+Visiting statement:
+[/out/probe.cpp : 1] D.2089_15 = sD.2069_6(D) + D.2088_14;
+
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = D.2089_15)
+(get_scalar_evolution
+  (scalar = D.2089_15)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = s_6(D))
+(get_scalar_evolution
+  (scalar = s_6(D))
+  (scalar_evolution = ))
+)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = D.2088_14)
+(get_scalar_evolution
+  (scalar = D.2088_14)
+  (scalar_evolution = {(long unsigned int) i_11, +, 1}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = D.2088_14)
+  (scalar_evolution = {(long unsigned int) i_11, +, 1}_2))
+)
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = D.2089_15)
+  (scalar_evolution = {s_6(D) + (long unsigned int) (long unsigned int) i_11, +, 1}_2))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = {s_6(D) + (long unsigned int) (long unsigned int) i_11, +, 1}_2)
+  (res = {s_6(D) + (long unsigned int) (long unsigned int) i_11, +, 1}_2))
+Found new range for D.2089_15: VARYING
+
+
+Visiting statement:
+[/out/probe.cpp : 1] D.2091_17 = (intD.2) D.2090_16;
+
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = D.2091_17)
+(get_scalar_evolution
+  (scalar = D.2091_17)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = D.2090_16)
+(get_scalar_evolution
+  (scalar = D.2090_16)
+  (scalar_evolution = ))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = D.2090_16)
+  (scalar_evolution = D.2090_16))
+)
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = D.2091_17)
+  (scalar_evolution = (int) D.2090_16))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = (int) D.2090_16)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = D.2090_16)
+(get_scalar_evolution
+  (scalar = D.2090_16)
+  (scalar_evolution = D.2090_16))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = D.2090_16)
+  (scalar_evolution = D.2090_16))
+)
+  (res = scev_not_known))
+Found new range for D.2091_17: [-128, 127]
+
+
+Visiting statement:
+[/out/probe.cpp : 1] sumD.2074_18 = D.2091_17 + sumD.2074_2;
+
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = sum_18)
+(get_scalar_evolution
+  (scalar = sum_18)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = D.2091_17)
+(get_scalar_evolution
+  (scalar = D.2091_17)
+  (scalar_evolution = (int) D.2090_16))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = D.2091_17)
+  (scalar_evolution = (int) D.2090_16))
+)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = sum_2)
+(get_scalar_evolution
+  (scalar = sum_2)
+  (scalar_evolution = ))
+(analyze_initial_condition
+  (loop_phi_node =
+sum_2 = PHI <sum_12(7), sum_18(6)>
+)
+  (init_cond = sum_12))
+(analyze_evolution_in_loop
+  (loop_phi_node = sum_2 = PHI <sum_12(7), sum_18(6)>
+)
+(add_to_evolution
+  (loop_nb = 2)
+  (chrec_before = sum_12)
+  (to_add = D.2091_17)
+  (res = {sum_12, +, D.2091_17}_2))
+  (evolution_function = {sum_12, +, D.2091_17}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_2)
+  (scalar_evolution = {sum_12, +, D.2091_17}_2))
+)
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = sum_18)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = sum_18)
+(get_scalar_evolution
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+)
+  (res = scev_not_known))
+Found new range for sum_18: [-128, 127]
+
+
+Visiting statement:
+[/out/probe.cpp : 1] iD.2075_19 = iD.2075_25 + 1;
+
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = i_19)
+(get_scalar_evolution
+  (scalar = i_19)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = i_25)
+(get_scalar_evolution
+  (scalar = i_25)
+  (scalar_evolution = {i_11, +, 1}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = i_25)
+  (scalar_evolution = {i_11, +, 1}_2))
+)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = 1)
+(get_scalar_evolution
+  (scalar = 1)
+  (scalar_evolution = 1))
+)
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = i_19)
+  (scalar_evolution = {i_11 + 1, +, 1}_2))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = {i_11 + 1, +, 1}_2)
+  (res = {i_11 + 1, +, 1}_2))
+Found new range for i_19: [i_11 + 1, +INF]
+
+Adding Destination of edge (6 -> 9) to worklist
+
+
+Simulating statement (from ssa_edges): iD.2075_3 = PHI <iD.2075_11(7), iD.2075_19(6)>
+
+Visiting PHI node: iD.2075_3 = PHI <iD.2075_11(7), iD.2075_19(6)>
+
+    Argument #0 (7 -> 9 executable)
+	iD.2075_11
+	Value: [0, 0]
+
+    Argument #1 (6 -> 9 executable)
+	iD.2075_19
+	Value: [i_11 + 1, +INF]
+
+Simulating statement (from ssa_edges): sumD.2074_2 = PHI <sumD.2074_12(7), sumD.2074_18(6)>
+
+Visiting PHI node: sumD.2074_2 = PHI <sumD.2074_12(7), sumD.2074_18(6)>
+
+    Argument #0 (7 -> 9 executable)
+	sumD.2074_12
+	Value: [0, 0]
+
+    Argument #1 (6 -> 9 executable)
+	sumD.2074_18
+	Value: [-128, 127]
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] sumD.2074_18 = D.2091_17 + sumD.2074_2;
+
+Visiting statement:
+[/out/probe.cpp : 1] sumD.2074_18 = D.2091_17 + sumD.2074_2;
+
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = sum_18)
+(get_scalar_evolution
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = sum_18)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = sum_18)
+(get_scalar_evolution
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+)
+  (res = scev_not_known))
+Found new range for sum_18: [-256, 254]
+
+
+Simulating statement (from ssa_edges): sumD.2074_2 = PHI <sumD.2074_12(7), sumD.2074_18(6)>
+
+Visiting PHI node: sumD.2074_2 = PHI <sumD.2074_12(7), sumD.2074_18(6)>
+
+    Argument #0 (7 -> 9 executable)
+	sumD.2074_12
+	Value: [0, 0]
+
+    Argument #1 (6 -> 9 executable)
+	sumD.2074_18
+	Value: [-256, 254]
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = sum_2)
+(get_scalar_evolution
+  (scalar = sum_2)
+  (scalar_evolution = {sum_12, +, D.2091_17}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_2)
+  (scalar_evolution = {sum_12, +, D.2091_17}_2))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = {sum_12, +, D.2091_17}_2)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = D.2091_17)
+(get_scalar_evolution
+  (scalar = D.2091_17)
+  (scalar_evolution = (int) D.2090_16))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = D.2091_17)
+  (scalar_evolution = (int) D.2090_16))
+)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = D.2090_16)
+(get_scalar_evolution
+  (scalar = D.2090_16)
+  (scalar_evolution = D.2090_16))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = D.2090_16)
+  (scalar_evolution = D.2090_16))
+)
+  (res = scev_not_known))
+
+Simulating statement (from ssa_edges): sumD.2074_24 = PHI <sumD.2074_2(9)>
+
+Visiting PHI node: sumD.2074_24 = PHI <sumD.2074_2(9)>
+
+    Argument #0 (9 -> 8 executable)
+	sumD.2074_2
+	Value: VARYING
+
+Simulating statement (from ssa_edges): [/out/probe.cpp : 1] sumD.2074_18 = D.2091_17 + sumD.2074_2;
+
+Visiting statement:
+[/out/probe.cpp : 1] sumD.2074_18 = D.2091_17 + sumD.2074_2;
+
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = sum_18)
+(get_scalar_evolution
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = sum_18)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = sum_18)
+(get_scalar_evolution
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_18)
+  (scalar_evolution = sum_18))
+)
+  (res = scev_not_known))
+Found new range for sum_18: VARYING
+
+
+Simulating block 8
+
+Visiting statement:
+[/out/probe.cpp : 1] D.2092_21 = sumD.2074_24 + nD.2070_20(D);
+
+(analyze_scalar_evolution
+  (loop_nb = 0)
+  (scalar = D.2092_21)
+(get_scalar_evolution
+  (scalar = D.2092_21)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 0)
+  (scalar = sum_24)
+(get_scalar_evolution
+  (scalar = sum_24)
+  (scalar_evolution = ))
+(analyze_scalar_evolution
+  (loop_nb = 0)
+  (scalar = sum_2)
+(get_scalar_evolution
+  (scalar = sum_2)
+  (scalar_evolution = ))
+(analyze_initial_condition
+  (loop_phi_node =
+sum_2 = PHI <sum_12(7), sum_18(6)>
+)
+  (init_cond = sum_12))
+(analyze_evolution_in_loop
+  (loop_phi_node = sum_2 = PHI <sum_12(7), sum_18(6)>
+)
+(add_to_evolution
+  (loop_nb = 2)
+  (chrec_before = sum_12)
+  (to_add = D.2091_17)
+  (res = {sum_12, +, D.2091_17}_2))
+  (evolution_function = {sum_12, +, D.2091_17}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_2)
+  (scalar_evolution = {sum_12, +, D.2091_17}_2))
+(number_of_iterations_in_loop
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = len_23)
+(get_scalar_evolution
+  (scalar = len_23)
+  (scalar_evolution = ))
+)
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = i_3)
+(get_scalar_evolution
+  (scalar = i_3)
+  (scalar_evolution = {i_11, +, 1}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = i_3)
+  (scalar_evolution = {i_11, +, 1}_2))
+)
+Analyzing # of iterations of loop 2
+  exit condition [0, + , 1](no_overflow) <= len_23
+  bounds on difference of bases: -2147483648 ... 2147483647
+  result:
+    zero if len_23 < -1
+    # of iterations (unsigned int) (len_23 + 1), bounded by 2147483648
+  (set_nb_iterations_in_loop = scev_not_known))
+)
+(set_scalar_evolution
+  instantiated_below = 0
+  (scalar = sum_24)
+  (scalar_evolution = sum_2))
+)
+(analyze_scalar_evolution
+  (loop_nb = 0)
+  (scalar = n_20(D))
+(get_scalar_evolution
+  (scalar = n_20(D))
+  (scalar_evolution = ))
+)
+(set_scalar_evolution
+  instantiated_below = 0
+  (scalar = D.2092_21)
+  (scalar_evolution = sum_2 + n_20(D)))
+)
+(instantiate_scev
+  (instantiate_below = 0)
+  (evolution_loop = 0)
+  (chrec = sum_2 + n_20(D))
+(analyze_scalar_evolution
+  (loop_nb = 0)
+  (scalar = sum_2)
+(get_scalar_evolution
+  (scalar = sum_2)
+  (scalar_evolution = ))
+(analyze_initial_condition
+  (loop_phi_node =
+sum_2 = PHI <sum_12(7), sum_18(6)>
+)
+  (init_cond = sum_12))
+(analyze_evolution_in_loop
+  (loop_phi_node = sum_2 = PHI <sum_12(7), sum_18(6)>
+)
+(add_to_evolution
+  (loop_nb = 2)
+  (chrec_before = sum_12)
+  (to_add = D.2091_17)
+  (res = {sum_12, +, D.2091_17}_2))
+  (evolution_function = {sum_12, +, D.2091_17}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = sum_2)
+  (scalar_evolution = {sum_12, +, D.2091_17}_2))
+)
+  (res = n_20(D) + sum_24))
+Found new range for D.2092_21: VARYING
+
+
+Simulating statement (from ssa_edges): iD.2075_25 = ASSERT_EXPR <iD.2075_3, iD.2075_3 <= lenD.2073_23>;
+
+Visiting statement:
+iD.2075_25 = ASSERT_EXPR <iD.2075_3, iD.2075_3 <= lenD.2073_23>;
+
+(analyze_scalar_evolution
+  (loop_nb = 2)
+  (scalar = i_25)
+(get_scalar_evolution
+  (scalar = i_25)
+  (scalar_evolution = {i_11, +, 1}_2))
+(set_scalar_evolution
+  instantiated_below = 7
+  (scalar = i_25)
+  (scalar_evolution = {i_11, +, 1}_2))
+)
+(instantiate_scev
+  (instantiate_below = 7)
+  (evolution_loop = 2)
+  (chrec = {i_11, +, 1}_2)
+  (res = {i_11, +, 1}_2))
+
+Simulating block 9
+
+Value ranges after VRP:
+
+len_1: [0, +INF]
+sum_2: VARYING
+i_3: VARYING
+D.2079_5: [0, 2147483647]
+s_6(D): VARYING
+D.2080_7: [s_6(D), -1B]
+D.2081_8: VARYING
+len_10: [1, +INF]
+i_11: [0, 0]
+sum_12: [0, 0]
+D.2088_14: [0, +INF]
+D.2089_15: VARYING
+D.2090_16: VARYING
+D.2091_17: [-128, 127]
+sum_18: VARYING
+i_19: [i_11 + 1, +INF]
+n_20(D): VARYING
+D.2092_21: VARYING
+len_23: [0, +INF(OVF)]
+sum_24: VARYING
+i_25: [i_11, +INF]  EQUIVALENCES: { } (0 elements)
+
+
+
+Substituting values and folding statements
+
+Folding statement: len_10 = len_1 + 1;
+Not folded
+Folding PHI node: len_1 = PHI <0(2), len_10(3)>
+No folding possible
+Folding statement: if (D.2081_8 != 0)
+Not folded
+Folding statement: D.2081_8 = *D.2080_7;
+Not folded
+Folding statement: D.2080_7 = s_6(D) + D.2079_5;
+Not folded
+Folding statement: D.2079_5 = (long unsigned int) len_1;
+Not folded
+Folding PHI node: sum_12 = PHI <0(4)>
+No folding possible
+Folding PHI node: i_11 = PHI <0(4)>
+No folding possible
+Folding PHI node: len_23 = PHI <len_1(4)>
+No folding possible
+Folding statement: i_19 = i_25 + 1;
+Not folded
+Folding statement: sum_18 = D.2091_17 + sum_2;
+Not folded
+Folding statement: D.2091_17 = (int) D.2090_16;
+Not folded
+Folding statement: D.2090_16 = *D.2089_15;
+Not folded
+Folding statement: D.2089_15 = s_6(D) + D.2088_14;
+Not folded
+Folding statement: D.2088_14 = (long unsigned int) i_25;
+Not folded
+Folding PHI node: sum_2 = PHI <sum_12(7), sum_18(6)>
+Folded into: sum_2 = PHI <0(7), sum_18(6)>
+
+Folding PHI node: i_3 = PHI <i_11(7), i_19(6)>
+Folded into: i_3 = PHI <0(7), i_19(6)>
+
+Folding statement: if (len_23 >= i_3)
+Not folded
+Folding PHI node: sum_24 = PHI <sum_2(9)>
+No folding possible
+Folding statement: return D.2092_21;
+Not folded
+Folding statement: D.2092_21 = sum_24 + n_20(D);
+Not folded
+  Threaded jump 7 --> 9 to 10
+Removing basic block 6
+;; basic block 6, loop depth 1, count 0
+;; prev block 7, next block 11
+;; pred:
+;; succ:       11 [100.0%]  (fallthru)
+<bb 6>:
+Invalid sum of incoming frequencies 0, should be 8200
+
+
+
+
+Registering new PHI nodes in block #9
+
+
+
+Registering new PHI nodes in block #6
+
+Updating SSA information for statement D.2088_14 = (long unsigned int) i_3;
+
+Updating SSA information for statement sum_18 = D.2091_17 + sum_2;
+
+Updating SSA information for statement i_19 = i_3 + 1;
+
+
+
+Registering new PHI nodes in block #7
+
+Updating SSA information for statement if (len_23 >= i_3)
+
+
+
+Registering new PHI nodes in block #8
+
+
+SSA replacement table
+N_i -> { O_1 ... O_j } means that N_i replaces O_1, ..., O_j
+
+sum_25 -> { sum_2 }
+i_26 -> { i_3 }
+sum_27 -> { sum_2 }
+i_28 -> { i_3 }
+
+Number of virtual NEW -> OLD mappings:       0
+Number of real NEW -> OLD mappings:          4
+Number of total NEW -> OLD mappings:         4
+
+Number of virtual symbols: 0
+
+
+Incremental SSA update started at block: 9
+
+Number of blocks in CFG: 10
+Number of blocks to update: 4 ( 40%)
+
+Affected blocks: 6 7 8 9
+
+
+Scope blocks after cleanups:
+
+{ Scope block #0
+
+  { Scope block #0
+    intD.2 lenD.2073;
+    intD.2 sumD.2074;
+
+    { Scope block #0
+      intD.2 iD.2075;
+
+    }
+
+  }
+
+}
+int f(const char*, int) (const charD.3 * sD.2069, intD.2 nD.2070)
+{
+  intD.2 iD.2075;
+  intD.2 sumD.2074;
+  intD.2 lenD.2073;
+  intD.2 D.2092;
+  intD.2 D.2091;
+  const charD.3 D.2090;
+  const charD.3 * D.2089;
+  long unsigned intD.7 D.2088;
+  const charD.3 D.2081;
+  const charD.3 * D.2080;
+  long unsigned intD.7 D.2079;
+
+  # BLOCK 2 freq:900
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  [/out/probe.cpp : 1] goto <bb 4>;
+  # SUCC: 4 [100.0%]  (fallthru,exec)
+
+  # BLOCK 3 freq:9100
+  # PRED: 4 [91.0%]  (true,exec)
+  [/out/probe.cpp : 1] lenD.2073_10 = lenD.2073_1 + 1;
+  # SUCC: 4 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 4 freq:10000
+  # PRED: 2 [100.0%]  (fallthru,exec) 3 [100.0%]  (fallthru,dfs_back,exec)
+  # lenD.2073_1 = PHI <0(2), lenD.2073_10(3)>
+  [/out/probe.cpp : 1] D.2079_5 = (long unsigned intD.7) lenD.2073_1;
+  [/out/probe.cpp : 1] D.2080_7 = sD.2069_6(D) + D.2079_5;
+  [/out/probe.cpp : 1] D.2081_8 = [/out/probe.cpp : 1] *D.2080_7;
+  [/out/probe.cpp : 1] if (D.2081_8 != 0)
+    goto <bb 3>;
+  else
+    goto <bb 5>;
+  # SUCC: 3 [91.0%]  (true,exec) 5 [9.0%]  (false,exec)
+
+  # BLOCK 5 freq:900
+  # PRED: 4 [9.0%]  (false,exec)
+  # sumD.2074_12 = PHI <0(4)>
+  # iD.2075_11 = PHI <0(4)>
+  # lenD.2073_23 = PHI <lenD.2073_1(4)>
+  goto <bb 9>;
+  # SUCC: 9 [100.0%]  (fallthru,exec)
+
+  # BLOCK 6 freq:9100
+  # PRED: 7 [90.1%]  (true,exec) 9 [100.0%]  (fallthru)
+  # sumD.2074_27 = PHI <sumD.2074_2(7), sumD.2074_25(9)>
+  # iD.2075_28 = PHI <iD.2075_3(7), iD.2075_26(9)>
+  [/out/probe.cpp : 1] D.2088_14 = (long unsigned intD.7) iD.2075_28;
+  [/out/probe.cpp : 1] D.2089_15 = sD.2069_6(D) + D.2088_14;
+  [/out/probe.cpp : 1] D.2090_16 = [/out/probe.cpp : 1] *D.2089_15;
+  [/out/probe.cpp : 1] D.2091_17 = (intD.2) D.2090_16;
+  [/out/probe.cpp : 1] sumD.2074_18 = D.2091_17 + sumD.2074_27;
+  [/out/probe.cpp : 1] iD.2075_19 = iD.2075_28 + 1;
+  # SUCC: 7 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 7 freq:9100
+  # PRED: 6 [100.0%]  (fallthru,dfs_back,exec)
+  # sumD.2074_2 = PHI <sumD.2074_18(6)>
+  # iD.2075_3 = PHI <iD.2075_19(6)>
+  [/out/probe.cpp : 1] if (lenD.2073_23 >= iD.2075_3)
+    goto <bb 6>;
+  else
+    goto <bb 8>;
+  # SUCC: 6 [90.1%]  (true,exec) 8 [9.9%]  (false,exec)
+
+  # BLOCK 8 freq:900, starting at line 0
+  # PRED: 7 [9.9%]  (false,exec)
+  # sumD.2074_24 = PHI <sumD.2074_2(7)>
+  [/out/probe.cpp : 1] D.2092_21 = sumD.2074_24 + nD.2070_20(D);
+  return D.2092_21;
+  # SUCC: EXIT [100.0%]
+
+  # BLOCK 9 freq:900
+  # PRED: 5 [100.0%]  (fallthru,exec)
+  # sumD.2074_25 = PHI <0(5)>
+  # iD.2075_26 = PHI <0(5)>
+  goto <bb 6>;
+  # SUCC: 6 [100.0%]  (fallthru)
+
+}

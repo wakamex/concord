@@ -1,0 +1,99 @@
+;; Function traced (_ZN2ox4core16CStringFunctions18millisecondsToWideEfb)
+
+  # BLOCK 217 freq:4277
+  # PRED: 218 [91.0%]  (true,exec)
+  [src/ox/core/CString.h : 148] lenD.27349_676 = lenD.27349_675 + 1;
+  [src/ox/core/CString.h : 149] cD.27346_678 = cD.27346_677 + 4;
+  # SUCC: 218 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 218 freq:4700
+  # PRED: 216 [100.0%]  (fallthru,exec) 217 [100.0%]  (fallthru,dfs_back,exec)
+  # lenD.27349_675 = PHI <0(216), lenD.27349_676(217)>
+  # cD.27346_677 = PHI <&"."[0](216), cD.27346_678(217)>
+  [src/ox/core/CString.h : 146] D.27355_679 = *cD.27346_677;
+  [src/ox/core/CString.h : 146] if (D.27355_679 != 0)
+    goto <bb 217>;
+  else
+    goto <bb 219>;
+  # SUCC: 217 [91.0%]  (true,exec) 219 [9.0%]  (false,exec)
+
+  # BLOCK 219 freq:423
+  # PRED: 218 [9.0%]  (false,exec)
+  [src/ox/core/CString.h : 154] oldArrayD.27350_680 = 0B;
+  [src/ox/core/CString.h : 156] D.27356_681 = lenD.27349_675 + 1;
+  [src/ox/core/CString.h : 156] D.26237.usedD.8813 = D.27356_681;
+  [src/ox/core/CString.h : 156] D.27357_682 = D.27356_681;
+  [src/ox/core/CString.h : 156] D.26237.allocatedD.8812 = D.27357_682;
+  [src/ox/core/CString.h : 157] D.27357_683 = D.27356_681;
+  [src/ox/core/CString.h : 157] D.27358_684 = (long unsigned intD.7) D.27357_683;
+  [src/ox/core/CString.h : 157] D.27359_685 = D.27358_684 * 4;
+  [src/ox/core/CString.h : 157] D.27360_686 = operator new []D.2015 (D.27359_685);
+  # SUCC: 220 [100.0%]  (fallthru,exec) 308 (ab,eh,exec)
+
+  # BLOCK 221 freq:4277
+  # PRED: 222 [91.0%]  (true,exec)
+  [src/ox/core/CString.h : 160] D.27352_688 = D.27361_687;
+  [src/ox/core/CString.h : 160] D.27362_690 = (long unsigned intD.7) lD.27351_689;
+  [src/ox/core/CString.h : 160] D.27363_691 = D.27362_690 * 4;
+  [src/ox/core/CString.h : 160] D.27364_692 = D.27352_688 + D.27363_691;
+  [src/ox/core/CString.h : 160] D.27362_693 = D.27362_690;
+  [src/ox/core/CString.h : 160] D.27363_694 = D.27363_691;
+  [src/ox/core/CString.h : 160] D.27365_695 = &"."[0] + D.27363_694;
+  [src/ox/core/CString.h : 160] D.27366_696 = *D.27365_695;
+  [src/ox/core/CString.h : 160] *D.27364_692 = D.27366_696;
+  [src/ox/core/CString.h : 159] lD.27351_697 = lD.27351_689 + 1;
+  # SUCC: 222 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 222 freq:4700
+  # PRED: 220 [100.0%]  (fallthru,exec) 221 [100.0%]  (fallthru,dfs_back,exec)
+  # lD.27351_689 = PHI <0(220), lD.27351_697(221)>
+  [src/ox/core/CString.h : 159] if (lenD.27349_675 >= lD.27351_689)
+    goto <bb 221>;
+  else
+    goto <bb 223>;
+  # SUCC: 221 [91.0%]  (true,exec) 223 [9.0%]  (false,exec)
+
+  # BLOCK 289 freq:137
+  # PRED: 288 [29.0%]  (true,exec)
+  [src/ox/core/CString.h : 321] D.27512_868 = D.27512_865;
+  [src/ox/core/CString.h : 321] D.27497_869 = D.27497_866;
+  [src/ox/core/CString.h : 321] amountD.27533_870 = D.27497_869 + 1;
+  [src/ox/core/CString.h : 533] old_arrayD.27532_909 = resultD.26218.arrayD.8811;
+  [src/ox/core/CString.h : 535] D.27546_910 = (long unsigned intD.7) amountD.27533_870;
+  [src/ox/core/CString.h : 535] D.27545_911 = D.27546_910 * 4;
+  [src/ox/core/CString.h : 535] D.27544_912 = operator new []D.2015 (D.27545_911);
+  # SUCC: 290 [100.0%]  (fallthru,exec) 308 (ab,eh,exec)
+
+  # BLOCK 290 freq:137
+  # PRED: 289 [100.0%]  (fallthru,exec)
+  [src/ox/core/CString.h : 535] D.27543_913 = (wchar_tD.43 *) D.27544_912;
+  [src/ox/core/CString.h : 535] resultD.26218.arrayD.8811 = D.27543_913;
+  [src/ox/core/CString.h : 536] resultD.26218.allocatedD.8812 = amountD.27533_870;
+  [src/ox/core/CString.h : 538] D.27542_914 = resultD.26218.usedD.8813;
+  [src/ox/core/CString.h : 538] if (amountD.27533_870 > D.27542_914)
+    goto <bb 291>;
+  else
+    goto <bb 292>;
+  # SUCC: 291 [50.0%]  (true,exec) 292 [50.0%]  (false,exec)
+
+  # BLOCK 292 freq:137
+  # PRED: 290 [50.0%]  (false,exec) 291 [100.0%]  (fallthru,exec)
+  # amountD.27533_926 = PHI <amountD.27533_870(290), amountD.27533_915(291)>
+  goto <bb 294>;
+  # SUCC: 294 [100.0%]  (fallthru,exec)
+
+  # BLOCK 295 freq:137
+  # PRED: 294 [9.0%]  (false,exec)
+  [src/ox/core/CString.h : 542] D.27535_927 = amountD.27533_870;
+  [src/ox/core/CString.h : 542] D.27542_928 = resultD.26218.usedD.8813;
+  [src/ox/core/CString.h : 542] if (D.27535_927 < D.27542_928)
+    goto <bb 296>;
+  else
+    goto <bb 297>;
+  # SUCC: 296 [50.0%]  (true,exec) 297 [50.0%]  (false,exec)
+
+  # BLOCK 296 freq:68
+  # PRED: 295 [50.0%]  (true,exec)
+  [src/ox/core/CString.h : 543] D.27535_929 = amountD.27533_870;
+  [src/ox/core/CString.h : 543] resultD.26218.usedD.8813 = D.27535_929;
+  # SUCC: 297 [100.0%]  (fallthru,exec)

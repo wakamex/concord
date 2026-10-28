@@ -315,6 +315,34 @@ void CShadowVolumeSceneNode::anotherMethod()
 
 
 class Keep(unittest.TestCase):
+    def test_external_candidate_is_confined_to_one_body_and_uses_the_oracle(self):
+        from unittest.mock import Mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            path = root / 'src/u.cpp'
+            path.write_bytes(SOURCE)
+            harvest = Mock(root=root)
+            harvest.source.return_value = 'u.cpp'
+            candidate = SOURCE.replace(b'x.flagA = false;', b'x.flagA = true;', 1)
+            changed_other = SOURCE.replace(b'return 0;', b'return 1;')
+            with self.assertRaisesRegex(ValueError, 'only the named function body'):
+                authored.apply(harvest, 'u.cpp', SYMBOL, True, candidate=changed_other)
+            harvest.evaluate.return_value = {
+                'baseline': evaluation({SYMBOL: False, 'other': True}, {SYMBOL: 90, 'other': 100}),
+                'causal-candidate': evaluation({SYMBOL: False, 'other': True}, {SYMBOL: 91, 'other': 100}),
+            }
+            with patch('concord.authored.oracle.gate', return_value=(False, {'verdict': 'different'})) as gate:
+                result = authored.apply(harvest, 'u.cpp', SYMBOL, True, candidate=candidate)
+                self.assertFalse(result['applied'])
+                self.assertEqual(path.read_bytes(), SOURCE)
+                gate.assert_called_once()
+            with patch('concord.authored.oracle.gate', return_value=(True, {'verdict': 'same'})):
+                result = authored.apply(harvest, 'u.cpp', SYMBOL, True, candidate=candidate)
+                self.assertTrue(result['applied'])
+                self.assertEqual(path.read_bytes(), candidate)
+
     def test_keeps_exact_with_no_function_worse(self):
         before = evaluation({SYMBOL: False, "other": True}, {SYMBOL: 90.0, "other": 100.0})
         after = evaluation({SYMBOL: True, "other": True}, {SYMBOL: 100.0, "other": 100.0})

@@ -1,0 +1,342 @@
+
+;; Function int f(const char*, int) (_Z1fPKci)
+
+
+;; Generating RTL for gimple basic block 2
+
+;; if (*s != 0)
+
+(insn 15 14 16 /out/probe.cpp:1 (set (reg:CCZ 17 flags)
+        (compare:CCZ (mem:QI (reg/v/f:DI 73 [ s ]) [0 S1 A8])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 16 15 0 /out/probe.cpp:1 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 0)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 9100 [0x238c])
+        (nil)))
+
+;; Generating RTL for gimple basic block 3
+
+;; len = 0;
+
+(insn 18 17 0 /out/probe.cpp:1 (set (reg/v:SI 70 [ len ])
+        (const_int 0 [0x0])) -1 (nil))
+
+;; Generating RTL for gimple basic block 4
+
+;;
+
+(code_label 21 20 22 2 "" [0 uses])
+
+(note 22 21 0 NOTE_INSN_BASIC_BLOCK)
+
+;; ivtmp.44 = (long unsigned int) s;
+
+(insn 23 22 0 /out/probe.cpp:1 (set (reg:DI 67 [ ivtmp.44 ])
+        (reg/v/f:DI 73 [ s ])) -1 (nil))
+
+;; len = 0;
+
+(insn 24 23 0 /out/probe.cpp:1 (set (reg/v:SI 70 [ len ])
+        (const_int 0 [0x0])) -1 (nil))
+
+;; Generating RTL for gimple basic block 5
+
+;; len = len + 1;
+
+(insn 26 25 0 /out/probe.cpp:1 (parallel [
+            (set (reg/v:SI 70 [ len ])
+                (plus:SI (reg/v:SI 70 [ len ])
+                    (const_int 1 [0x1])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+;; D.2081 = MEM[index: ivtmp.44, offset: 1];
+
+(insn 27 26 0 /out/probe.cpp:1 (set (reg:QI 71 [ D.2081 ])
+        (mem:QI (plus:DI (reg:DI 67 [ ivtmp.44 ])
+                (const_int 1 [0x1])) [0 S1 A8])) -1 (nil))
+
+;; ivtmp.44 = ivtmp.44 + 1;
+
+(insn 28 27 0 /out/probe.cpp:1 (parallel [
+            (set (reg:DI 67 [ ivtmp.44 ])
+                (plus:DI (reg:DI 67 [ ivtmp.44 ])
+                    (const_int 1 [0x1])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+;; if (D.2081 != 0)
+
+(insn 30 28 31 /out/probe.cpp:1 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg:QI 71 [ D.2081 ])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 31 30 0 /out/probe.cpp:1 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 29)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 9100 [0x238c])
+        (nil)))
+
+;; Generating RTL for gimple basic block 6
+
+;;
+
+(code_label 32 31 33 3 "" [0 uses])
+
+(note 33 32 0 NOTE_INSN_BASIC_BLOCK)
+
+;; ivtmp.39 = (long unsigned int) s;
+
+(insn 34 33 0 /out/probe.cpp:1 (set (reg:DI 68 [ ivtmp.39 ])
+        (reg/v/f:DI 73 [ s ])) -1 (nil))
+
+;; ivtmp.46 = ivtmp.39;
+
+(insn 35 34 0 /out/probe.cpp:1 (set (reg:DI 66 [ ivtmp.46 ])
+        (reg:DI 68 [ ivtmp.39 ])) -1 (nil))
+
+;; sum = 0;
+
+(insn 36 35 0 /out/probe.cpp:1 (set (reg/v:SI 69 [ sum ])
+        (const_int 0 [0x0])) -1 (nil))
+
+;; Generating RTL for gimple basic block 7
+
+;; sum = sum + (int) MEM[index: ivtmp.46];
+
+(insn 38 37 39 /out/probe.cpp:1 (set (reg:SI 75)
+        (sign_extend:SI (mem:QI (reg:DI 66 [ ivtmp.46 ]) [0 S1 A8]))) -1 (nil))
+
+(insn 39 38 0 /out/probe.cpp:1 (parallel [
+            (set (reg/v:SI 69 [ sum ])
+                (plus:SI (reg/v:SI 69 [ sum ])
+                    (reg:SI 75)))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+;; ivtmp.46 = ivtmp.46 + 1;
+
+(insn 40 39 0 /out/probe.cpp:1 (parallel [
+            (set (reg:DI 66 [ ivtmp.46 ])
+                (plus:DI (reg:DI 66 [ ivtmp.46 ])
+                    (const_int 1 [0x1])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+;; if (len >= (int) ((unsigned int) ivtmp.46 - (unsigned int) ivtmp.39))
+
+(insn 42 40 43 /out/probe.cpp:1 (parallel [
+            (set (reg:SI 76)
+                (minus:SI (subreg:SI (reg:DI 66 [ ivtmp.46 ]) 0)
+                    (subreg:SI (reg:DI 68 [ ivtmp.39 ]) 0)))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 43 42 44 /out/probe.cpp:1 (set (reg:CCGC 17 flags)
+        (compare:CCGC (reg/v:SI 70 [ len ])
+            (reg:SI 76))) -1 (nil))
+
+(jump_insn 44 43 0 /out/probe.cpp:1 (set (pc)
+        (if_then_else (ge (reg:CCGC 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 41)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 9011 [0x2333])
+        (nil)))
+
+;; Generating RTL for gimple basic block 8
+
+;; return sum + n;
+
+(insn 46 45 47 /out/probe.cpp:1 (parallel [
+            (set (reg:SI 77)
+                (plus:SI (reg/v:SI 69 [ sum ])
+                    (reg/v:SI 74 [ n ])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 47 46 48 /out/probe.cpp:1 (set (reg:SI 72 [ <result> ])
+        (reg:SI 77)) -1 (nil))
+
+(jump_insn 48 47 49 /out/probe.cpp:1 (set (pc)
+        (label_ref 0)) -1 (nil))
+
+(barrier 49 48 0)
+
+
+;;
+;; Full RTL generated for this function:
+;;
+(note 9 0 13 NOTE_INSN_DELETED)
+
+(note 13 9 10 2 [bb 2] NOTE_INSN_BASIC_BLOCK)
+
+(insn 10 13 11 2 /out/probe.cpp:1 (set (reg/v/f:DI 73 [ s ])
+        (reg:DI 5 di [ s ])) -1 (nil))
+
+(insn 11 10 12 2 /out/probe.cpp:1 (set (reg/v:SI 74 [ n ])
+        (reg:SI 4 si [ n ])) -1 (nil))
+
+(note 12 11 14 2 NOTE_INSN_FUNCTION_BEG)
+
+(note 14 12 15 3 [bb 3] NOTE_INSN_BASIC_BLOCK)
+
+(insn 15 14 16 3 /out/probe.cpp:1 (set (reg:CCZ 17 flags)
+        (compare:CCZ (mem:QI (reg/v/f:DI 73 [ s ]) [0 S1 A8])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 16 15 17 3 /out/probe.cpp:1 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 21)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 9100 [0x238c])
+        (nil)))
+
+(note 17 16 18 4 [bb 4] NOTE_INSN_BASIC_BLOCK)
+
+(insn 18 17 19 4 /out/probe.cpp:1 (set (reg/v:SI 70 [ len ])
+        (const_int 0 [0x0])) -1 (nil))
+
+(jump_insn 19 18 20 4 /out/probe.cpp:1 (set (pc)
+        (label_ref 32)) -1 (nil))
+
+(barrier 20 19 21)
+
+(code_label 21 20 22 5 2 "" [1 uses])
+
+(note 22 21 23 5 [bb 5] NOTE_INSN_BASIC_BLOCK)
+
+(insn 23 22 24 5 /out/probe.cpp:1 (set (reg:DI 67 [ ivtmp.44 ])
+        (reg/v/f:DI 73 [ s ])) -1 (nil))
+
+(insn 24 23 29 5 /out/probe.cpp:1 (set (reg/v:SI 70 [ len ])
+        (const_int 0 [0x0])) -1 (nil))
+
+(code_label 29 24 25 6 4 "" [1 uses])
+
+(note 25 29 26 6 [bb 6] NOTE_INSN_BASIC_BLOCK)
+
+(insn 26 25 27 6 /out/probe.cpp:1 (parallel [
+            (set (reg/v:SI 70 [ len ])
+                (plus:SI (reg/v:SI 70 [ len ])
+                    (const_int 1 [0x1])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 27 26 28 6 /out/probe.cpp:1 (set (reg:QI 71 [ D.2081 ])
+        (mem:QI (plus:DI (reg:DI 67 [ ivtmp.44 ])
+                (const_int 1 [0x1])) [0 S1 A8])) -1 (nil))
+
+(insn 28 27 30 6 /out/probe.cpp:1 (parallel [
+            (set (reg:DI 67 [ ivtmp.44 ])
+                (plus:DI (reg:DI 67 [ ivtmp.44 ])
+                    (const_int 1 [0x1])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 30 28 31 6 /out/probe.cpp:1 (set (reg:CCZ 17 flags)
+        (compare:CCZ (reg:QI 71 [ D.2081 ])
+            (const_int 0 [0x0]))) -1 (nil))
+
+(jump_insn 31 30 32 6 /out/probe.cpp:1 (set (pc)
+        (if_then_else (ne (reg:CCZ 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 29)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 9100 [0x238c])
+        (nil)))
+
+(code_label 32 31 33 7 3 "" [1 uses])
+
+(note 33 32 34 7 [bb 7] NOTE_INSN_BASIC_BLOCK)
+
+(insn 34 33 35 7 /out/probe.cpp:1 (set (reg:DI 68 [ ivtmp.39 ])
+        (reg/v/f:DI 73 [ s ])) -1 (nil))
+
+(insn 35 34 36 7 /out/probe.cpp:1 (set (reg:DI 66 [ ivtmp.46 ])
+        (reg:DI 68 [ ivtmp.39 ])) -1 (nil))
+
+(insn 36 35 41 7 /out/probe.cpp:1 (set (reg/v:SI 69 [ sum ])
+        (const_int 0 [0x0])) -1 (nil))
+
+(code_label 41 36 37 8 5 "" [1 uses])
+
+(note 37 41 38 8 [bb 8] NOTE_INSN_BASIC_BLOCK)
+
+(insn 38 37 39 8 /out/probe.cpp:1 (set (reg:SI 75)
+        (sign_extend:SI (mem:QI (reg:DI 66 [ ivtmp.46 ]) [0 S1 A8]))) -1 (nil))
+
+(insn 39 38 40 8 /out/probe.cpp:1 (parallel [
+            (set (reg/v:SI 69 [ sum ])
+                (plus:SI (reg/v:SI 69 [ sum ])
+                    (reg:SI 75)))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 40 39 42 8 /out/probe.cpp:1 (parallel [
+            (set (reg:DI 66 [ ivtmp.46 ])
+                (plus:DI (reg:DI 66 [ ivtmp.46 ])
+                    (const_int 1 [0x1])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 42 40 43 8 /out/probe.cpp:1 (parallel [
+            (set (reg:SI 76)
+                (minus:SI (subreg:SI (reg:DI 66 [ ivtmp.46 ]) 0)
+                    (subreg:SI (reg:DI 68 [ ivtmp.39 ]) 0)))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 43 42 44 8 /out/probe.cpp:1 (set (reg:CCGC 17 flags)
+        (compare:CCGC (reg/v:SI 70 [ len ])
+            (reg:SI 76))) -1 (nil))
+
+(jump_insn 44 43 45 8 /out/probe.cpp:1 (set (pc)
+        (if_then_else (ge (reg:CCGC 17 flags)
+                (const_int 0 [0x0]))
+            (label_ref 41)
+            (pc))) -1 (expr_list:REG_BR_PROB (const_int 9011 [0x2333])
+        (nil)))
+
+(note 45 44 46 9 [bb 9] NOTE_INSN_BASIC_BLOCK)
+
+(insn 46 45 47 9 /out/probe.cpp:1 (parallel [
+            (set (reg:SI 77)
+                (plus:SI (reg/v:SI 69 [ sum ])
+                    (reg/v:SI 74 [ n ])))
+            (clobber (reg:CC 17 flags))
+        ]) -1 (nil))
+
+(insn 47 46 48 9 /out/probe.cpp:1 (set (reg:SI 72 [ <result> ])
+        (reg:SI 77)) -1 (nil))
+
+(jump_insn 48 47 49 9 /out/probe.cpp:1 (set (pc)
+        (label_ref 50)) -1 (nil))
+
+(barrier 49 48 58)
+
+(note 58 49 52 10 [bb 10] NOTE_INSN_BASIC_BLOCK)
+
+(insn 52 58 53 10 /out/probe.cpp:1 (clobber (reg/i:SI 0 ax)) -1 (nil))
+
+(insn 53 52 54 10 /out/probe.cpp:1 (clobber (reg:SI 72 [ <result> ])) -1 (nil))
+
+(jump_insn 54 53 55 10 /out/probe.cpp:1 (set (pc)
+        (label_ref 56)) -1 (nil))
+
+(barrier 55 54 50)
+
+(code_label 50 55 59 11 1 "" [1 uses])
+
+(note 59 50 51 11 [bb 11] NOTE_INSN_BASIC_BLOCK)
+
+(insn 51 59 56 11 /out/probe.cpp:1 (set (reg/i:SI 0 ax)
+        (reg:SI 72 [ <result> ])) -1 (nil))
+
+(code_label 56 51 60 12 6 "" [1 uses])
+
+(note 60 56 57 12 [bb 12] NOTE_INSN_BASIC_BLOCK)
+
+(insn 57 60 0 12 /out/probe.cpp:1 (use (reg/i:SI 0 ax)) -1 (nil))

@@ -17,6 +17,221 @@ CODE = bytes.fromhex('8d460583c7030fafc7c3')
 
 
 class CompilerDecisions(unittest.TestCase):
+    def test_search_finishes_a_selected_candidate_before_the_author_gate(self):
+        from concord.harvest import Evaluation
+        from concord.transforms import Rewrite
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'src').mkdir()
+            (root / 'src/u.cpp').write_bytes(b'int f() { return 1; }\n')
+            harvest = mock.Mock(root=root)
+            harvest.source.return_value = 'u.cpp'
+            harvest.evaluate_overlays.return_value = {
+                'baseline': Evaluation('baseline', 'u', fuzzy={'f': 90}),
+                'r0': Evaluation('r0', 'u', fuzzy={'f': 100}, sections=[{'functions': [{'symbol': 'f', 'exact': True}]}]),
+            }
+            rewrite = Rewrite('named-temporary', Cause.OPERAND_ORDER, 'line 1: a value named', b'int f() { __typeof__(1) concordTmp0 = 1; return concordTmp0; }\n')
+            clean = b'int f() { int value = 1; return value; }\n'
+            report = {'unit': 'u.cpp', 'symbol': 'f', 'directory': tmp, 'findings': []}
+            accepted = {'chosen': 'causal-candidate', 'applied': False, 'candidates': {'causal-candidate': {'oracle': None}}}
+            with (mock.patch.object(causal, 'proposals', return_value=[rewrite]),
+                  mock.patch('concord.authored.keep', return_value=True),
+                  mock.patch('concord.finish.finish', return_value=clean) as finish,
+                  mock.patch('concord.authored.apply', return_value=accepted) as author):
+                result = causal.search(harvest, report)
+            self.assertEqual(finish.call_count, 1)
+            self.assertEqual(author.call_args.kwargs['candidate'], clean)
+            self.assertEqual(Path(result['candidate_path']).read_bytes(), clean)
+
+    def test_proposal_locations_above_small_integer_cache_do_not_corrupt_nodes(self):
+        import sys
+
+        code = '''from concord import causal
+source = b'\\n' * 300 + b'int f(int a,int b) {\\n int x = a+3;\\n int y = b+5;\\n return x*y;\\n}\\n'
+rows = causal.proposals(source, '_Z1fii', {302,303,304}, set())
+assert rows
+assert all(row.source.startswith(b'\\n'*300) for row in rows)
+'''
+        done = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', code], capture_output=True, text=True, check=False)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_expression_identity_preserves_precedence_and_rejects_non_cpp(self):
+        self.assertEqual(causal.expression_key('(a + (b * c))'), causal.expression_key('a + b * c'))
+        self.assertNotEqual(causal.expression_key('(a + b) * c'), causal.expression_key('a + b * c'))
+        self.assertIsNone(causal.expression_key('MEM[index: ivtmp.5]'))
+
+    def test_inline_scope_locations_belong_to_the_correct_declaration(self):
+        dump = ''';; Function f (_Z1fv)
+{ Scope block #0
+  { Scope block #1 src/caller.cpp:42 Originating from : inline helper;
+    { Scope block #2 src/text.h:99
+      intD.2 lenD.4;
+    }
+  }
+  { Scope block #3 src/caller.cpp:58
+    intD.2 lenD.5;
+  }
+}
+'''
+        scopes = causal.tree_scopes(dump, '_Z1fv')
+        self.assertEqual(scopes['lenD.4'], [{'path': 'src/caller.cpp', 'line': 42}, {'path': 'src/text.h', 'line': 99}])
+        self.assertEqual(scopes['lenD.5'], [{'path': 'src/caller.cpp', 'line': 58}])
+
+    def test_real_string_copy_joins_instruction_to_recycled_exit_phi(self):
+        directory = FIXTURE.parent / 'gcc-4.4.3-string-order'
+        provenance = json.loads((directory / 'provenance.json').read_text())
+        for name, hashes in provenance['inputs'].items():
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), hashes['fixture_sha256'])
+        trace = causal.tree_comparison(directory, provenance['symbol'], 1201)
+        self.assertEqual(trace['status'], 'observed-ssa-pair')
+        self.assertEqual([v['name'] for v in trace['operands']], ['lD.27351_697', 'lenD.27349_929'])
+        length = trace['operands'][1]
+        self.assertEqual(length['creation']['pass'], 'vrp1')
+        self.assertEqual(length['recycled_from']['name'], 'D.27535_929')
+        self.assertEqual(length['recycled_from']['definition']['inputs'], ['amountD.27533_870'])
+        self.assertEqual(trace['join']['expanded']['text'], 'if (l <= len)')
+        self.assertEqual(trace['order_changes'][0]['after']['pass'], 'vrp1')
+        self.assertEqual(trace['orientation_changes'][0]['after']['pass'], 'dce1')
+
+    def test_real_tree_dumps_preserve_versions_and_diagnostic_block_mapping(self):
+        directory = FIXTURE.parent / 'gcc-4.4.3-tree'
+        symbol = '_Z1fPKci'
+        provenance = json.loads((directory / 'provenance.json').read_text())
+        for name, digest in provenance['artifacts'].items():
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest)
+        parsed = causal.tree_function((directory / 'probe.122t.uncprop').read_text(), symbol)
+        self.assertEqual(parsed['comparisons'][-1]['operands'], ['lenD.2073_23', 'iD.2075_45'])
+        history = causal.tree_history(directory, symbol, ['lenD.2073_23', 'iD.2075_45'])
+        self.assertEqual(history['operands'][0]['creation']['pass'], 'vrp1')
+        self.assertEqual(history['comparisons'][2]['pass'], 'ch')
+        text = (directory / 'probe.128r.expand').read_text()
+        self.assertEqual(causal.expanded_statements(text, symbol)[43]['block'], 7)
+        trace = causal.tree_comparison(directory, symbol, 43)
+        self.assertEqual(trace['status'], 'observed-ssa-pair')
+        self.assertEqual(trace['join']['method'], 'temporary-expression-replacement')
+        self.assertEqual(trace['operands'][1]['name'], 'iD.2075_45')
+
+    def test_final_body_is_used_after_eh_tree_and_intermediate_diagnostics(self):
+        text = ''';; Function f (_Z1fv)
+f ()
+Eh tree:
+  1 cleanup tree_label:<L0>
+{
+<bb 2>:
+  if (aD.1_2 < bD.2_3)
+}
+Folding statement:
+<bb 2>:
+  if (aD.1_2 < bD.2_3)
+f ()
+Eh tree:
+  1 cleanup tree_label:<L0>
+{
+<bb 2>:
+  if (bD.2_3 > aD.1_2)
+}
+'''
+        comparisons = causal.tree_function(text, '_Z1fv')['comparisons']
+        self.assertEqual(len(comparisons), 1)
+        self.assertEqual(comparisons[0]['operands'], ['bD.2_3', 'aD.1_2'])
+
+    def test_proposals_leave_the_compared_line_and_other_functions_unchanged(self):
+        source = b'''int f(int a, int b)
+{
+    int first = a + 3;
+    int second = b + 5;
+    if (first < second)
+        return first;
+    return second;
+}
+int g() { return 1; }
+'''
+        rewrites = causal.proposals(source, '_Z1fii', {4}, {5})
+        self.assertTrue(rewrites)
+        for rewrite in rewrites:
+            self.assertIn(b'if (first < second)', rewrite.source)
+            self.assertTrue(rewrite.source.endswith(b'int g() { return 1; }\n'))
+
+    def test_tree_definitions_keep_phi_inputs_locations_and_function_identity(self):
+        dump = ''';; Function f (_Z1fPKc)
+<bb 2>:
+  [/out/probe.cpp : 3] lenD.123_4 = 0;
+<bb 3>:
+  # lenD.123_5 = PHI <lenD.123_4(2), lenD.123_6(3)>
+  [/out/probe.cpp : 4] lenD.123_6 = lenD.123_5 + 1;
+  [/out/probe.cpp : 7] if (iD.124_8 <= lenD.123_5)
+    goto <bb 3>;
+;; Function g (_Z1gv)
+<bb 2>:
+  lenD.123_5 = 99;
+'''
+        parsed = causal.tree_function(dump, '_Z1fPKc')
+        self.assertEqual(parsed['definitions']['lenD.123_5']['inputs'], ['lenD.123_4', 'lenD.123_6'])
+        self.assertEqual(parsed['definitions']['lenD.123_6']['source'], {'path': '/out/probe.cpp', 'line': 4})
+        self.assertEqual(parsed['comparisons'][0]['operands'], ['iD.124_8', 'lenD.123_5'])
+        self.assertEqual(parsed['comparisons'][0]['block'], 3)
+        self.assertEqual(causal.tree_function(dump, '_Z7missingv')['definitions'], {})
+
+    def test_tree_history_reports_exit_phi_creation_before_mirrored_condition(self):
+        header = ';; Function f (_Z1fv)\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / 'trace.059t.mergephi2').write_text(header + '''<bb 2>:
+  # lenD.1_10 = PHI <0(1), lenD.1_11(2)>
+  lenD.1_11 = lenD.1_10 + 1;
+<bb 3>:
+  # iD.2_20 = PHI <0(1), iD.2_21(3)>
+  iD.2_21 = iD.2_20 + 1;
+  if (lenD.1_10 >= iD.2_20)
+''')
+            (directory / 'trace.060t.vrp1').write_text(header + '''<bb 2>:
+  # lenD.1_10 = PHI <0(1), lenD.1_11(2)>
+  lenD.1_11 = lenD.1_10 + 1;
+<bb 4>:
+  # lenD.1_30 = PHI <lenD.1_10(2)>
+<bb 3>:
+  # iD.2_20 = PHI <0(1), iD.2_21(3)>
+  iD.2_21 = iD.2_20 + 1;
+  if (lenD.1_30 >= iD.2_20)
+''')
+            (directory / 'trace.066t.ch').write_text(header + '''<bb 4>:
+  # lenD.1_30 = PHI <lenD.1_11(2), 0(1)>
+<bb 3>:
+  # iD.2_20 = PHI <0(1), iD.2_21(3)>
+  iD.2_21 = iD.2_20 + 1;
+  if (iD.2_21 <= lenD.1_30)
+''')
+            history = causal.tree_history(directory, '_Z1fv', ['iD.2_21', 'lenD.1_30'])
+        self.assertEqual([s['pass'] for s in history['comparisons']], ['mergephi2', 'vrp1', 'ch'])
+        self.assertEqual(history['operands'][1]['creation']['pass'], 'vrp1')
+        self.assertEqual(history['operands'][1]['creation']['definition']['kind'], 'phi')
+        self.assertEqual(history['order_changes'][0]['after']['pass'], 'vrp1')
+        self.assertEqual(history['order_changes'][0]['before']['operands'], ['lenD.1_10', 'iD.2_20'])
+        self.assertEqual(history['orientation_changes'][0]['after']['pass'], 'ch')
+
+    def test_recycled_version_follows_its_previous_owner_before_reuse(self):
+        header = ';; Function f (_Z1fv)\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / 'trace.057t.fre').write_text(header + '''<bb 2>:
+  [probe.cpp : 3] amountD.3_4 = countD.4_5 + 1;
+  [probe.cpp : 4] D.6_30 = amountD.3_4;
+  if (lenD.1_10 >= iD.2_20)
+''')
+            (directory / 'trace.060t.vrp1').write_text(header + '''<bb 2>:
+  # lenD.1_30 = PHI <lenD.1_10(1)>
+  iD.2_20 = 0;
+  if (iD.2_20 <= lenD.1_30)
+''')
+            trace = causal.tree_history(directory, '_Z1fv', ['iD.2_20', 'lenD.1_30'])
+        recycled = trace['operands'][1]['recycled_from']
+        self.assertEqual(recycled['name'], 'D.6_30')
+        self.assertEqual(recycled['definition']['source'], {'path': 'probe.cpp', 'line': 4})
+        dependencies = {v['name']: v for v in trace['recycling_dependencies']}
+        self.assertEqual(dependencies['amountD.3_4']['creation']['definition']['source']['line'], 3)
+        self.assertEqual(dependencies['D.6_30']['last_definition']['definition']['text'], 'D.6_30 = amountD.3_4;')
+
     @unittest.skipUnless(shutil.which('as'), 'GNU assembler is needed')
     def test_long_labels_are_recovered_from_real_assembler_line_numbers(self):
         symbol = '_Z' + 'f' * 180

@@ -599,24 +599,35 @@ def apply_header_function(harvest: Harvest, unit: str, symbol: str, edit: Header
     }
 
 
-def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | None = None) -> dict:
+def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | None = None,
+          candidate: bytes | None = None) -> dict:
     """Measure registered authored candidates and optionally write an accepted
     one. A function-body candidate is kept when the function is exact, or
     scores higher with the oracle's agreement, and no other function of the
     unit is worse; an exact candidate always wins, then the one applying more
     of the function's diagnosed edits, then the higher score."""
     unit = harvest.source(unit)
-    if edits := header_edits(unit, symbol, variant):
+    if candidate is not None and variant is not None:
+        raise ValueError('a candidate and a registered variant are mutually exclusive')
+    if candidate is None and (edits := header_edits(unit, symbol, variant)):
         if len(edits) != 1:
             raise ValueError("select one authored header spelling with --variant")
         return apply_header_function(harvest, unit, symbol, edits[0], write)
     if variant is not None:
         raise ValueError(f"no authored header variant {variant} for {unit} {symbol}")
-    if edit := HEADER_AUTHORED.get((unit, symbol)):
+    if candidate is None and (edit := HEADER_AUTHORED.get((unit, symbol))):
         return apply_header(harvest, unit, symbol, edit, write)
     path = harvest.root / "src" / unit
     source = path.read_bytes()
-    forms = candidates(source, symbol, AUTHORED.get((unit, symbol), []))
+    if candidate is None:
+        forms = candidates(source, symbol, AUTHORED.get((unit, symbol), []))
+    else:
+        old_scope, new_scope = find_function(source, symbol), find_function(candidate, symbol)
+        old_body, new_body = old_scope.child_by_field_name('body'), new_scope.child_by_field_name('body')
+        if (source[:old_body.start_byte] != candidate[:new_body.start_byte]
+                or source[old_body.end_byte:] != candidate[new_body.end_byte:]):
+            raise ValueError('an authored candidate may change only the named function body')
+        forms = {'causal-candidate': candidate} if source != candidate else {}
     if not forms:
         raise ValueError(f"no authored candidate applies to {symbol} in {unit}")
     evaluations = harvest.evaluate(unit, {"baseline": source, **forms})

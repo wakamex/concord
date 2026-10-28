@@ -21,7 +21,8 @@ def collect(unit: str, destination: str) -> dict:
     command = compiler.compile_command(source, "trace")
     command[command.index('-c')] = '-S'
     command[command.index('-o') + 1] = '/out/trace.s'
-    command += ["-g", "-dp", "-fdump-tree-all", "-fdump-rtl-all", "-fdump-ipa-inline",
+    command += ["-g", "-dp", "-fdump-tree-all-details-lineno-uid-blocks", "-fdump-rtl-all",
+                "-fdump-rtl-expand-details", "-fdump-ipa-inline",
                 "-dumpbase", "/out/trace"]
     assembler = [compiler.flags['compiler'], '-c', '/out/trace.s', '-o', '/out/trace.o', '-Wa,-adln']
     # Listings can quote non-UTF-8 source bytes. Keep the original bytes rather
