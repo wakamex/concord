@@ -181,7 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_scores.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
     p_scores.add_argument("--capture", action="store_true", help="recapture Harvest's progress evidence first")
-    p_scores.add_argument("--base", help="capture base and HEAD sources with HEAD configuration in an isolated worktree")
+    p_scores.add_argument("--base", help="compare source and configuration effects in an isolated worktree")
     p_scores.add_argument("--ref", help="use the evidence committed at this git revision instead of the checkout's")
     p_scores.add_argument("--save", type=Path, help="write the snapshot to this JSON file")
     p_scores.add_argument("--against", type=Path, help="compare with a snapshot saved earlier")
@@ -1310,8 +1310,10 @@ def _scores(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     if not (args.save or args.against or args.base):
         parser.error("pass --save, --against or both")
     baseline = None
+    configuration_baseline = None
     if args.base:
         baseline, current, evidence = scores.normalized(args.harvest, args.base)
+        configuration_baseline = evidence.get("configuration_baseline")
         current['normalization'] = evidence
     else:
         current = scores.snapshot(scores.report(args.harvest, args.capture, args.ref))
@@ -1320,17 +1322,30 @@ def _scores(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         print(f"saved {len(current['functions'])} functions and {len(current['data'])} matched data runs to {args.save}")
     if not args.against and baseline is None:
         return 0
-    changes, lost, gained = scores.compare(baseline if baseline is not None else json.loads(args.against.read_text()), current)
+    before = baseline if baseline is not None else json.loads(args.against.read_text())
 
-    def show(s: dict | None) -> str:
-        return "absent" if s is None else ("matched" if s["matched"] else f"{s['fuzzy']:.2f}")
+    def summarize(before_snapshot: dict, after_snapshot: dict, label: str = "") -> tuple[int, int]:
+        changes, lost, gained = scores.compare(before_snapshot, after_snapshot)
 
-    for c in changes:
-        print(f"{'WORSE' if c.worse else 'better':6} {show(c.before):>8} -> {show(c.after):8} {int(c.address):#x} {c.name}")
-    worse = sum(c.worse for c in changes)
-    newly = sum(1 for c in changes if c.after and c.after["matched"] and not (c.before and c.before["matched"]))
-    print(f"{len(changes)} functions changed: {newly} newly matched, {worse} worse; data bytes matched: +{gained} -{lost}")
-    return 1 if worse or lost else 0
+        def show(s: dict | None) -> str:
+            return "absent" if s is None else ("matched" if s["matched"] else f"{s['fuzzy']:.2f}")
+
+        for change in changes:
+            status = 'WORSE' if change.worse else 'better'
+            prefix = f"{label} " if label else ""
+            print(f"{prefix}{status:6} {show(change.before):>8} -> {show(change.after):8} {int(change.address):#x} {change.name}")
+        worse = sum(change.worse for change in changes)
+        newly = sum(1 for change in changes if change.after and change.after["matched"] and not (change.before and change.before["matched"]))
+        summary = f"{len(changes)} functions changed: {newly} newly matched, {worse} worse; data bytes matched: +{gained} -{lost}"
+        print(f"{label}: {summary}" if label else summary)
+        return worse, lost
+
+    source_worse, source_lost = summarize(before, current)
+    if configuration_baseline is not None:
+        config_worse, config_lost = summarize(configuration_baseline, before, "configuration")
+    else:
+        config_worse = config_lost = 0
+    return 1 if source_worse or source_lost or config_worse or config_lost else 0
 
 
 def _sweep(args: argparse.Namespace) -> int:

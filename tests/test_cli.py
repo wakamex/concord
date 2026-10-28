@@ -20,8 +20,30 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(main(['scores', '--harvest', '/root', '--base', 'base']), 0)
             run.assert_called_once_with(Path('/root'), 'base')
             self.assertIn('0 worse', output.getvalue())
+            self.assertNotIn('configuration:', output.getvalue())
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             main(['scores', '--harvest', '/root', '--base', 'base', '--against', 'old.json'])
+
+    def test_scores_base_fails_when_configuration_lowers_a_function(self):
+        from unittest import mock
+
+        source = {
+            'functions': {'256': {'name': 'f', 'fuzzy': 98.75, 'matched': False}},
+            'data': [[4096, 5]], 'data_format': 'matched-ranges-v1',
+        }
+        configuration_baseline = {
+            'functions': {'256': {'name': 'f', 'fuzzy': 100.0, 'matched': True}},
+            'data': [[4096, 5]], 'data_format': 'matched-ranges-v1',
+        }
+        with mock.patch(
+            'concord.cli.scores.normalized',
+            return_value=(source, source, {'configuration_baseline': configuration_baseline}),
+        ), contextlib.redirect_stdout(io.StringIO()) as output:
+            result = main(['scores', '--harvest', '/root', '--base', 'base'])
+
+        self.assertEqual(result, 1)
+        self.assertIn('0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0', output.getvalue())
+        self.assertIn('configuration: 1 functions changed: 0 newly matched, 1 worse; data bytes matched: +0 -0', output.getvalue())
 
     def test_symbols_check_reports_suspects_and_returns_failure(self):
         from unittest import mock

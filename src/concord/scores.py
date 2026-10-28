@@ -122,14 +122,29 @@ def normalized(checkout: Path, base: str) -> tuple[dict, dict, dict]:
             if tool.is_file():
                 (root / 'build' / 'tools').mkdir(parents=True, exist_ok=True)
                 shutil.copy2(tool, root / 'build' / 'tools' / tool.name)
+            build = json.loads((root / 'builds.json').read_text())['canonical']
+            config_dir = Path('config') / build
+            configuration_changes = sorted(filter(None, git(
+                'diff', '--name-only', '-z', base, head, '--', str(config_dir)
+            ).decode().split('\0')))
             subprocess.run(['git', '-C', str(root), 'restore', '--source', base, '--worktree', '--', 'src', 'third_party'], check=True)
             before = snapshot(report(root, capture=True))
+            configuration_before = None
+            if configuration_changes:
+                subprocess.run([
+                    'git', '-C', str(root), 'restore', '--source', base, '--worktree', '--', str(config_dir)
+                ], check=True)
+                configuration_before = snapshot(report(root, capture=True))
+                subprocess.run([
+                    'git', '-C', str(root), 'restore', '--source', head, '--worktree', '--', str(config_dir)
+                ], check=True)
             subprocess.run(['git', '-C', str(root), 'restore', '--source', head, '--worktree', '--', 'src', 'third_party'], check=True)
             after = snapshot(report(root, capture=True))
-            build = json.loads((root / 'builds.json').read_text())['canonical']
-            config = root / 'config' / build
+            config = root / config_dir
             evidence = {'base': base, 'head': head, 'source_paths': sorted(filter(None, changed)),
                         'configuration': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(config.iterdir()) if p.is_file()},
+                        'configuration_changes': configuration_changes,
+                        'configuration_baseline': configuration_before,
                         'baseline': before}
             return before, after, evidence
         finally:
