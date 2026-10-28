@@ -180,6 +180,23 @@ class KnowledgeBase(unittest.TestCase):
                 self.assertTrue(i.fix and i.symptom)
                 self.assertTrue(all("commit" in e or "note" in e for e in i.evidence), i.id)
 
+    def test_operand_order_noop_trials_are_recorded(self):
+        from concord import knowledge
+
+        entry = next(i for i in knowledge.load("gcc-4.4.3") if i.id == "compare-operand-order")
+        notes = {e["function"]: e["note"] for e in entry.evidence if "function" in e and "note" in e}
+        expected = {
+            "daisy::gui::CGUIButton::OnEvent": ("oldState != State", "99.92453"),
+            "ox::core::CAes::expandKey": ("k + 4 > j", "99.90991"),
+            "harvest::game::harvest_getSelectedBuilding": ("buildings->end() == it", "99.652176"),
+        }
+        for function, facts in expected.items():
+            with self.subTest(function=function):
+                self.assertIn(function, notes)
+                for fact in facts:
+                    self.assertIn(fact, notes[function])
+                self.assertIn("identical", notes[function])
+
     def test_copy_loop_advice_records_ssa_recycling_and_the_unresolved_source(self):
         from concord import knowledge
 
