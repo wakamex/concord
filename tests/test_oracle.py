@@ -60,7 +60,7 @@ class OracleProcess(unittest.TestCase):
             }
 
     @contextmanager
-    def stand_in(self, body, timeout="3"):
+    def stand_in(self, body, timeout="10"):
         with TemporaryDirectory() as directory:
             script = Path(directory) / "oracle.py"
             script.write_text(body)
@@ -76,12 +76,12 @@ class OracleProcess(unittest.TestCase):
 if sys.argv[2] == sys.argv[3]:
     print(json.dumps({"verdict": "agree"}))
 else:
-    time.sleep(30)
+    time.sleep(120)
 """
         with self.stand_in(body):
             kept, evidence = oracle.gate(self.CompiledHarvest(), UNIT, SYMBOL, b"before", b"after")
         self.assertFalse(kept)
-        self.assertIn("timed out after 3 seconds", evidence["error"])
+        self.assertIn("timed out after 10 seconds", evidence["error"])
 
     def test_failed_candidate_is_rejected_with_its_error(self):
         body = """import json, sys
