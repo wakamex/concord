@@ -352,5 +352,26 @@ class SceneCollisionManagerResidualTests(unittest.TestCase):
         self.assertIn("0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0", notes["Whole-build gate"])
 
 
+class ScenarioEventInliningKnowledgeTests(unittest.TestCase):
+    def test_scenario_credit_reference_counts_are_recorded_as_inline_distribution(self):
+        path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
+        data = tomllib.loads(path.read_text())
+        idiom = next(item for item in data["idiom"] if item["id"] == "inlined-string-reference-counts")
+        evidence = next(
+            (item for item in idiom["evidence"] if item.get("function") == "CScenario::createScenarioEvents at Harvest a10b927"),
+            None,
+        )
+
+        self.assertIsNotNone(evidence)
+        for fact in (
+            "Jens has 3 candidate references and 1 target reference",
+            "Jonas has 1 candidate reference and 3 target references",
+            "The target passes Jens to the out-of-line constructor and inlines Jonas",
+            "the candidate inlines Jens and passes Jonas out of line",
+            "256 unit-scoped permutation candidates at depth 3 leave the score at 78.80",
+        ):
+            self.assertIn(fact, evidence["note"])
+
+
 if __name__ == "__main__":
     unittest.main()
