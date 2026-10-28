@@ -1,16 +1,81 @@
 """Static object layouts inferred from aligned references in real Harvest objects."""
 
+import json
 import os
+import struct
 import subprocess
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from concord.harvest import Harvest
-from concord.statics import analyze_unit
+from concord.statics import (
+    _relocations,
+    _section_data,
+    _target_pointer_table,
+    analyze_unit,
+)
+
+
+class TruncatedTargetTable(unittest.TestCase):
+    def test_reads_a_table_past_the_reconstructed_object_end(self):
+        image = bytearray(0x200)
+        words = ("players", "peers", "groups", "table")
+        for index, word in enumerate(words):
+            offset = 0x100 + index * 0x20
+            struct.pack_into("<Q", image, index * 8, 0x1000 + offset)
+            data = word.encode("utf-32-le") + bytes(4)
+            image[offset:offset + len(data)] = data
+        original = [(0x1000, 0x1200, ".rodata", bytes(image))]
+        target = bytes(image[:16])
+
+        values, complete = _target_pointer_table(
+            target, {}, {}, original, 0, "utf32le", section_address=0x1000, candidate_size=32
+        )
+        self.assertEqual(values, [("string", word.encode("utf-32-le").hex()) for word in words])
+        self.assertTrue(complete)
+
+        values, complete = _target_pointer_table(
+            target, {}, {}, original, 0, "utf32le", section_address=None, candidate_size=32
+        )
+        self.assertEqual(len(values), 2)
+        self.assertFalse(complete)
 
 
 @unittest.skipUnless(os.environ.get("CONCORD_HARVEST"), "needs a Harvest checkout after hv match")
 class HarvestStaticLayouts(unittest.TestCase):
+    def test_highscore_target_table_uses_original_image_after_object_end(self):
+        root = Path(os.environ["CONCORD_HARVEST"])
+        harvest = Harvest(root)
+        unit = "HarvestFull/harvest/gui/CHighscoreScreen.cpp"
+        slug = harvest.slug(unit)
+        target = harvest.objects / "target" / f"{slug}.o"
+        truncated = _section_data(target)
+        truncated[".rodata"] = truncated[".rodata"][:0x2d0]
+        target_relocs = _relocations(target)
+        target_relocs[".rodata"] = {at: value for at, value in target_relocs[".rodata"].items() if at < 0x2d0}
+
+        def relocs(path):
+            return target_relocs if path == target else _relocations(path)
+
+        with patch("concord.statics._section_data", return_value=truncated), \
+                patch("concord.statics._relocations", side_effect=relocs):
+            result = analyze_unit(harvest, unit)
+            report = json.loads((harvest.reports / f"{slug}.json").read_text())
+            sections = [{k: v for k, v in row.items() if k != "address" or row["name"] != ".rodata"}
+                        for row in report["sections"]]
+            unplaced = analyze_unit(harvest, unit, function_sections=sections)
+        objects = {row["symbol"]: row for row in result["objects"]}
+        table = objects["_ZN7harvest3guiL20HIGHSCORE_TYPE_NAMESE"]
+        self.assertEqual(table["target"]["offset"], "0x2c0")
+        self.assertEqual(table["target"]["size"], 32)
+        self.assertTrue(table["target"]["relocation_content_matches"])
+        self.assertTrue(table["target"]["original_tail"])
+        table = next(row for row in unplaced["objects"] if row["symbol"] == table["symbol"])
+        self.assertEqual(table["target"]["size_basis"], "target-pointer-run-truncated")
+        self.assertIsNone(table["target"]["size"])
+        self.assertIsNone(table["target"]["relocation_content_matches"])
+
     def test_baseline_table_order_is_inferred_from_target_references(self):
         root = Path(os.environ["CONCORD_HARVEST"])
         harvest = Harvest(root)

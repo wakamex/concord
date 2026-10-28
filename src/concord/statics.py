@@ -102,8 +102,24 @@ def _target_pointer_table(
     original_sections: list[tuple[int, int, str, bytes]],
     start: int,
     encoding: str,
-) -> list[tuple[str, str]]:
-    """String pointer entries in target bytes, including pointers left unrelocated."""
+    *,
+    section_address: int | None = None,
+    candidate_size: int = 0,
+) -> tuple[list[tuple[str, str]], bool]:
+    """Read a pointer run, continuing into the original image if the object is short.
+
+    The reconstructed target section has the candidate section's size. Its end
+    is therefore not evidence that the original table ends there. Read at most
+    one entry beyond the candidate's size to distinguish a matching prefix.
+    """
+    needed = min(start + 4096, start + candidate_size + 8)
+    if section_address is not None and needed > len(target_data):
+        for section_start, section_end, _, data in original_sections:
+            if section_start <= section_address and section_address + len(target_data) < section_end:
+                tail = section_address + len(target_data) - section_start
+                limit = min(section_address + needed, section_end) - section_start
+                target_data += data[tail:limit]
+                break
     values = []
     for offset in range(start, min(len(target_data) - 7, start + 4096), 8):
         relocation = target_relocations.get(offset)
@@ -115,16 +131,16 @@ def _target_pointer_table(
         else:
             address = struct.unpack_from("<Q", target_data, offset)[0]
             if not address:
-                break
+                return values, True
             value = None
             for section_start, section_end, _, data in original_sections:
                 if section_start <= address < section_end:
                     value = _pooled_string(data, address - section_start, encoding)
                     break
         if value is None:
-            break
+            return values, relocation is None
         values.append(("string", value.hex()))
-    return values
+    return values, False
 
 
 def _original_sections(path: Path) -> list[tuple[int, int, str, bytes]]:
@@ -260,6 +276,7 @@ def analyze_unit(
     target_data = _section_data(target_path)
     original_sections = _original_sections(harvest.root / "orig" / harvest.build / "Harvest")
     learned_sizes = _symbol_sizes(harvest.root, harvest.build)
+    section_addresses = {row["name"]: int(row["address"], 16) for row in sections if row.get("address")}
     for item in objects:
         choices = votes[item["symbol"]]
         location = choices.most_common(1)[0][0] if choices else None
@@ -269,13 +286,14 @@ def analyze_unit(
         target_section, target_offset = location if location else (None, None)
         target_size, size_basis = None, "unverified"
         content_match = None
+        original_tail = False
         if target_section:
             ours_content = _candidate_pointer_table(
                 ours_relocs, ours_strings, item["section"], item["offset"], item["size"]
             )
             first = ours_relocs.get(item["section"], {}).get(item["offset"])
             encoding = _string_section_encoding(first[0]) if first else None
-            target_content = (
+            target_content, complete = (
                 _target_pointer_table(
                     target_data.get(target_section, b""),
                     target_relocs.get(target_section, {}),
@@ -283,22 +301,33 @@ def analyze_unit(
                     original_sections,
                     target_offset,
                     encoding,
+                    section_address=section_addresses.get(target_section),
+                    candidate_size=item["size"],
                 )
                 if ours_content is not None and encoding
-                else []
+                else ([], False)
             )
             if ours_content is not None:
-                content_match = target_content[:len(ours_content)] == ours_content
-            if content_match:
+                observed = min(len(target_content), len(ours_content))
+                if target_content[:observed] != ours_content[:observed]:
+                    content_match = False
+                elif len(target_content) >= len(ours_content):
+                    content_match = True
+                elif complete:
+                    content_match = False
+                original_tail = target_offset + len(target_content) * 8 > len(target_data.get(target_section, b""))
+            if content_match is True:
                 target_size = item["size"]
                 size_basis = (
-                    "target-content-match" if len(target_content) == len(ours_content)
+                    "target-content-match" if complete and len(target_content) == len(ours_content)
                     else "target-content-prefix-match"
                 )
-            elif target_content:
+            elif target_content and complete:
                 target_size, size_basis = len(target_content) * 8, "target-pointer-run"
             elif item["symbol"] in learned_sizes:
                 target_size, size_basis = learned_sizes[item["symbol"]], "learned-symbol-size"
+            elif ours_content is not None and not complete:
+                size_basis = "target-pointer-run-truncated"
             else:
                 target_size, size_basis = item["size"], "candidate-size"
 
@@ -313,6 +342,8 @@ def analyze_unit(
             status = "ambiguous"
         elif target_section != item["section"] or not same:
             status = "layout-differs"
+        elif target_size is None:
+            status = "size-unverified"
         elif target_size != item["size"]:
             status = "size-differs"
         else:
@@ -323,6 +354,7 @@ def analyze_unit(
             "size": target_size,
             "size_basis": size_basis,
             "relocation_content_matches": content_match,
+            "original_tail": original_tail,
         }
         item["status"] = status
         item["references"] = len(evidence[item["symbol"]])
@@ -414,7 +446,7 @@ def show(report: dict) -> list[str]:
                 for row in proposal["proposed_sizes"]:
                     lines.append(f"    {row['symbol']}: size {row['size']} ({row['basis']})")
         for item in unit["objects"]:
-            if item["status"] in {"layout-differs", "size-differs", "ambiguous"}:
+            if item["status"] in {"layout-differs", "size-differs", "size-unverified", "ambiguous"}:
                 target = item["target"]
                 lines.append(
                     f"  {item['symbol']}: {item['section']}+{item['offset']:#x}/"
