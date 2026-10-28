@@ -29,6 +29,7 @@ from concord import (
     layout,
     oracle,
     place,
+    residual,
     results,
     scores,
     scratch,
@@ -447,6 +448,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_signedness.add_argument("--unit", help="limit the scan to one Harvest unit")
     p_signedness.add_argument("--save", type=Path, help="write the census as JSON")
 
+    p_residual = sub.add_parser(
+        "residual", help="classify the remaining differences in every inexact Harvest function"
+    )
+    p_residual.add_argument("--harvest", type=Path, required=True, help="Harvest checkout after `hv match`")
+    p_residual.add_argument("--save", type=Path, help="write the census as JSON")
+
     return parser
 
 
@@ -536,6 +543,38 @@ def main(argv: list[str] | None = None) -> int:
                     f"candidate +{pair['candidate_offsets'][0]:#x}: {target_text} vs {candidate_text}; "
                     f"changed bytes target [{target_offsets}] candidate [{candidate_offsets}]; {location}"
                 )
+        return 0
+    if args.command == "residual":
+        print("Comparing calls, constants and data references across the build.", flush=True)
+        report = residual.report(Harvest(args.harvest))
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        summary = report["summary"]
+        print(
+            f"{summary['functions']} distinct target functions in {summary['unit_occurrences']} inexact unit reports, "
+            f"{summary['bytes']:,} target bytes"
+        )
+        for name, label in (
+            ("no-source-change", "no-source-change kinds only"),
+            ("source-pointing", "source-pointing"),
+            ("other", "other"),
+        ):
+            group = summary["groups"][name]
+            print(f"{label}: {group['functions']} functions, {group['bytes']:,} target bytes")
+        print("Differing instruction rows by kind:")
+        for kind, counts in summary["kinds"].items():
+            print(f"  {kind}: {counts['functions']} functions, {counts['rows']} rows, {counts['bytes']:,} target bytes")
+        symbols = {row["symbol"] for row in report["top_source_pointing"]}
+        names = dict(zip(sorted(symbols), _short_names(symbols), strict=True)) if symbols else {}
+        print("Twenty largest source-pointing functions:")
+        for row in report["top_source_pointing"]:
+            score = f"{row['score']:.2f}%" if row["score"] is not None else "unknown"
+            kinds = ", ".join(f"{item['kind']} ({item['rows']} rows)" for item in row["kinds"])
+            signals = f"; signals {', '.join(row['source_signals'])}" if row["source_signals"] else ""
+            print(
+                f"  {row['units'][0]}:{names[row['symbol']]} size {row['size']} bytes, "
+                f"score {score}; {kinds}{signals}"
+            )
         return 0
     if args.command == "match":
         return _match(args)

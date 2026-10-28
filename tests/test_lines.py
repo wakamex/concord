@@ -8,6 +8,7 @@ from pathlib import Path
 
 from concord.diff import diff_code, read_function
 from concord.lines import editable, inline_chains
+from concord.model import Cause
 
 HEADER = """inline int smaller(int a, int b)
 {
@@ -52,7 +53,7 @@ class CandidateOffsets(unittest.TestCase):
                 )
                 subprocess.run(["as", "-o", f"{tmp}/{name}.o", f"{tmp}/{name}.s"], check=True)
                 objs.append(read_function(Path(tmp) / f"{name}.o", "f"))
-            finding = diff_code(*objs).findings[0]
+            finding = next(f for f in diff_code(*objs).findings if f.cause != Cause.PADDING)
             self.assertEqual((finding.offset, finding.candidate), (1, 0))
 
 

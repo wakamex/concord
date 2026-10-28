@@ -14,6 +14,7 @@ or a moved branch does not break the alignment of everything after it.
 from __future__ import annotations
 
 import difflib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,25 +39,43 @@ class ObjectFunction:
 
 
 def read_function(path: Path, symbol: str) -> ObjectFunction:
+    found = read_functions(path, {symbol})
+    if symbol not in found:
+        raise KeyError(f"{symbol} is not a function in {path}")
+    return found[symbol]
+
+
+def read_functions(path: Path, symbols: Iterable[str]) -> dict[str, ObjectFunction]:
+    """Read selected functions from one object while parsing its ELF tables once."""
+    wanted = set(symbols)
+    if not wanted:
+        return {}
     with open(path, "rb") as stream:
         elf = ELFFile(stream)
         table = elf.get_section_by_name(".symtab")
-        found = [
-            s for s in table.iter_symbols() if s.name == symbol and s["st_info"]["type"] == "STT_FUNC"
-        ]
-        if not found:
-            raise KeyError(f"{symbol} is not a function in {path}")
-        index, start, size = found[0]["st_shndx"], found[0]["st_value"], found[0]["st_size"]
-        section = elf.get_section(index)
-        code = section.data()[start : start + size]
-        fields = {
-            r["r_offset"] - start
-            for section in elf.iter_sections()
-            if isinstance(section, RelocationSection) and section["sh_info"] == index
-            for r in section.iter_relocations()
-            if start <= r["r_offset"] < start + size
-        }
-    return ObjectFunction(symbol, section.name, start, code, frozenset(fields))
+        found = {}
+        for item in table.iter_symbols():
+            if item.name in wanted and item["st_info"]["type"] == "STT_FUNC":
+                found.setdefault(item.name, item)
+        sections = list(elf.iter_sections())
+        relocations: dict[int, list[int]] = {}
+        for relocs in sections:
+            if isinstance(relocs, RelocationSection):
+                relocations.setdefault(relocs["sh_info"], []).extend(
+                    row["r_offset"] for row in relocs.iter_relocations()
+                )
+        data = {}
+        results = {}
+        for name, item in found.items():
+            index, start, size = item["st_shndx"], item["st_value"], item["st_size"]
+            section = sections[index]
+            if index not in data:
+                data[index] = section.data()
+            section_data = data[index]
+            code = section_data[start : start + size]
+            fields = {offset - start for offset in relocations.get(index, []) if start <= offset < start + size}
+            results[name] = ObjectFunction(name, section.name, start, code, frozenset(fields))
+    return results
 
 
 def _register_families() -> dict[str, str]:
@@ -90,6 +109,7 @@ class Instruction:
     mnemonic: str
     operands: tuple  # ("reg", family) | ("imm", value) | ("mem", base, index, scale, disp, size) | ("sym",) | ("label",)
     text: str
+    size: int
 
     @property
     def is_call(self) -> bool:
@@ -121,7 +141,7 @@ def disassemble(function: ObjectFunction) -> list[Instruction]:
                 else:
                     operands.append(("mem", base, index, o.mem.scale, o.mem.disp, o.size))
         text = f"{i.mnemonic} {i.op_str}".strip()
-        out.append(Instruction(i.address, i.mnemonic, tuple(operands), text))
+        out.append(Instruction(i.address, i.mnemonic, tuple(operands), text, i.size))
     return out
 
 
@@ -164,6 +184,80 @@ def _swapped(a: Instruction, b: Instruction) -> bool:
     )
 
 
+def _padding(instruction: Instruction) -> bool:
+    if instruction.mnemonic == "nop":
+        return True
+    return (
+        instruction.mnemonic == "xchg"
+        and len(instruction.operands) == 2
+        and instruction.operands[0] == instruction.operands[1]
+        and instruction.operands[0][0] == "reg"
+    )
+
+
+def _padding_findings(
+    target: ObjectFunction,
+    candidate: ObjectFunction,
+    target_code: list[Instruction],
+    candidate_code: list[Instruction],
+) -> list[DiffFinding]:
+    """Report changed no-op padding rows at their aligned instruction boundaries."""
+    def groups(function: ObjectFunction, instructions: list[Instruction]) -> dict[int, list[tuple[Instruction, bytes]]]:
+        by_boundary: dict[int, list[tuple[Instruction, bytes]]] = {}
+        boundary = 0
+        for instruction in instructions:
+            if _padding(instruction):
+                by_boundary.setdefault(boundary, []).append(
+                    (instruction, function.code[instruction.offset : instruction.offset + instruction.size])
+                )
+            else:
+                boundary += 1
+        return by_boundary
+
+    left = groups(target, target_code)
+    right = groups(candidate, candidate_code)
+    findings = []
+    for boundary in sorted(left.keys() | right.keys()):
+        target_rows, candidate_rows = left.get(boundary, []), right.get(boundary, [])
+        target_bytes = [code for _, code in target_rows]
+        candidate_bytes = [code for _, code in candidate_rows]
+        if target_bytes == candidate_bytes:
+            continue
+        if len(target_rows) == len(candidate_rows):
+            differing = [index for index, (left, right) in enumerate(zip(target_bytes, candidate_bytes)) if left != right]
+            rows = len(differing)
+            target_offsets = tuple(target_rows[index][0].offset for index in differing)
+            candidate_offsets = tuple(candidate_rows[index][0].offset for index in differing)
+        else:
+            paired = min(len(target_rows), len(candidate_rows))
+            differing = [
+                index for index in range(paired) if target_bytes[index] != candidate_bytes[index]
+            ]
+            rows = len(differing) + abs(len(target_rows) - len(candidate_rows))
+            target_offsets = tuple(
+                [target_rows[index][0].offset for index in differing]
+                + [instruction.offset for instruction, _ in target_rows[paired:]]
+            )
+            candidate_offsets = tuple(
+                [candidate_rows[index][0].offset for index in differing]
+                + [instruction.offset for instruction, _ in candidate_rows[paired:]]
+            )
+        offset = target_offsets[0] if target_offsets else candidate_offsets[0]
+        candidate_offset = candidate_offsets[0] if candidate_offsets else None
+        findings.append(
+            DiffFinding(
+                Cause.PADDING,
+                offset,
+                f"padding differs at instruction boundary {boundary}",
+                candidate_offset,
+                rows,
+                target_offsets,
+                candidate_offsets,
+            )
+        )
+    return findings
+
+
 def _classify_pair(a: Instruction, b: Instruction) -> Cause:
     """Cause for two aligned instructions of different shape."""
     if a.mnemonic in MIRRORED and b.mnemonic in MIRRORED and MIRRORED[a.mnemonic] == b.mnemonic:
@@ -196,38 +290,87 @@ def diff_code(target: ObjectFunction, candidate: ObjectFunction) -> DiffResult:
     """Align the two functions' instructions and attribute every mismatch."""
     if target.code == candidate.code and target.relocations == candidate.relocations:
         return DiffResult(score=100.0, exact=True)
-    # Alignment padding follows from where code lands, so it is left out of the
-    # alignment rather than reported as a cause of its own.
-    t = [i for i in disassemble(target) if i.mnemonic != "nop"]
-    c = [i for i in disassemble(candidate) if i.mnemonic != "nop"]
+    # Padding follows from where code lands, so it is excluded from instruction
+    # alignment and counted at the boundaries between aligned instructions.
+    target_code, candidate_code = disassemble(target), disassemble(candidate)
+    findings: list[DiffFinding] = _padding_findings(target, candidate, target_code, candidate_code)
+    t = [i for i in target_code if not _padding(i)]
+    c = [i for i in candidate_code if not _padding(i)]
     matcher = difflib.SequenceMatcher(None, [shape(i) for i in t], [shape(i) for i in c], autojunk=False)
-    findings: list[DiffFinding] = []
     same = 0
     mismatched: list[tuple[list[Instruction], list[Instruction]]] = []
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
-            mapping: dict[str, str] = {}
-            run_start = run_candidate = None
-            for a, b in zip(t[i1:i2], c[j1:j2]):
-                if a.operands == b.operands:
+            aligned_target, aligned_candidate = t[i1:i2], c[j1:j2]
+            start = 0
+            while start < len(aligned_target):
+                if aligned_target[start].operands == aligned_candidate[start].operands:
                     same += 1
+                    start += 1
                     continue
-                if _swapped(a, b):
-                    findings.append(DiffFinding(Cause.OPERAND_ORDER, a.offset, f"{a.text}  vs  {b.text}", b.offset))
+                if _swapped(aligned_target[start], aligned_candidate[start]):
+                    a, b = aligned_target[start], aligned_candidate[start]
+                    findings.append(
+                        DiffFinding(
+                            Cause.OPERAND_ORDER,
+                            a.offset,
+                            f"{a.text}  vs  {b.text}",
+                            b.offset,
+                            1,
+                            (a.offset,),
+                            (b.offset,),
+                        )
+                    )
+                    start += 1
                     continue
-                for x, y in zip(_registers(a), _registers(b)):
-                    if x != y and x is not None and y is not None:
-                        mapping[x] = y
-                if run_start is None:
-                    run_start, run_candidate = a.offset, b.offset
-            if mapping:
-                pairs = ", ".join(f"{x}->{y}" for x, y in sorted(mapping.items()))
-                findings.append(DiffFinding(Cause.REGISTER_ALLOCATION, run_start, pairs, run_candidate))
+
+                end = start + 1
+                while end < len(aligned_target) and aligned_target[end].operands != aligned_candidate[end].operands:
+                    if _swapped(aligned_target[end], aligned_candidate[end]):
+                        break
+                    end += 1
+                target_run, candidate_run = aligned_target[start:end], aligned_candidate[start:end]
+                target_keys = [(i.mnemonic, i.operands) for i in target_run]
+                candidate_keys = [(i.mnemonic, i.operands) for i in candidate_run]
+                if len(target_run) == len(candidate_run) and sorted(target_keys, key=repr) == sorted(candidate_keys, key=repr):
+                    findings.append(
+                        DiffFinding(
+                            Cause.INSTRUCTION_ORDER,
+                            target_run[0].offset,
+                            f"the same {len(target_run)} instructions in a different order",
+                            candidate_run[0].offset,
+                            len(target_run),
+                            tuple(i.offset for i in target_run),
+                            tuple(i.offset for i in candidate_run),
+                        )
+                    )
+                else:
+                    mapping: dict[str, str] = {}
+                    register_rows = 0
+                    for a, b in zip(target_run, candidate_run, strict=True):
+                        register_rows += a.operands != b.operands
+                        for x, y in zip(_registers(a), _registers(b), strict=True):
+                            if x != y and x is not None and y is not None:
+                                mapping[x] = y
+                    if mapping:
+                        pairs = ", ".join(f"{x}->{y}" for x, y in sorted(mapping.items()))
+                        findings.append(
+                            DiffFinding(
+                                Cause.REGISTER_ALLOCATION,
+                                target_run[0].offset,
+                                pairs,
+                                candidate_run[0].offset,
+                                register_rows,
+                                tuple(i.offset for i in target_run),
+                                tuple(i.offset for i in candidate_run),
+                            )
+                        )
+                start = end
         else:
             mismatched.append((t[i1:i2], c[j1:j2]))
     findings.extend(_mismatched(mismatched))
     if not findings:
-        findings.append(DiffFinding(Cause.UNKNOWN, 0, "only alignment padding or relocation fields differ"))
+        findings.append(DiffFinding(Cause.UNKNOWN, 0, "only relocation fields differ", rows=0))
     findings.sort(key=lambda f: f.offset)
     score = 100.0 * 2 * same / (len(t) + len(c)) if t or c else 100.0
     return DiffResult(score=round(score, 2), exact=False, findings=findings)
@@ -275,7 +418,17 @@ def _mismatched(regions: list[tuple[list[Instruction], list[Instruction]]]) -> l
                     detail = f"{len(piece)} instructions at target +{piece[0].offset:#x} sit at candidate +{other[0].offset:#x}"
                     if [(i.mnemonic, i.operands) for i in piece] != [(i.mnemonic, i.operands) for i in other]:
                         detail += ", reordered within the block" if exact else ", with different registers"
-                    findings.append(DiffFinding(Cause.BLOCK_ORDER, piece[0].offset, detail, other[0].offset))
+                    findings.append(
+                        DiffFinding(
+                            Cause.BLOCK_ORDER,
+                            piece[0].offset,
+                            detail,
+                            other[0].offset,
+                            len(piece),
+                            tuple(i.offset for i in piece),
+                            tuple(i.offset for i in other),
+                        )
+                    )
                     break
     pairs: list[tuple[Instruction, Instruction]] = []
     for r, (a, b) in enumerate(regions):
@@ -283,7 +436,17 @@ def _mismatched(regions: list[tuple[list[Instruction], list[Instruction]]]) -> l
         right = [i for ci, (pr, p) in enumerate(candidate_pieces) if pr == r and ci not in used_c for i in p]
         if left and right and len(_content(left, True)) > 1 and _content(left, True) == _content(right, True):
             detail = f"the same {len(left)} instructions in a different order (candidate +{right[0].offset:#x})"
-            findings.append(DiffFinding(Cause.BLOCK_ORDER, left[0].offset, detail, right[0].offset))
+            findings.append(
+                DiffFinding(
+                    Cause.INSTRUCTION_ORDER,
+                    left[0].offset,
+                    detail,
+                    right[0].offset,
+                    len(left),
+                    tuple(i.offset for i in left),
+                    tuple(i.offset for i in right),
+                )
+            )
             continue
         if left and len(left) == len(right):
             pairs.extend(zip(left, right))
@@ -301,7 +464,9 @@ def _mismatched(regions: list[tuple[list[Instruction], list[Instruction]]]) -> l
     }
     for n, (x, y) in enumerate(pairs):
         cause = Cause.BLOCK_ORDER if n in swapped else _classify_pair(x, y)
-        findings.append(DiffFinding(cause, x.offset, f"{x.text}  vs  {y.text}", y.offset))
+        findings.append(
+            DiffFinding(cause, x.offset, f"{x.text}  vs  {y.text}", y.offset, 1, (x.offset,), (y.offset,))
+        )
     return findings
 
 
@@ -334,7 +499,15 @@ def _one_sided(run: list[Instruction], side: str, others: list[list[Instruction]
     else:
         cause = Cause.UNKNOWN
         detail = f"{side} only, {len(run)} instructions: {_run(run[:4])}{' ...' if len(run) > 4 else ''}"
-    return DiffFinding(cause, run[0].offset, detail, run[0].offset if side == "candidate" else None)
+    return DiffFinding(
+        cause,
+        run[0].offset,
+        detail,
+        run[0].offset if side == "candidate" else None,
+        len(run),
+        tuple(i.offset for i in run) if side == "target" else (),
+        tuple(i.offset for i in run) if side == "candidate" else (),
+    )
 
 
 class ObjectDiff:

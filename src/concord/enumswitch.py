@@ -246,14 +246,31 @@ def _guard_signatures(function: ObjectFunction) -> Counter:
 
 def missing_range_checks(target: ObjectFunction, candidate: ObjectFunction) -> int:
     """Count target-only immediate comparisons followed by a conditional branch."""
-    target_guards = _guard_signatures(target)
+    return len(missing_range_check_offsets(target, candidate)) // 2
+
+
+def missing_range_check_offsets(target: ObjectFunction, candidate: ObjectFunction) -> list[int]:
+    """Target offsets for immediate compare and branch rows missing from the build."""
+    target_instructions = disassemble(target)
     candidate_guards = _guard_signatures(candidate)
-    missing = target_guards - candidate_guards
-    return sum(
-        count
-        for (comparison, _), count in missing.items()
-        if comparison[0] == "cmp" and any(operand[0] == "imm" for operand in comparison[1])
-    )
+    target_guards: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+    for comparison, branch in pairwise(target_instructions):
+        conditional_jump = branch.mnemonic.startswith("j") and branch.mnemonic != "jmp"
+        if not (
+            comparison.mnemonic == "cmp"
+            and conditional_jump
+            and any(operand[0] == "imm" for operand in shape(comparison)[1])
+        ):
+            continue
+        signature = (shape(comparison), shape(branch))
+        target_guards[signature].append((comparison.offset, branch.offset))
+
+    missing = []
+    for signature, offsets in target_guards.items():
+        count = candidate_guards[signature]
+        available = offsets[count:]
+        missing.extend(offset for pair in available for offset in pair)
+    return missing
 
 
 def _definitions(tree) -> dict[tuple[str, int], list[Node]]:

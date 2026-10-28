@@ -12,6 +12,8 @@ class Cause(str, Enum):
 
     REGISTER_ALLOCATION = "register-allocation"
     BLOCK_ORDER = "block-order"
+    INSTRUCTION_ORDER = "instruction-order"
+    PADDING = "padding"
     OPERAND_ORDER = "operand-order"
     INLINING = "inlining"
     STACK_LAYOUT = "stack-layout"
@@ -33,6 +35,9 @@ class DiffFinding:
     offset: int  # byte offset into the function where the mismatch starts
     detail: str
     candidate: int | None = None  # where the candidate's side of it starts, when it has one
+    rows: int = 1  # differing instruction rows represented by this finding
+    target_offsets: tuple[int, ...] = ()
+    candidate_offsets: tuple[int, ...] = ()
 
 
 @dataclass

@@ -211,7 +211,7 @@ class CliTest(unittest.TestCase):
         help_text = build_parser().format_help()
         for command in (
             "seed", "match", "permute", "diff", "phase", "scores", "bench", "unguard", "comparison-flips",
-            "enum-switch",
+            "enum-switch", "residual",
         ):
             self.assertIn(command, help_text)
 
@@ -228,6 +228,35 @@ class CliTest(unittest.TestCase):
                     0,
                 )
             run.assert_called_once_with(harvest.return_value, unit="u.cpp", symbol="symbol", write=True)
+
+    def test_residual_passes_the_harvest_and_saves_a_report(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        report = {
+            "summary": {
+                "functions": 0,
+                "unit_occurrences": 0,
+                "bytes": 0,
+                "groups": {
+                    "no-source-change": {"functions": 0, "bytes": 0},
+                    "source-pointing": {"functions": 0, "bytes": 0},
+                    "other": {"functions": 0, "bytes": 0},
+                },
+                "kinds": {},
+            },
+            "top_source_pointing": [],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            save = Path(directory) / "residual.json"
+            with mock.patch("concord.cli.Harvest") as harvest, mock.patch(
+                "concord.cli.residual.report", return_value=report
+            ) as run, contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(["residual", "--harvest", directory, "--save", str(save)]), 0)
+            run.assert_called_once_with(harvest.return_value)
+            self.assertEqual(json.loads(save.read_text()), report)
 
     def test_module_entrypoint_runs(self):
         result = subprocess.run(

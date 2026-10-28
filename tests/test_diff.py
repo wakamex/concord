@@ -60,6 +60,21 @@ class AssembledCauses(unittest.TestCase):
             {Cause.OPERAND_ORDER},
         )
 
+    def test_adjacent_register_moves_in_the_opposite_order_are_instruction_order(self):
+        self.assertEqual(
+            self.causes(
+                "mov r13, r9\nmov rbx, rax\nret",
+                "mov rbx, rax\nmov r13, r9\nret",
+            ),
+            {Cause.INSTRUCTION_ORDER},
+        )
+
+    def test_alignment_padding_encodings_are_padding(self):
+        self.assertEqual(
+            self.causes("nop\nret", "xchg ax, ax\nret"),
+            {Cause.PADDING},
+        )
+
     def test_swapped_blocks_are_block_order(self):
         self.assertEqual(
             self.causes(
@@ -162,7 +177,8 @@ class HarvestDocumentedCauses(unittest.TestCase):
                     self.skipTest(f"{symbol} is exact now")
                 findings = harvest.diff(verdict).findings
                 self.assertTrue(findings)
-                self.assertTrue(all(f.cause == cause for f in findings), [f.cause.value for f in findings])
+                substantive = [f.cause for f in findings if f.cause != Cause.PADDING]
+                self.assertTrue(all(found == cause for found in substantive), [f.cause.value for f in findings])
 
 
 
