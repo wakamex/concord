@@ -307,5 +307,23 @@ class DaisyGuiCallDistributionTests(unittest.TestCase):
         self.assertIn("0 worse; data bytes matched: +0 -0", notes["Baseline whole-build gate"])
 
 
+class SceneCollisionManagerResidualTests(unittest.TestCase):
+    def test_scene_collision_residuals_record_source_checks_and_rejected_forms(self):
+        path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
+        data = tomllib.loads(path.read_text())
+        idiom = next(item for item in data["idiom"] if item["id"] == "daisy-scene-collision-manager-residuals")
+        notes = {item["function"]: item["note"] for item in idiom["evidence"]}
+
+        self.assertEqual(idiom["cause"], "register-allocation")
+        self.assertEqual(idiom["status"], "hypothesis")
+        self.assertIn("28.49", idiom["limits"])
+        self.assertIn("256 candidates", idiom["limits"])
+        self.assertIn("77.45152 to 75.93629", idiom["limits"])
+        self.assertIn("0 differ", notes["calls and constants"])
+        self.assertIn("0 locked functions and 0 witnesses", notes["Unit context"])
+        self.assertIn("92.37", notes["collideWithWorld"])
+        self.assertIn("0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0", notes["Whole-build gate"])
+
+
 if __name__ == "__main__":
     unittest.main()
