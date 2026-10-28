@@ -314,6 +314,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_author.add_argument("--unit", help="Harvest unit, as a source path or report slug")
     p_author.add_argument("--apply", action="store_true", help="write an accepted candidate to its source file")
     p_author.add_argument("--seed-manifest", type=Path, help="JSON with files, units and optional extent claims for absent authored units")
+    p_author.add_argument("--overlay-manifest", type=Path, help="JSON files mapping for an authored header/layout correction")
     p_author.add_argument("--save", type=Path, help="save authored seed measurements")
     p_author.add_argument("--variant", help="select a registered authored header spelling")
     p_author.add_argument("--candidate", type=Path, help="authored unit source changing only this function body")
@@ -914,15 +915,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "author":
         harvest = Harvest(args.harvest)
-        if args.seed_manifest:
-            manifest = json.loads(args.seed_manifest.read_text())
-            files = {name: (args.seed_manifest.parent / path).read_bytes() for name, path in manifest["files"].items()}
-            report = authored.seed(harvest, files, manifest["units"], write=args.apply, claims=manifest.get("claims"))
+        if args.seed_manifest or args.overlay_manifest:
+            manifest_path = args.seed_manifest or args.overlay_manifest
+            manifest = json.loads(manifest_path.read_text())
+            files = {name: (manifest_path.parent / path).read_bytes() for name, path in manifest["files"].items()}
+            if args.overlay_manifest:
+                report = authored.overlay(harvest, files, write=args.apply)
+            else:
+                report = authored.seed(harvest, files, manifest["units"], write=args.apply, claims=manifest.get("claims"))
             if args.save:
                 args.save.write_text(json.dumps(report, indent=2) + "\n")
-            for name, row in report["evaluations"].items():
+            for name, row in report.get("evaluations", {}).items():
                 print(f"{name}: {row['error'] or str(len(row['exact'])) + ' exact functions'}")
-            print(f"author seed: {'accepted' if report['accepted'] else 'rejected'}; applied={report['applied']}")
+            for gain in report.get("gains", []):
+                print(f"{gain['symbol']}: {gain['before']} -> {gain['score']}; oracle={gain['oracle']}")
+            print(f"author files: {'accepted' if report['accepted'] else 'rejected'}; applied={report['applied']}")
             return 0 if report["accepted"] else 1
         if not args.unit or not args.function:
             raise ValueError("author requires --unit and function, or --seed-manifest")

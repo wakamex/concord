@@ -870,3 +870,53 @@ symbols.save(sys.argv[1],rows)
             "evaluations": {name: {"error": row.error, "exact": sorted(row.exact_functions()), "fuzzy": row.fuzzy,
                                    "object": str(row.object) if row.object else None}
                             for name, row in measured.items()}}
+
+
+def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> dict:
+    """Measure an authored layout or declaration correction in all its consumers.
+
+    Every emitted score must be preserved and at least one function must improve.
+    Each improved inexact function requires oracle evidence, including when its
+    body is unchanged and a header correction changes its generated code.
+    """
+    originals = {}
+    units = set()
+    for name in files:
+        path = Path(name)
+        if path.is_absolute() or '..' in path.parts or path.suffix not in {'.cpp', '.h'}:
+            raise ValueError(f'invalid authored source path: {name}')
+        originals[name] = (harvest.root / 'src' / name).read_bytes()
+        units.update(harvest.dependents('src/' + name))
+        if path.suffix == '.cpp':
+            units.add(name)
+    units = sorted(units)
+    items = {}
+    for n, unit in enumerate(units):
+        items[f'before-{n}'] = (unit, {})
+        items[f'after-{n}'] = (unit, {'src/' + name: body for name, body in files.items()})
+    measured = harvest.evaluate_overlays(items)
+    accepted = bool(units)
+    gains = []
+    for n, unit in enumerate(units):
+        before, after = measured[f'before-{n}'], measured[f'after-{n}']
+        accepted = accepted and _preserves(before, after) and not before.error
+        for symbol in after.fuzzy:
+            if keep_improvement(before, after, symbol):
+                verdict = after.verdict(symbol)
+                evidence = None
+                kept = True
+                if not verdict.row['exact']:
+                    kept, evidence = oracle.gate_objects(harvest, unit, symbol, before.object, after.object)
+                    kept = kept and evidence is not None
+                accepted = accepted and kept
+                gains.append({'unit': unit, 'symbol': symbol, 'before': before.fuzzy.get(symbol),
+                              'score': after.fuzzy[symbol], 'exact': verdict.row['exact'], 'oracle': evidence})
+    accepted = bool(accepted and gains)
+    if accepted and write:
+        for name, original in originals.items():
+            if (harvest.root / 'src' / name).read_bytes() != original:
+                raise ValueError(f'{name} changed during measurement')
+        for name, body in files.items():
+            (harvest.root / 'src' / name).write_bytes(body)
+    return {'accepted': accepted, 'applied': bool(accepted and write), 'gains': gains, 'units': units,
+            'errors': {name: row.error for name, row in measured.items() if row.error}}

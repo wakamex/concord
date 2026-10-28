@@ -60,3 +60,26 @@ class AuthorSeed(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     authored.seed(harvest, files, units, write=True)
             harvest.evaluate_overlays.assert_not_called()
+
+
+class AuthorOverlay(unittest.TestCase):
+    def test_shared_layout_change_needs_gain_and_preserves_every_dependent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / 'src/H.h'
+            path.parent.mkdir()
+            path.write_bytes(b'old')
+            harvest = Mock(root=root)
+            harvest.dependents.return_value = ['a.cpp', 'b.cpp']
+            before = Evaluation('before', 'a', fuzzy={'f': 99}, sections=[{'functions': [{'symbol': 'f', 'exact': False}]}])
+            exact = Evaluation('after', 'a', fuzzy={'f': 100}, sections=[{'functions': [{'symbol': 'f', 'exact': True}]}])
+            harvest.evaluate_overlays.return_value = {'before-0': before, 'after-0': exact,
+                'before-1': before, 'after-1': before}
+            report = authored.overlay(harvest, {'H.h': b'new'}, write=True)
+            self.assertTrue(report['applied'])
+            self.assertEqual(path.read_bytes(), b'new')
+            path.write_bytes(b'old')
+            harvest.evaluate_overlays.return_value['after-1'] = Evaluation('after', 'b', fuzzy={'f': 98})
+            report = authored.overlay(harvest, {'H.h': b'new'}, write=True)
+            self.assertFalse(report['applied'])
+            self.assertEqual(path.read_bytes(), b'old')
