@@ -635,6 +635,7 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | 
     if baseline.error:
         raise RuntimeError(f"the unit's own source does not compile:\n{baseline.error}")
     verdicts = {}
+    before_verdict = baseline.verdict(symbol)
     for name, row in evaluations.items():
         if name == "baseline":
             continue
@@ -646,7 +647,11 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | 
         verdicts[name] = {
             "error": row.error or None,
             "exact": bool(verdict and verdict.row["exact"]),
+            "before": baseline.fuzzy.get(symbol),
             "score": row.fuzzy.get(symbol),
+            "before_size": before_verdict.row.get("size") if before_verdict else None,
+            "size": verdict.row.get("size") if verdict else None,
+            "object": str(row.object) if row.object else None,
             "kept": kept,
             "oracle": evidence,
         }

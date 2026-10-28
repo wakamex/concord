@@ -170,9 +170,24 @@ class CliTest(unittest.TestCase):
     def test_parser_lists_the_commands(self):
         help_text = build_parser().format_help()
         for command in (
-            "seed", "match", "permute", "diff", "phase", "scores", "bench", "unguard", "comparison-flips"
+            "seed", "match", "permute", "diff", "phase", "scores", "bench", "unguard", "comparison-flips",
+            "enum-switch",
         ):
             self.assertIn(command, help_text)
+
+    def test_enum_switch_passes_filters_and_apply_to_the_capability(self):
+        from unittest import mock
+
+        with mock.patch("concord.cli.Harvest") as harvest, mock.patch("concord.cli.enumswitch.run", return_value=[]) as run:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main([
+                        "enum-switch", "--harvest", "/root", "--unit", "u.cpp",
+                        "--function", "symbol", "--apply",
+                    ]),
+                    0,
+                )
+            run.assert_called_once_with(harvest.return_value, unit="u.cpp", symbol="symbol", write=True)
 
     def test_module_entrypoint_runs(self):
         result = subprocess.run(

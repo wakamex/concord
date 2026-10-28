@@ -20,6 +20,7 @@ from concord import (
     census,
     comparison_flips,
     destructors,
+    enumswitch,
     frames,
     initialization,
     inline_budget,
@@ -304,6 +305,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_author.add_argument("--variant", help="select a registered authored header spelling")
     p_author.add_argument("--candidate", type=Path, help="authored unit source changing only this function body")
     p_author.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
+
+    p_enum_switch = sub.add_parser(
+        "enum-switch", help="find enum dispatches whose target keeps a range check the build omits"
+    )
+    p_enum_switch.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_enum_switch.add_argument("--unit", help="limit the scan to one Harvest unit")
+    p_enum_switch.add_argument("--function", help="limit the scan to one target function symbol")
+    p_enum_switch.add_argument("--apply", action="store_true", help="write candidates accepted through author")
 
     p_place = sub.add_parser("place", help="learn references and place called templates without re-seeding source")
     p_place.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
@@ -694,6 +703,26 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  header {report['path']}: checked {len(report['dependents'])} dependent units")
         print(f"author {unit} {args.function}: {report['chosen'] or 'no candidate accepted'}{' (applied)' if report['applied'] else ''}")
         return 0 if report["chosen"] else 1
+    if args.command == "enum-switch":
+        rows = enumswitch.run(
+            Harvest(args.harvest), unit=args.unit, symbol=args.function, write=args.apply
+        )
+        for row in rows:
+            status = "kept" if row["kept"] else "rejected"
+            applied = " and applied" if row["applied"] else ""
+            print(
+                f"{status}{applied} {row['unit']} {row['symbol']} line {row['line']} "
+                f"({row['kind']}, {row['missing_checks']} missing range checks): "
+                f"{row['before_size']} -> {row['size']} bytes, "
+                f"score {row['before_score']} -> {row['score']}"
+            )
+            if row["oracle"] is not None:
+                print(f"  oracle {json.dumps(row['oracle'], sort_keys=True)}")
+            if row["error"]:
+                print(f"  error {row['error']}")
+        if not rows:
+            print("no inexact enum range checks found")
+        return 0
     if args.command == "place":
         harvest = Harvest(args.harvest)
         if args.object and (len(args.units) != 1 or args.restore_literals):

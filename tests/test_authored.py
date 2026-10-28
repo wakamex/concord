@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from concord import authored
 from concord.authored import Edit, candidates, keep
+from concord.enumswitch import source_candidates
 from concord.harvest import Evaluation
 from concord.transforms import demangle
 
@@ -60,6 +61,23 @@ void CShadowVolumeSceneNode::anotherMethod()
         candidate = forms["vertex-type-int-switch"]
         self.assertEqual(candidate, source.replace(b"switch(b->getVertexType())", b"switch((int)b->getVertexType())", 1))
         self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
+
+    def test_enum_comparison_chain_casts_the_shared_value(self):
+        source = b"""enum E { A, B };
+void f(E mode)
+{
+    if (mode == A)
+        return;
+    else if (mode == B)
+        return;
+}
+"""
+        edits = source_candidates(source, "_Z1f1E", {"A": frozenset({"E"}), "B": frozenset({"E"})})
+        self.assertEqual(len(edits), 1)
+        self.assertEqual(edits[0].kind, "comparison-chain")
+        self.assertEqual(edits[0].line, 4)
+        self.assertIn(b"if ((int)mode == A)", edits[0].source)
+        self.assertIn(b"else if ((int)mode == B)", edits[0].source)
 
     def test_opengl_glx_version_outputs_have_no_initial_stores(self):
         symbol = "_ZN5daisy5video12CVideoOpenGL14loadExtensionsEv"
@@ -336,6 +354,9 @@ class Keep(unittest.TestCase):
             with patch('concord.authored.oracle.gate', return_value=(False, {'verdict': 'different'})) as gate:
                 result = authored.apply(harvest, 'u.cpp', SYMBOL, True, candidate=candidate)
                 self.assertFalse(result['applied'])
+                row = result['candidates']['causal-candidate']
+                self.assertEqual((row['before'], row['score']), (90, 91))
+                self.assertIsNone(row['before_size'])
                 self.assertEqual(path.read_bytes(), SOURCE)
                 gate.assert_called_once()
             with patch('concord.authored.oracle.gate', return_value=(True, {'verdict': 'same'})):
