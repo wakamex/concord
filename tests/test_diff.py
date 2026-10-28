@@ -197,6 +197,32 @@ class KnowledgeBase(unittest.TestCase):
                     self.assertIn(fact, notes[function])
                 self.assertIn("identical", notes[function])
 
+    def test_zip_sort_helper_diagnosis_is_recorded(self):
+        from concord import knowledge
+
+        entries = {i.id: i for i in knowledge.load("gcc-4.4.3")}
+        comparison_notes = {
+            e.get("function"): e.get("note", "")
+            for e in entries["compare-operand-order"].evidence
+            if e.get("function") and e.get("note")
+        }
+        self.assertIn("daisy::io::CZipReader sort helpers", comparison_notes)
+        for fact in ("0x53cac0", "0x53df00", "no `operator>`"):
+            self.assertIn(fact, comparison_notes["daisy::io::CZipReader sort helpers"])
+
+        order_notes = {
+            e.get("function"): e.get("note", "")
+            for e in entries["definition-order"].evidence
+            if e.get("function") and e.get("note")
+        }
+        self.assertIn("daisy::io::CZipReader sort helpers", order_notes)
+        for fact in (
+            "phase reports 24/30 exact, 0 locked and 0 witnesses",
+            "101 actual scratch searches and 0 failed resets",
+            "128 orders, 2 restarts and seed 0 plateaued with 0 exact gains",
+        ):
+            self.assertIn(fact, order_notes["daisy::io::CZipReader sort helpers"])
+
     def test_copy_loop_advice_records_ssa_recycling_and_the_unresolved_source(self):
         from concord import knowledge
 
