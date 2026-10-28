@@ -44,7 +44,7 @@ With [uv](https://docs.astral.sh/uv/), the audited options can be reproduced aft
 
 ```sh
 env -u XDG_DATA_HOME CONCORD_JOBS=2 uv --no-config run --locked concord flag-audit \
-  --harvest /code/harvest-cursor \
+  --harvest HARVEST_CHECKOUT \
   --unit daisy/io/CZipFileList.cpp \
   --unit daisy/io/CFileSystem.cpp \
   --unit daisy/scene/CCameraMayaSceneNode.cpp \
