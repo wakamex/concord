@@ -150,5 +150,23 @@ class MissileTurretUnitResidualTests(unittest.TestCase):
         self.assertIn("32 explicitly unit-scoped rewrite candidates", notes["CMissileTurretEntity::render"])
 
 
+class DropshipUnitEvidenceTests(unittest.TestCase):
+    def test_logic_guidance_preserves_context_and_assembly_constraints(self):
+        idioms = knowledge.for_causes(knowledge.load("gcc-4.4.3"), {Cause.BLOCK_ORDER})
+        idiom = next(item for item in idioms if item.id == "dropship-logic-lifetimes")
+        evidence = {item["function"]: item["note"] for item in idiom.evidence}
+
+        for fact in ("21 emitted", "53/55", "31 declaration-count phases", "same-layout"):
+            self.assertIn(fact, evidence["Unit context"])
+        for fact in ("0x42b890", "5962", "83.263985", "84.0201", "15.0f"):
+            self.assertIn(fact, evidence["CDropshipEntity::updateLogic landing"])
+        self.assertIn("DragonFly0019", evidence["CDropshipEntity::loadSprite"])
+        self.assertIn("0 worse", evidence["Whole-build gate"])
+        self.assertIn("unresolved", idiom.limits)
+        self.assertIn("128", idiom.limits)
+        self.assertIn("5 to 10", evidence["Rejected search"])
+        self.assertIn("15 differing", evidence["Rejected search"])
+
+
 if __name__ == "__main__":
     unittest.main()

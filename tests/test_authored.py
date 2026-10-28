@@ -48,6 +48,70 @@ def evaluation(exact: dict[str, bool], fuzzy: dict[str, float] | None = None, er
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class Candidates(unittest.TestCase):
+    def test_dropship_gun_sine_precedes_the_start_vector(self):
+        symbol = "_ZN7harvest6entity15CDropshipEntity11updateLogicEf"
+        key = ("HarvestFull/harvest/entity/CDropshipEntity.cpp", symbol)
+        source = b"""int CDropshipEntity::updateLogic(float frameDelta)
+{
+                    ox::core::CVector3d<float> start = Position + offset;
+                    fire(sin((double)angle) * radius, 0, 0);
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED[key])
+        candidate = forms["gun-sine-before-start"]
+        self.assertLess(candidate.index(b"double sn = sin"), candidate.index(b"start = Position"))
+        self.assertIn(b"fire(sn * radius, 0, 0)", candidate)
+
+    def test_dropship_missile_coordinates_are_declared_y_first(self):
+        symbol = "_ZN7harvest6entity15CDropshipEntity11updateLogicEf"
+        key = ("HarvestFull/harvest/entity/CDropshipEntity.cpp", symbol)
+        source = b"""int CDropshipEntity::updateLogic(float frameDelta)
+{
+                    float x1 = missileX + sideX;
+                    float y1 = missileY + sideY;
+                    float x2 = missileX - sideX;
+                    float y2 = missileY - sideY;
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED[key])
+        candidate = forms["missile-y-before-x"]
+        for index in (b"1", b"2"):
+            self.assertLess(candidate.index(b"float y" + index), candidate.index(b"float x" + index))
+
+    def test_dropship_approach_retains_the_alignment_result(self):
+        symbol = "_ZN7harvest6entity15CDropshipEntity11updateLogicEf"
+        key = ("HarvestFull/harvest/entity/CDropshipEntity.cpp", symbol)
+        source = b"""int CDropshipEntity::updateLogic(float frameDelta)
+{
+        if ((distance > 424.413147f || direction.X * forward.X + direction.Y * forward.Y > 0) &&
+            turnTowardsTarget(frameDelta))
+            accelerate();
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED[key])
+        candidate = forms["approach-alignment-result"]
+        self.assertIn(b"bool aligned = false;", candidate)
+        self.assertIn(b"aligned = turnTowardsTarget(frameDelta);\n        if (aligned)", candidate)
+        self.assertEqual(candidate.count(b"turnTowardsTarget(frameDelta)"), 1)
+
+    def test_dropship_landing_pitch_follows_the_final_landing_sprite(self):
+        symbol = "_ZN7harvest6entity15CDropshipEntity11updateLogicEf"
+        key = ("HarvestFull/harvest/entity/CDropshipEntity.cpp", symbol)
+        source = b"""int CDropshipEntity::updateLogic(float frameDelta)
+{
+        if (Position.Z < 15.0f)
+            SpriteIndex = 73;
+        SoundPitch = ox::core::max_(SoundPitch + -.05f * frameDelta, .75f);
+        turnTowardsTarget(frameDelta);
+}
+"""
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertIn("landing-pitch-below-fifteen", forms)
+        candidate = forms["landing-pitch-below-fifteen"]
+        self.assertIn(b"if (Position.Z < 15.0f)\n        {\n            SpriteIndex = 73;\n            SoundPitch", candidate)
+        self.assertIn(b".75f);\n        }\n        turnTowardsTarget", candidate)
+        self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
+
     def test_shadow_mesh_vertex_dispatch_converts_the_switch_to_int(self):
         symbol = "_ZN5daisy5scene22CShadowVolumeSceneNode19setMeshToRenderFromEPN2ox5scene5IMeshE"
         key = ("daisy/scene/CShadowVolumeSceneNode.cpp", symbol)

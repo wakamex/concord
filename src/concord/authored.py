@@ -83,6 +83,57 @@ class HeaderFunctionEdit:
 
 
 AUTHORED: dict[tuple[str, str], list[Edit | BodyEdit]] = {
+    (
+        "HarvestFull/harvest/entity/CDropshipEntity.cpp",
+        "_ZN7harvest6entity15CDropshipEntity11updateLogicEf",
+    ): [
+        Edit(
+            "approach-alignment-result",
+            b'''        if ((distance > 424.413147f || direction.X * forward.X + direction.Y * forward.Y > 0) &&
+            turnTowardsTarget(frameDelta))''',
+            b'''        bool aligned = false;
+        if (distance > 424.413147f || direction.X * forward.X + direction.Y * forward.Y > 0)
+            aligned = turnTowardsTarget(frameDelta);
+        if (aligned)''',
+        ),
+        BodyEdit(
+            "gun-sine-before-start",
+            (
+                Replacement(
+                    b"                    ox::core::CVector3d<float> start = Position",
+                    b"                    double sn = sin((double)angle);\n                    ox::core::CVector3d<float> start = Position",
+                    1,
+                ),
+                Replacement(b"sin((double)angle) * radius, 0, 0", b"sn * radius, 0, 0", 1),
+            ),
+        ),
+        BodyEdit(
+            "missile-y-before-x",
+            (
+                Replacement(
+                    b"                    float x1 = missileX + sideX;\n                    float y1 = missileY + sideY;",
+                    b"                    float y1 = missileY + sideY;\n                    float x1 = missileX + sideX;",
+                    1,
+                ),
+                Replacement(
+                    b"                    float x2 = missileX - sideX;\n                    float y2 = missileY - sideY;",
+                    b"                    float y2 = missileY - sideY;\n                    float x2 = missileX - sideX;",
+                    1,
+                ),
+            ),
+        ),
+        Edit(
+            "landing-pitch-below-fifteen",
+            b'''        if (Position.Z < 15.0f)
+            SpriteIndex = 73;
+        SoundPitch = ox::core::max_(SoundPitch + -.05f * frameDelta, .75f);''',
+            b'''        if (Position.Z < 15.0f)
+        {
+            SpriteIndex = 73;
+            SoundPitch = ox::core::max_(SoundPitch + -.05f * frameDelta, .75f);
+        }''',
+        ),
+    ],
     # GCC treats a switch on the two-value enum as exhaustive. The target
     # checks both values and skips the vertex copy for other values.
     (
