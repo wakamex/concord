@@ -7,6 +7,7 @@ import hashlib
 import json
 import subprocess
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 from elftools.elf.elffile import ELFFile
@@ -18,6 +19,86 @@ from concord.irrlicht import translate
 from concord.search import other_scores, worse_elsewhere
 from concord.seed import IRRLICHT, _match, _place_bss, _place_called_sections, _register
 from concord.transforms import find_function
+
+
+@dataclass(frozen=True)
+class ExtentMatch:
+    address: int
+    size: int
+    fixed_bytes: int
+    relocation_bytes: int
+
+
+def extent_match(obj: Path, target: Path, symbol: str, address: int) -> ExtentMatch | None:
+    """Prove that one candidate object function matches a target FDE extent.
+
+    Relocation fields in the relocatable object are masked because the target
+    contains their linked values. Every other function byte must agree.
+    """
+    widths = {0: 0, 1: 8, 2: 4, 4: 4, 9: 4, 10: 4, 11: 4, 41: 4, 42: 4}
+    with obj.open("rb") as stream:
+        candidate = ELFFile(stream)
+        if candidate["e_type"] != "ET_REL" or candidate["e_machine"] != "EM_X86_64":
+            raise ValueError(f"{obj}: expected a relocatable x86-64 object")
+        found = {}
+        for table in candidate.iter_sections():
+            if table["sh_type"] not in {"SHT_SYMTAB", "SHT_DYNSYM"}:
+                continue
+            for entry in table.iter_symbols():
+                section_index = entry["st_shndx"]
+                if (entry.name == symbol and entry["st_info"]["type"] == "STT_FUNC"
+                        and isinstance(section_index, int) and entry["st_size"] > 0):
+                    key = (section_index, entry["st_value"], entry["st_size"])
+                    found[key] = (section_index, entry["st_value"], entry["st_size"])
+        if len(found) != 1:
+            return None
+        section_index, start, size = next(iter(found.values()))
+        section = candidate.get_section(section_index)
+        code = section.data()
+        end = start + size
+        if not section["sh_flags"] & 4 or start < 0 or end > len(code):
+            return None
+        masked = set()
+        for relocation_section in candidate.iter_sections():
+            if not isinstance(relocation_section, RelocationSection) or relocation_section["sh_info"] != section_index:
+                continue
+            for relocation in relocation_section.iter_relocations():
+                relocation_start = int(relocation["r_offset"])
+                relocation_type = int(relocation["r_info_type"])
+                width = widths.get(relocation_type)
+                if width is None:
+                    if start <= relocation_start < end:
+                        raise ValueError(f"{obj}: unsupported x86-64 relocation type {relocation_type} in {symbol}")
+                    continue
+                relocation_end = relocation_start + width
+                if relocation_start < end and relocation_end > start:
+                    if relocation_start < start or relocation_end > end:
+                        return None
+                    masked.update(range(relocation_start - start, relocation_end - start))
+        candidate_code = code[start:end]
+
+    with target.open("rb") as stream:
+        executable = ELFFile(stream)
+        if executable["e_machine"] != "EM_X86_64":
+            raise ValueError(f"{target}: expected an x86-64 executable")
+        extents = [entry for entry in executable.get_dwarf_info().EH_CFI_entries()
+                   if hasattr(entry, "lsda_pointer") and entry["initial_location"] == address]
+        if len(extents) != 1 or extents[0]["address_range"] != size:
+            return None
+        size = int(extents[0]["address_range"])
+        sections = [section for section in executable.iter_sections()
+                    if section["sh_flags"] & 4 and section["sh_addr"] <= address
+                    and address + size <= section["sh_addr"] + section["sh_size"]]
+        if len(sections) != 1:
+            return None
+        section = sections[0]
+        offset = address - section["sh_addr"]
+        target_code = section.data()[offset:offset + size]
+    if len(target_code) != size or len(masked) == size:
+        return None
+    if any(candidate_code[index] != target_code[index] for index in range(size) if index not in masked):
+        return None
+    return ExtentMatch(address, size, size - len(masked), len(masked))
 
 
 def _strings(node: Node) -> list[Node]:
@@ -281,3 +362,47 @@ symbols.save(build,[symbols.Symbol(s.address,s.size,s.name,evidence.get(s.name,s
     return {"unit": unit, "object_sha256": digest, "source_sha256": hashlib.sha256(source).hexdigest(),
             "learned": {row["symbol"]: {**row, "evidence": evidence[row["symbol"]]} for row in rows if row["symbol"] in evidence},
             "output": output}
+
+
+def place_extent(harvest: Harvest, unit: str, symbol: str, address: int) -> dict:
+    """Name an unnamed target extent only when the unit's compiled body matches it."""
+    root = harvest.root
+    source = root / "src" / unit
+    obj = harvest.reports / f"{harvest.slug(unit)}.o"
+    target = root / "orig" / BUILD / "Harvest"
+    table = root / "config" / BUILD / "symbols.tsv"
+    if not source.is_file():
+        raise FileNotFoundError(f"{unit}: no source file in this Harvest checkout")
+    match = extent_match(obj, target, symbol, address)
+    if match is None:
+        raise ValueError(f"{unit}: {symbol} does not exactly match target extent {address:#x}")
+    with table.open(newline="") as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+    for row in rows:
+        row_address = int(row["address"], 16)
+        if row["symbol"] == symbol:
+            if row_address == address and int(row["size"]) == match.size:
+                return {"unit": unit, "symbol": symbol, "address": address, "size": match.size,
+                        "fixed_bytes": match.fixed_bytes, "relocation_bytes": match.relocation_bytes,
+                        "object_sha256": hashlib.sha256(obj.read_bytes()).hexdigest(), "already_named": True}
+            raise ValueError(f"{symbol}: already assigned to {row_address:#x} ({row['size']} bytes)")
+        if row_address == address:
+            raise ValueError(f"{address:#x}: already assigned to {row['symbol']}")
+    digest = hashlib.sha256(obj.read_bytes()).hexdigest()
+    evidence = f"candidate-extent:{digest}:fixed={match.fixed_bytes}:relocations={match.relocation_bytes}"
+    claim = {"address": address, "size": match.size, "symbol": symbol, "evidence": evidence}
+    script = """import json,sys
+from hv import symbols
+build=sys.argv[1]
+claim=json.load(sys.stdin)
+rows=symbols.load(build)
+if any(row.name == claim['symbol'] or row.address == claim['address'] for row in rows):
+    raise SystemExit('symbol or target address became assigned during placement')
+rows.append(symbols.Symbol(claim['address'],claim['size'],claim['symbol'],claim['evidence']))
+symbols.save(build,rows)
+"""
+    subprocess.run(["uv", "--no-config", "run", "--locked", "python", "-c", script, BUILD],
+                   cwd=root, input=json.dumps(claim), text=True, check=True, capture_output=True)
+    return {"unit": unit, "symbol": symbol, "address": address, "size": match.size,
+            "fixed_bytes": match.fixed_bytes, "relocation_bytes": match.relocation_bytes,
+            "object_sha256": digest, "already_named": False}

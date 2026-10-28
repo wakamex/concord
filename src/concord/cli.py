@@ -334,6 +334,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_place.add_argument("--save", type=Path, help="save placement results as JSON")
     p_place.add_argument("--object", type=Path, help="learn addresses from one compiled candidate, then rebuild unchanged source")
 
+    p_extent = sub.add_parser("place-extent", help="name a target function extent proved by an exact candidate body")
+    p_extent.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_extent.add_argument("--unit", required=True, help="compiled source unit containing the candidate function")
+    p_extent.add_argument("--symbol", required=True, help="candidate function symbol as emitted in the unit object")
+    p_extent.add_argument("--address", required=True, type=lambda value: int(value, 0),
+                          help="target function address, in decimal or hexadecimal")
+
     p_place_bss = sub.add_parser("place-bss", help="place every unplaced unit .bss proved by its static initializer")
     p_place_bss.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
     p_place_bss.add_argument("--save", type=Path, help="save the placements as JSON")
@@ -968,6 +975,13 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {len(row['learned'])} addresses learned from candidate; source unchanged")
             else:
                 print(f"  {len(row['sections'])} called sections verified; {len(row['literals'])} literal repairs exact")
+        return 0
+    if args.command == "place-extent":
+        result = place.place_extent(Harvest(args.harvest), args.unit, args.symbol, args.address)
+        state = "already named" if result["already_named"] else "named"
+        print(f"{state} {result['unit']} {result['symbol']} at {result['address']:#x}: "
+              f"{result['size']} exact bytes, {result['fixed_bytes']} fixed, "
+              f"{result['relocation_bytes']} relocation bytes masked")
         return 0
     if args.command == "place-bss":
         rows = place.place_bss(Harvest(args.harvest))
