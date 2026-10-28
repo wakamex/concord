@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -111,6 +112,9 @@ def normalized(checkout: Path, base: str) -> tuple[dict, dict, dict]:
     base = git('rev-parse', '--verify', base + '^{commit}').decode().strip()
     if git('status', '--porcelain', '--untracked-files=normal', '--', 'src', 'third_party', 'config', 'tools', 'builds.json', 'uv.lock', 'toolchain'):
         raise ValueError('normalized scores require committed measurement inputs; commit or isolate source/config changes first')
+    added_units = [path.removeprefix('src/') for path in git(
+        'diff', '--name-only', '--diff-filter=A', '-z', base, head, '--', 'src'
+    ).decode().split('\0') if path.endswith('.cpp')]
     changed = git('diff', '--name-only', '-z', base, head, '--', 'src', 'third_party').decode().split('\0')
     with tempfile.TemporaryDirectory(prefix='concord-gate-') as tmp:
         root = Path(tmp) / 'worktree'
@@ -128,7 +132,23 @@ def normalized(checkout: Path, base: str) -> tuple[dict, dict, dict]:
                 'diff', '--name-only', '-z', base, head, '--', str(config_dir)
             ).decode().split('\0')))
             subprocess.run(['git', '-C', str(root), 'restore', '--source', base, '--worktree', '--', 'src', 'third_party'], check=True)
-            before = snapshot(report(root, capture=True))
+            # A newly seeded unit has no source in the base revision. Keep all
+            # learned addresses but omit its registration for that capture.
+            units_path = root / config_dir / 'units.toml'
+            head_units = units_path.read_text() if units_path.exists() else ''
+            absent = sorted(unit for unit in added_units
+                            if f'["{unit}"]' in head_units and not (root / 'src' / unit).exists())
+            base_units = head_units
+            for unit in absent:
+                pattern = r'^\["' + re.escape(unit) + r'"\]\n.*?(?=^\[|\Z)'
+                base_units = re.sub(pattern, '', base_units, flags=re.MULTILINE | re.DOTALL)
+            try:
+                if absent:
+                    units_path.write_text(base_units)
+                before = snapshot(report(root, capture=True))
+            finally:
+                if absent:
+                    units_path.write_text(head_units)
             configuration_before = None
             if configuration_changes:
                 subprocess.run([
@@ -143,7 +163,7 @@ def normalized(checkout: Path, base: str) -> tuple[dict, dict, dict]:
             config = root / config_dir
             evidence = {'base': base, 'head': head, 'source_paths': sorted(filter(None, changed)),
                         'configuration': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(config.iterdir()) if p.is_file()},
-                        'configuration_changes': configuration_changes,
+                        'configuration_changes': configuration_changes, 'absent_base_units': absent,
                         'configuration_baseline': configuration_before,
                         'baseline': before}
             return before, after, evidence

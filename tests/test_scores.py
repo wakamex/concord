@@ -147,6 +147,34 @@ class Normalized(unittest.TestCase):
             self.assertEqual(evidence["configuration_changes"], [])
             self.assertIsNone(evidence["configuration_baseline"])
 
+    def test_new_unit_is_absent_only_from_normalized_base_capture(self):
+        import tomllib
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "harvest"
+            root.mkdir()
+            self.checkout(root, configuration_changed=False)
+            (root / "src/new.cpp").write_text("new unit")
+            (root / "config/test/units.toml").write_text('["game.cpp"]\n\n["new.cpp"]\n".bss" = 0x1234\n')
+            subprocess.run(["git", "-C", str(root), "add", "src/new.cpp", "config/test/units.toml"], check=True)
+            subprocess.run(["git", "-C", str(root), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+                            "commit", "-qm", "new unit"], check=True)
+            seen = []
+
+            def captured(checkout, capture=False, ref=None):
+                config = tomllib.loads((checkout / "config/test/units.toml").read_text())
+                seen.append(config)
+                for unit in config:
+                    if unit.endswith('.cpp'):
+                        self.assertTrue((checkout / 'src' / unit).is_file(), unit)
+                return {"units": [], "concord_matched_data": []}
+
+            with patch("concord.scores.report", side_effect=captured):
+                _, _, evidence = normalized(root, "HEAD~1")
+            self.assertNotIn('new.cpp', seen[0])
+            self.assertIn('new.cpp', seen[-1])
+            self.assertEqual(evidence['absent_base_units'], ['new.cpp'])
+
 
 if __name__ == "__main__":
     unittest.main()
