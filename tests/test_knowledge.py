@@ -229,6 +229,31 @@ class MissileTurretUnitResidualTests(unittest.TestCase):
         self.assertIn("97.24 to 97.90", notes["Second whole-build gate"])
 
 
+class WinsockNotifyReceiveResidualTests(unittest.TestCase):
+    def test_authored_receive_recovery_and_remaining_residuals_are_recorded(self):
+        idiom = next(
+            item for item in knowledge.load("gcc-4.4.3")
+            if item.id == "network-recovery-residuals"
+        )
+        note = next(
+            item["note"] for item in idiom.evidence
+            if item.get("function") == "CWinsockNetworkDevice::notifyReceive"
+        )
+
+        for fact in (
+            "65.34",
+            "improved the function score from 71.63 to 75.86",
+            "improved it to 95.80",
+            "0x208",
+            "5,000 cases",
+            "EET_NETWORK_EVENT",
+            "C1/C2",
+            "86.7",
+            "1 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0",
+        ):
+            self.assertIn(fact, note)
+
+
 class StaticTextBreakTextEvidenceTests(unittest.TestCase):
     def test_rejected_loop_translations_and_unit_cost_are_recorded(self):
         idiom = next(
