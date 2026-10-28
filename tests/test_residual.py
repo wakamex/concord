@@ -35,6 +35,18 @@ class CallRows(unittest.TestCase):
                 {"calls": 1, "block-order": 1},
                 True,
             ),
+            (
+                [
+                    {"kind": "call", "classification": "original-called", "count_difference": True,
+                     "target": {"symbol": "_ZN2ox5event14IEventReceiverD2Ev"}},
+                    {"kind": "call", "classification": "original-called", "count_difference": True,
+                     "target": {"symbol": "_Unwind_Resume"}},
+                    {"kind": "call", "classification": "different-callees",
+                     "ours": [{"symbol": "_Unwind_Resume"}], "target": [{"symbol": "_ZdaPv"}, {"symbol": "_ZdlPv"}]},
+                ],
+                {"inline-distribution": 2},
+                False,
+            ),
         )
         for differences, expected, expected_source_pointing in cases:
             with self.subTest(expected=expected, differences=differences):

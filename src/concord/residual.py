@@ -146,12 +146,33 @@ def _pattern_signals(
     return signals, pattern_counts, enum_offsets
 
 
+# Callees that only exception cleanup and destruction reach. A difference made up of
+# them alone is where GCC inlined a destructor, as in the GUI element constructors,
+# whose target cleanup pads repeat IEventReceiver's destructor, delete and delete[].
+CLEANUP_CALLEES = {"_Unwind_Resume", "_ZdlPv", "_ZdaPv"}
+
+
+def _cleanup(callee: dict) -> bool:
+    symbol = callee.get("symbol") or ""
+    return symbol in CLEANUP_CALLEES or symbol.endswith(("D0Ev", "D1Ev", "D2Ev"))
+
+
+def _cleanup_only(difference: dict) -> bool:
+    callees = []
+    for side in ("ours", "target"):
+        value = difference.get(side)
+        callees.extend(value if isinstance(value, list) else [value] if value else [])
+    return bool(callees) and all(_cleanup(callee) for callee in callees)
+
+
 def _pattern_counts(differences: list[dict]) -> tuple[Counter, bool]:
     counts: Counter = Counter()
     source_pointing = False
     for difference in differences:
         kind = difference["kind"]
-        if kind == "call":
+        if kind == "call" and _cleanup_only(difference):
+            counts["inline-distribution"] += 1
+        elif kind == "call":
             if difference["classification"] == "different-callees":
                 counts["calls"] += len(difference.get("ours", [])) + len(difference.get("target", []))
                 source_pointing = True
