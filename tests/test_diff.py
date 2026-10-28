@@ -370,6 +370,20 @@ class KnowledgeBase(unittest.TestCase):
         self.assertIn("CGUIEnvironment", notes)
         self.assertIn("0x64", notes)
 
+    def test_octree_render_block_order_trials_are_recorded(self):
+        from concord import knowledge
+
+        entries = [i for i in knowledge.load("gcc-4.4.3") if i.id == "octree-render-local-init-order"]
+        self.assertEqual(len(entries), 1)
+        entry = entries[0]
+        self.assertEqual(entry.cause, Cause.BLOCK_ORDER)
+        self.assertEqual(entry.status, "hypothesis")
+        self.assertIn("two-intervention limit", entry.limits)
+        note = entry.evidence[0]["note"]
+        for detail in ("99.73%", "99.69%", "99.71%", "+0x14e5", "+0x1835", "phase scan"):
+            with self.subTest(detail=detail):
+                self.assertIn(detail, note)
+
 
 if __name__ == "__main__":
     unittest.main()
