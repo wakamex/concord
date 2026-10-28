@@ -212,6 +212,33 @@ if __name__ == "__main__":
 
 class RefreshHeader(unittest.TestCase):
     @unittest.skipUnless(shutil.which('g++'), 'g++ required')
+    def test_refresh_adds_ancestor_includes_only_when_the_body_needs_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / 'src/d/A.h'
+            path.parent.mkdir(parents=True)
+            current = b'struct A { void f() {} };\n'
+            path.write_bytes(current)
+            ancestor = root / IRRLICHT_DIRECTORY / 'source/Irrlicht/A.h'
+            ancestor.parent.mkdir(parents=True)
+
+            def evaluate(rows):
+                unit, overlay = rows['header']
+                result = subprocess.run(['g++', '-std=c++98', '-x', 'c++', '-fsyntax-only', '-'],
+                                        input=overlay['src/d/A.h'], capture_output=True, check=False)
+                return {'header': Evaluation('header', unit, error=result.stderr.decode() if result.returncode else '')}
+
+            harvest = SimpleNamespace(root=root, evaluate_overlays=evaluate)
+            with mock.patch.object(blockers, 'qualify', side_effect=lambda root, text, unit: text):
+                ancestor.write_bytes(b'#include <vector>\nstruct A { void f() { int n = 7; (void)n; } };\n')
+                blockers.refresh_header(harvest, 'd/A.cpp', 'd/A.h', {'f'}, apply=True)
+                self.assertNotIn(b'#include <vector>', path.read_bytes())
+                ancestor.write_bytes(b'#include <vector>\nstruct A { void f() { std::vector<int> values; } };\n')
+                row, = blockers.refresh_header(harvest, 'd/A.cpp', 'd/A.h', {'f'}, apply=True)
+                self.assertFalse(row.errors)
+                self.assertIn(b'#include <vector>', path.read_bytes())
+
+    @unittest.skipUnless(shutil.which('g++'), 'g++ required')
     def test_inline_constructor_overlay_is_compiled_before_writing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

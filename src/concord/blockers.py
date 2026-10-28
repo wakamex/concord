@@ -146,7 +146,8 @@ def _with_includes(text: bytes, includes: bytes, helpers: bytes = b"") -> bytes:
     return text
 
 
-def restored(current: bytes, irrlicht: bytes, helpers: set[str] = frozenset(), *, stubs_only: bool = True) -> dict[str, bytes]:
+def restored(current: bytes, irrlicht: bytes, helpers: set[str] = frozenset(), *, stubs_only: bool = True,
+             carry_includes: bool = True) -> dict[str, bytes]:
     """For each function of `current` whose body is a stub, the unit with that one
     body replaced by the body of the function of the same name in `irrlicht` (the
     qualified translation), plus the includes the translation has that the unit
@@ -154,7 +155,7 @@ def restored(current: bytes, irrlicht: bytes, helpers: set[str] = frozenset(), *
     must explicitly select the methods to refresh. `helpers` is the names of the file-local helpers the translation
     defines; the ones the unit lacks are carried too."""
     ours, theirs = _definitions(current), _definitions(irrlicht)
-    includes = _missing_includes(current, irrlicht)
+    includes = _missing_includes(current, irrlicht) if carry_includes else b""
     helper_text = _missing_helpers(current, irrlicht, helpers)
     out = {}
     for name, node in ours.items():
@@ -297,10 +298,15 @@ def refresh_header(harvest: Harvest, unit: str, header: str, methods: set[str], 
     combined = current
     found = []
     for name in sorted(methods):
-        candidate = restored(combined, translation, stubs_only=False).get(name)
+        candidate = restored(combined, translation, stubs_only=False, carry_includes=False).get(name)
         if candidate is None:
             continue
         evaluation = harvest.evaluate_overlays({"header": (unit, {"src/" + header: candidate})})["header"]
+        if evaluation.error:
+            with_includes = restored(combined, translation, stubs_only=False)[name]
+            if with_includes != candidate:
+                candidate = with_includes
+                evaluation = harvest.evaluate_overlays({"header": (unit, {"src/" + header: candidate})})["header"]
         row = Stub(unit, name, [evaluation.error] if evaluation.error else [])
         found.append(row)
         if not evaluation.error:
