@@ -38,6 +38,8 @@ class Instruction:
     mnemonic: str
     operands: tuple
     text: str
+    writes_flags: bool
+    control_flow: bool
 
 
 def _operand(instruction, operand) -> tuple:
@@ -69,6 +71,17 @@ def _decode(code: bytes) -> list[Instruction] | None:
             instruction.mnemonic,
             tuple(_operand(instruction, operand) for operand in instruction.operands),
             f"{instruction.mnemonic} {instruction.op_str}".strip(),
+            any(instruction.reg_name(register) in {"eflags", "rflags"} for register in instruction.regs_access()[1]),
+            any(
+                instruction.group(group)
+                for group in (
+                    capstone.CS_GRP_JUMP,
+                    capstone.CS_GRP_CALL,
+                    capstone.CS_GRP_RET,
+                    capstone.CS_GRP_INT,
+                    capstone.CS_GRP_IRET,
+                )
+            ),
         )
         for instruction in decoder.disasm(code, 0)
     ]
@@ -77,22 +90,67 @@ def _decode(code: bytes) -> list[Instruction] | None:
     return instructions
 
 
-def _flipped_pair(target: list[Instruction], candidate: list[Instruction], index: int) -> bool:
-    left, right = target[index], candidate[index]
+def _flipped_pair(
+    target: list[Instruction], candidate: list[Instruction], comparison_index: int, jump_index: int
+) -> bool:
+    left, right = target[comparison_index], candidate[comparison_index]
     if (
         left.mnemonic != "cmp"
         or right.mnemonic != "cmp"
         or len(left.operands) != 2
         or left.operands != right.operands[::-1]
         or left.operands == right.operands
-        or index + 1 >= len(target)
     ):
         return False
-    target_jump, candidate_jump = target[index + 1], candidate[index + 1]
+    target_jump, candidate_jump = target[jump_index], candidate[jump_index]
     return (
         MIRRORED_JUMPS.get(target_jump.mnemonic) == candidate_jump.mnemonic
         and target_jump.operands == candidate_jump.operands
     )
+
+
+def _same_after_relocations(
+    target: bytes, candidate: bytes, instruction: Instruction, relocated: set[int]
+) -> bool:
+    return all(
+        target[offset] == candidate[offset] or offset in relocated
+        for offset in range(instruction.offset, instruction.offset + instruction.size)
+    )
+
+
+def _flipped_pairs(
+    target: list[Instruction],
+    candidate: list[Instruction],
+    target_bytes: bytes,
+    candidate_bytes: bytes,
+    relocated: set[int],
+) -> list[tuple[int, int]]:
+    pairs = []
+    for comparison_index in range(len(target) - 1):
+        comparison, candidate_comparison = target[comparison_index], candidate[comparison_index]
+        if (
+            comparison.mnemonic != "cmp"
+            or candidate_comparison.mnemonic != "cmp"
+            or len(comparison.operands) != 2
+            or comparison.operands != candidate_comparison.operands[::-1]
+            or comparison.operands == candidate_comparison.operands
+        ):
+            continue
+
+        for jump_index in range(comparison_index + 1, len(target)):
+            instruction, candidate_instruction = target[jump_index], candidate[jump_index]
+            if _flipped_pair(target, candidate, comparison_index, jump_index):
+                pairs.append((comparison_index, jump_index))
+                break
+            if (
+                instruction.control_flow
+                or candidate_instruction.control_flow
+                or instruction.writes_flags
+                or candidate_instruction.writes_flags
+                or not _same_after_relocations(target_bytes, candidate_bytes, instruction, relocated)
+            ):
+                break
+    return pairs
 
 
 def _relocation_bytes(function: ObjectFunction) -> set[int] | None:
@@ -193,21 +251,21 @@ def _function_flips(
     ):
         return None
 
-    pairs = [index for index in range(len(target_code) - 1) if _flipped_pair(target_code, candidate_code, index)]
-    used = {index + step for index in pairs for step in (0, 1)}
+    pairs = _flipped_pairs(target_code, candidate_code, target.code, candidate.code, relocated)
+    used = {index for pair in pairs for index in pair}
     if not pairs or len(used) != len(pairs) * 2:
         return None
 
     allowed = set(relocated)
-    for index in pairs:
-        for instruction in (target_code[index], target_code[index + 1]):
+    for comparison_index, jump_index in pairs:
+        for instruction in (target_code[comparison_index], target_code[jump_index]):
             allowed.update(range(instruction.offset, instruction.offset + instruction.size))
     if any(left != right and offset not in allowed for offset, (left, right) in enumerate(zip(target.code, candidate.code, strict=True))):
         return None
 
     flips = []
-    for index in pairs:
-        comparison, jump = target_code[index], target_code[index + 1]
+    for comparison_index, jump_index in pairs:
+        comparison, jump = target_code[comparison_index], target_code[jump_index]
         byte_offsets = _offsets(
             (target, candidate),
             set(range(comparison.offset, comparison.offset + comparison.size))
@@ -219,7 +277,7 @@ def _function_flips(
                 "jump_offset": jump.offset,
                 "differing_offsets": byte_offsets,
                 "target": f"{comparison.text}; {jump.text}",
-                "candidate": f"{candidate_code[index].text}; {candidate_code[index + 1].text}",
+                "candidate": f"{candidate_code[comparison_index].text}; {candidate_code[jump_index].text}",
                 "inlined_function": None,
                 "source": None,
             }

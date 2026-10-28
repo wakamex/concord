@@ -14,7 +14,8 @@ class HarvestComparisonFlips(unittest.TestCase):
         from concord.comparison_flips import _source_inline_function, find
         from concord.harvest import Harvest
 
-        rows = find(Harvest(HARVEST))
+        harvest = Harvest(HARVEST)
+        rows = find(harvest)
         found = {row["symbol"]: row for row in rows}
         self.assertEqual(len(rows), len({row["address"] for row in rows}))
         expected = {
@@ -28,6 +29,19 @@ class HarvestComparisonFlips(unittest.TestCase):
             with self.subTest(symbol=symbol):
                 self.assertEqual(len(found[symbol]["flips"]), flips)
                 self.assertEqual(found[symbol]["flips"][0]["comparison_offset"], offset)
+
+        buildable_list = "_ZN7harvest6entity15CBuildableItems24loadCreativeBuildingListEPN2ox2io11IFileSystemEPNS2_5video12IVideoDriverEPKcPNS3_9IFileListESC_"
+        octree_render = "_ZN5daisy5scene17COctTreeSceneNode6renderEv"
+        self.assertIn(buildable_list, found, "five flipped comparisons in loadCreativeBuildingList were missed")
+        self.assertEqual(
+            sorted(flip["comparison_offset"] for flip in found[buildable_list]["flips"]),
+            [0x1CD, 0x224, 0x2FD, 0xA7C, 0xB1A],
+        )
+        verdicts = {verdict.symbol: verdict for verdict in harvest.verdicts()}
+        self.assertIn(octree_render, verdicts)
+        self.assertEqual(verdicts[octree_render].row["address"], "0x5630d0")
+        self.assertFalse(verdicts[octree_render].row["exact"])
+        self.assertNotIn(octree_render, found)
 
         source = {"path": "src/ox/core/CString.h"}
         for line, function in ((159, "CString::operator="), (176, "CString::operator=="), (186, "CString::operator<")):
