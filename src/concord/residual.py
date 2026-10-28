@@ -28,6 +28,7 @@ NO_SOURCE_KINDS = {
     "instruction-selection",
     "block-order",
     "padding",
+    "inline-distribution",
 }
 SOURCE_KINDS = {"data", "calls", "size", "enum-check"}
 
@@ -121,14 +122,13 @@ def _pattern_signals(
     signals: dict[tuple[str, str], set[str]] = defaultdict(set)
     pattern_counts: dict[tuple[str, str], Counter] = defaultdict(Counter)
 
-    references = calls_constants(harvest)
+    references = calls_constants(harvest, {verdict.unit for verdict in verdicts})
     for function in references["functions"]:
         key = (function["unit"], function["symbol"])
-        for difference in function["differences"]:
-            difference_kind = difference["kind"]
-            kind = "calls" if difference_kind in {"call", "indirect"} else "data"
+        counts, source_pointing = _pattern_counts(function["differences"])
+        pattern_counts[key].update(counts)
+        if source_pointing:
             signals[key].add("calls-constants")
-            pattern_counts[key][kind] += 1
 
     for (unit, symbol), (target, candidate) in functions.items():
         if target.code == candidate.code and target.relocations == candidate.relocations:
@@ -145,11 +145,43 @@ def _pattern_signals(
     return signals, pattern_counts, enum_offsets
 
 
-def _kind_rows(result: DiffResult, enum_offsets: set[int]) -> tuple[Counter, dict[str, list[str]]]:
+def _pattern_counts(differences: list[dict]) -> tuple[Counter, bool]:
+    counts: Counter = Counter()
+    source_pointing = False
+    for difference in differences:
+        kind = difference["kind"]
+        if kind == "call":
+            if difference["classification"] == "different-callees" or difference.get("count_difference"):
+                counts["calls"] += 1
+                source_pointing = True
+            else:
+                counts["inline-distribution"] += 1
+        elif kind == "indirect":
+            counts["calls"] += 1
+            source_pointing = True
+        else:
+            counts["data"] += 1
+            source_pointing = True
+    return counts, source_pointing
+
+
+def _call_row_kind(pattern_counts: Counter) -> str:
+    if pattern_counts["calls"]:
+        return "calls"
+    if pattern_counts["inline-distribution"]:
+        return "inline-distribution"
+    return "block-order"
+
+
+def _kind_rows(
+    result: DiffResult,
+    enum_offsets: set[int],
+    call_kind: str,
+) -> tuple[Counter, dict[str, list[str]]]:
     counts: Counter = Counter()
     evidence: dict[str, list[str]] = defaultdict(list)
     for finding in result.findings:
-        kind = _finding_kind(finding)
+        kind = call_kind if finding.cause == Cause.INLINING else _finding_kind(finding)
         for index in range(finding.rows):
             offset = finding.target_offsets[index] if index < len(finding.target_offsets) else None
             row_kind = "enum-check" if offset in enum_offsets else kind
@@ -193,7 +225,8 @@ def _occurrence(
             "source_signals": sorted(signals),
         }
 
-    rows, evidence = _kind_rows(result, enum_offsets)
+    call_kind = _call_row_kind(pattern_counts)
+    rows, evidence = _kind_rows(result, enum_offsets, call_kind)
     target_offsets_in_findings = {
         offset for finding in result.findings for offset in finding.target_offsets
     }

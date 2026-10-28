@@ -24,6 +24,11 @@ copy whose body calls the other leftover (inline-copy noise, as when ours calls
 a CString constructor and the target calls operator new[] because one side
 inlined that constructor). A callee left over on one side only is reported as a
 possible inline or shared tail.
+
+Call differences mark count imbalances for callees present on both sides and
+mark one-sided or paired inline-copy differences as inline distribution.
+Residual analysis uses these annotations to keep those cases out of its
+source-pointing call group.
 """
 
 from __future__ import annotations
@@ -462,6 +467,23 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
                      original_catalog: dict[str, FunctionRefs] | None = None) -> list[dict]:
     """The named differences between the two copies, structured."""
     differences = []
+
+    def call_key(name, side):
+        resolve = resolve_ours if side == "ours" else resolve_target
+        address = resolve(name)
+        return ("address", address) if address is not None else ("name", name)
+
+    ours_call_counts = Counter(call_key(c.symbol, "ours") for c in ours.callees)
+    target_call_counts = Counter(call_key(c.symbol, "target") for c in target.callees)
+
+    def count_difference(entry, side):
+        key = call_key(entry[0], side)
+        return (
+            ours_call_counts[key]
+            and target_call_counts[key]
+            and ours_call_counts[key] != target_call_counts[key]
+        )
+
     ours_only, target_only = _cancel([c.symbol for c in ours.callees], [c.symbol for c in target.callees],
                                      resolve_ours, resolve_target)
     ours_catalog = ours_catalog or {}
@@ -477,14 +499,26 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
     def append_inline_noise(outer_entry, outer_side, inner_entry, inner_side):
         if outer_side == "ours":
             differences.append({"kind": "call", "classification": "called-out-of-line",
-                                "ours": callee(outer_entry, "ours")})
+                                "ours": callee(outer_entry, "ours"), "inline_distribution": True})
             differences.append({"kind": "call", "classification": "original-called",
-                                "target": callee(inner_entry, "target")})
+                                "target": callee(inner_entry, "target"), "inline_distribution": True})
         else:
             differences.append({"kind": "call", "classification": "called-out-of-line",
-                                "ours": callee(inner_entry, "ours")})
+                                "ours": callee(inner_entry, "ours"), "inline_distribution": True})
             differences.append({"kind": "call", "classification": "original-called",
-                                "target": callee(outer_entry, "target")})
+                                "target": callee(outer_entry, "target"), "inline_distribution": True})
+
+    def append_one_sided_call(classification, side, entry):
+        difference = {
+            "kind": "call",
+            "classification": classification,
+            side: callee(entry, side),
+        }
+        if count_difference(entry, side):
+            difference["count_difference"] = True
+        else:
+            difference["inline_distribution"] = True
+        differences.append(difference)
 
     if ours_only and target_only:
         explained, ours_only, target_only = _inline_copy_pairs(
@@ -500,11 +534,9 @@ def compare_function(ours: FunctionRefs, target: FunctionRefs, *,
     elif ours_only or target_only:
         # One side only: the other inlined the callee; inline-copy noise.
         for name, addr in sorted(ours_only):
-            differences.append({"kind": "call", "classification": "called-out-of-line",
-                                "ours": callee((name, addr), "ours")})
+            append_one_sided_call("called-out-of-line", "ours", (name, addr))
         for name, addr in sorted(target_only):
-            differences.append({"kind": "call", "classification": "original-called",
-                                "target": callee((name, addr), "target")})
+            append_one_sided_call("original-called", "target", (name, addr))
 
     # Constants compare as a multiset of values. Cancel identical instruction
     # contexts first, so an unrelated occurrence of the same value cannot be

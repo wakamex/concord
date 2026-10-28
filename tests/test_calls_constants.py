@@ -67,8 +67,10 @@ class Calls(unittest.TestCase):
         ours = refs(callees=[(4, "_Zonly")])
         [row] = compare(ours, refs())
         self.assertEqual(row["classification"], "called-out-of-line")
+        self.assertTrue(row["inline_distribution"])
         [row] = compare(refs(), ours)
         self.assertEqual(row["classification"], "original-called")
+        self.assertTrue(row["inline_distribution"])
 
     def test_ctor_against_new_is_inline_copy_noise(self):
         ctor = "_ZN2ox4core7CStringIcEC1IcEEPKT_"
@@ -82,6 +84,7 @@ class Calls(unittest.TestCase):
         self.assertNotIn("different-callees", kinds)
         self.assertIn("called-out-of-line", kinds)
         self.assertIn("original-called", kinds)
+        self.assertTrue(all(row["inline_distribution"] for row in rows))
 
     def test_resize_against_reserve_stays_a_substitution(self):
         ours = refs(callees=[(4, "_Zresize")])
@@ -129,6 +132,8 @@ class Calls(unittest.TestCase):
     def test_a_call_count_difference_does_not_claim_inlining(self):
         differences = compare(refs(callees=[(4, "_Zonly"), (9, "_Zonly")]),
                               refs(callees=[(4, "_Zonly")]))
+        self.assertTrue(differences[0]["count_difference"])
+        self.assertNotIn("inline_distribution", differences[0])
         report = {"functions": [{"target_bytes": 20, "unit": "u", "symbol": "f",
                                  "verified_address": True, "stub": False, "differences": differences}]}
         text = "\n".join(show(report))

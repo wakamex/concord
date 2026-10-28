@@ -8,6 +8,31 @@ HARVEST = Path(os.environ.get("CONCORD_HARVEST", "../harvest"))
 BUILD = "1.18-linux-amd64"
 
 
+class CallRows(unittest.TestCase):
+    def test_call_row_kind_uses_multiset_evidence(self):
+        from concord.model import Cause, DiffFinding, DiffResult
+        from concord.residual import _call_row_kind, _kind_rows, _pattern_counts
+
+        result = DiffResult(
+            score=90.0,
+            exact=False,
+            findings=[DiffFinding(Cause.INLINING, 0, "unaligned calls", 0, 2, (0, 4), (0, 4))],
+        )
+        cases = (
+            ([], "block-order", False),
+            ([{"kind": "call", "classification": "called-out-of-line", "inline_distribution": True}], "inline-distribution", False),
+            ([{"kind": "call", "classification": "different-callees"}], "calls", True),
+            ([{"kind": "call", "classification": "called-out-of-line", "count_difference": True}], "calls", True),
+        )
+        for differences, expected, expected_source_pointing in cases:
+            with self.subTest(expected=expected, differences=differences):
+                counts, source_pointing = _pattern_counts(differences)
+                rows, _ = _kind_rows(result, set(), _call_row_kind(counts))
+                self.assertEqual(rows[expected], 2)
+                self.assertEqual(sum(rows.values()), 2)
+                self.assertEqual(source_pointing, expected_source_pointing)
+
+
 # The census covers the whole build and names functions inexact at Harvest 9a39d4d, so it runs
 # only against a checkout named explicitly.
 @unittest.skipUnless(
@@ -15,13 +40,15 @@ BUILD = "1.18-linux-amd64"
     "needs CONCORD_HARVEST naming a Harvest checkout after `hv match`",
 )
 class HarvestResidual(unittest.TestCase):
-    def test_known_residuals_and_source_patterns_are_classified(self):
+    @classmethod
+    def setUpClass(cls):
         from concord.harvest import Harvest
         from concord.residual import report
 
-        census = report(Harvest(HARVEST))
-        functions = {row["symbol"]: row for row in census["functions"]}
+        cls.census = report(Harvest(HARVEST))
+        cls.functions = {row["symbol"]: row for row in cls.census["functions"]}
 
+    def test_known_residuals_and_source_patterns_are_classified(self):
         expected = {
             "_ZN5daisy5scene17CXAnimationPlayer20prepareAnimationDataEv": "instruction-order",
             "_ZN7harvest6states10CPlayState17initializeNewGameEv": "instruction-selection",
@@ -34,23 +61,82 @@ class HarvestResidual(unittest.TestCase):
         }
         for symbol, kind in expected.items():
             with self.subTest(symbol=symbol):
-                self.assertIn(symbol, functions)
-                self.assertIn(kind, {item["kind"] for item in functions[symbol]["kinds"]})
+                self.assertIn(symbol, self.functions)
+                self.assertIn(kind, {item["kind"] for item in self.functions[symbol]["kinds"]})
 
         self.assertIn(
             "padding",
-            {item["kind"] for item in functions["_ZN7harvest6states10CPlayState17initializeNewGameEv"]["kinds"]},
+            {item["kind"] for item in self.functions["_ZN7harvest6states10CPlayState17initializeNewGameEv"]["kinds"]},
         )
         self.assertIn(
             "size",
-            {item["kind"] for item in functions["_ZN7harvest6entity19CDefenseTowerEntityC2Eff"]["kinds"]},
+            {item["kind"] for item in self.functions["_ZN7harvest6entity19CDefenseTowerEntityC2Eff"]["kinds"]},
         )
-        summary = census["summary"]
+        summary = self.census["summary"]
         self.assertGreater(summary["groups"]["no-source-change"]["functions"], 0)
         self.assertGreater(summary["groups"]["source-pointing"]["functions"], 0)
-        signedness = functions["_ZN5daisy3gui14CGUIStaticText9breakTextEv"]
+        signedness = self.functions["_ZN5daisy3gui14CGUIStaticText9breakTextEv"]
         self.assertIn("signedness", signedness["source_signals"])
-        self.assertEqual(len(census["top_source_pointing"]), 20)
+        self.assertEqual(len(self.census["top_source_pointing"]), 20)
+
+
+@unittest.skipUnless(
+    os.environ.get("CONCORD_HARVEST") and (HARVEST / "build" / "match" / BUILD).is_dir(),
+    "needs CONCORD_HARVEST naming a Harvest checkout after `hv match`",
+)
+class HarvestResidualCallRows(unittest.TestCase):
+    CASES = (
+        (
+            "printVariables",
+            "daisy/video/Null/CCGMaterialRenderer.cpp",
+            "_ZN5daisy5video19CCGMaterialRenderer14printVariablesEv",
+        ),
+        (
+            "loadSprite",
+            "HarvestFull/harvest/entity/CDropshipEntity.cpp",
+            "_ZN7harvest6entity15CDropshipEntity10loadSpriteEb",
+        ),
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        from concord.calls_constants import gather
+        from concord.diff import diff_code, read_functions
+        from concord.harvest import Harvest
+        from concord.residual import _call_row_kind, _group, _kind_rows, _pattern_counts
+
+        cls.harvest = Harvest(HARVEST)
+        references = gather(cls.harvest, [unit for _, unit, _ in cls.CASES])
+        by_function = {(row["unit"], row["symbol"]): row for row in references["functions"]}
+        cls.rows = {}
+        for name, unit, symbol in cls.CASES:
+            verdict = next(v for v in cls.harvest.verdicts(unit) if v.symbol == symbol)
+            target = read_functions(cls.harvest.objects / "target" / f"{verdict.unit}.o", {symbol})[symbol]
+            candidate = read_functions(cls.harvest.objects / "base" / f"{verdict.unit}.o", {symbol})[symbol]
+            call_report = by_function.get((cls.harvest.source(verdict.unit), symbol), {})
+            call_differences = call_report.get("differences", [])
+            pattern_counts, source_pointing = _pattern_counts(call_differences)
+            result = diff_code(target, candidate)
+            rows, _ = _kind_rows(result, set(), _call_row_kind(pattern_counts))
+            kinds = set(rows) | set(pattern_counts)
+            signals = {"calls-constants"} if source_pointing else set()
+            cls.rows[name] = {
+                "counts": rows,
+                "group": _group(kinds, signals),
+            }
+
+    def test_print_variables_calls_only_move_between_blocks(self):
+        row = self.rows["printVariables"]
+
+        self.assertGreaterEqual(row["counts"]["block-order"], 12)
+        self.assertNotIn("calls", row["counts"])
+        self.assertEqual(row["group"], "no-source-change")
+
+    def test_load_sprite_calls_are_inline_distribution(self):
+        row = self.rows["loadSprite"]
+
+        self.assertEqual(row["counts"]["inline-distribution"], 32)
+        self.assertNotIn("calls", row["counts"])
 
 
 if __name__ == "__main__":
