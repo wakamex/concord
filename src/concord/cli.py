@@ -1126,7 +1126,19 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     exact = 0
     for unit, symbol in targets:
         print(f"=== {unit} {symbol}")
-        exact += _permute_one(harvest, unit, symbol, args)
+        try:
+            exact += _permute_one(harvest, unit, symbol, args)
+        except oracle.OracleBaselineError as error:
+            # One function the oracle cannot check must not end a sweep; record it so
+            # --skip-logged passes over it next time.
+            if args.near_miss is None:
+                raise
+            print(f"skipped {symbol}: {error}")
+            results.record(args.results, {
+                "command": "permute", "harvest": results.commit(harvest.root), "unit": unit, "symbol": symbol,
+                "budget": args.budget, "batch": args.batch, "depth": args.depth, "seed": args.seed,
+                "reason": "oracle-baseline", "error": str(error), "exact": False,
+            })
     if len(targets) > 1:
         print(f"{exact} of {len(targets)} functions exact")
     return 0

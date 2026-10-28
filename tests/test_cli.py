@@ -168,6 +168,30 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(main(["permute", "--harvest", tmp, "--unit", "u.cpp", "symbol", "--budget", "128", "--skip-logged", "--results", str(log)]), 0)
             run.assert_not_called()
 
+    def test_near_miss_sweep_skips_a_function_whose_baseline_the_oracle_cannot_check(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest import mock
+
+        from concord import oracle
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "runs.jsonl"
+            targets = [("a.cpp", "slow", 99.5), ("b.cpp", "fine", 99.4)]
+            stuck = oracle.OracleBaselineError("oracle failed on the baseline for slow: oracle check timed out after 60 seconds")
+            with mock.patch("concord.cli.Harvest", return_value=SimpleNamespace(source=lambda unit: unit, root=Path(tmp))), \
+                    mock.patch("concord.cli.near_misses", return_value=targets), \
+                    mock.patch("concord.cli.results.commit", return_value="abc"), \
+                    mock.patch("concord.cli._permute_one", side_effect=[stuck, False]) as run, \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(["permute", "--harvest", tmp, "--near-miss", "99", "--results", str(log)]), 0)
+            self.assertEqual(run.call_count, 2)
+            self.assertIn("skipped slow", output.getvalue())
+            record = json.loads(log.read_text().splitlines()[0])
+            self.assertEqual((record["symbol"], record["reason"]), ("slow", "oracle-baseline"))
+
     def test_rename_gives_helpers_plain_names(self):
         import tempfile
         from pathlib import Path
