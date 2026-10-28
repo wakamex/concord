@@ -278,6 +278,24 @@ class KnowledgeBase(unittest.TestCase):
         self.assertIn("0x3030 + 0x04", entry.fix)
         self.assertIn("0 bases differ", entry.evidence[0]["note"])
 
+    def test_opengl_clipped_vertex_pointer_trials_are_available_to_layout_diagnosis(self):
+        from concord import knowledge
+
+        entries = [
+            i for i in knowledge.for_causes(knowledge.load("gcc-4.4.3"), {Cause.STRUCT_LAYOUT})
+            if i.id == "equivalent-member-pointer-bases"
+        ]
+        self.assertEqual(len(entries), 1)
+        trials = [e for e in entries[0].evidence if e.get("function") == "CVideoOpenGL clipped vertex-pointer trials"]
+        self.assertEqual(len(trials), 1)
+        note = trials[0]["note"]
+        self.assertIn("99.74632 to 74.8125", note)
+        self.assertIn("99.80786 to 75.41485", note)
+        self.assertIn("same vertex store order and registers", note)
+        self.assertIn("+0xbb and +0xe2", note)
+        self.assertIn("byte-identical object", note)
+        self.assertIn("source form responsible remains unknown", entries[0].limits)
+
     def test_vector_insert_aux_double_width_is_cursor_positioning(self):
         from concord import knowledge
 
