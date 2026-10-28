@@ -30,6 +30,15 @@ class InlineBudget(unittest.TestCase):
         self.assertEqual(result['functions'][0]['delta'], 20)
         self.assertEqual(result['inline_edge_deltas'], [{'callee': 'copy', 'caller': 'parser', 'before': 0, 'after': 1}])
 
+    def test_smaller_function_rejections_keep_their_candidate(self):
+        report = load(FIXTURE)
+        reason = '--param max-inline-insns-auto limit reached'
+        self.assertGreater(report['rejections'].get(reason, 0), 0)
+        rejected = [event for event in report['events'] if event.get('reason') == reason]
+        self.assertTrue(all(event['outcome'] == 'rejected' for event in rejected))
+        self.assertTrue(all('pthread_equal' not in event['callee'] for event in rejected))
+        self.assertTrue(any('parseDataObject' in event['callee'] for event in rejected))
+
     def test_command_saves_comparison_with_dump_hashes(self):
         import contextlib
         import io

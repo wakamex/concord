@@ -24,6 +24,9 @@ def parse(text: str) -> dict:
         if number < decision_end and (match := CONSIDER.match(line)):
             current = {'callee': match[1], 'callee_insns': int(match[2]), 'line': number}
             events.append(current)
+        elif number < decision_end and line.startswith('Considering inline candidate '):
+            current = {'callee': line.removeprefix('Considering inline candidate ').removesuffix('.'), 'line': number}
+            events.append(current)
         elif current is not None:
             if line.startswith(' to be inlined into '):
                 current['caller'] = line.removeprefix(' to be inlined into ')
@@ -33,6 +36,8 @@ def parse(text: str) -> dict:
                 current.update(outcome='inlined', net_change=int(match[1]))
             elif 'inline_failed:' in line:
                 current.update(outcome='rejected', reason=line.split('inline_failed:', 1)[1].strip())
+            elif line.startswith('Inlining failed: '):
+                current.update(outcome='rejected', reason=line.removeprefix('Inlining failed: '))
         if (match := GRAPH.match(line)) and 'inline copy in ' not in match[3]:
             functions[match[1]] = {'name': match[1], 'initial_insns': int(match[4]),
                                        'final_insns': int(match[5] or match[4])}
