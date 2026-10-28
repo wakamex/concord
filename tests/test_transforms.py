@@ -43,6 +43,24 @@ SYMBOL = "_ZNK4game5Board5scoreEii"  # game::Board::score(int, int) const
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class SwapOperands(unittest.TestCase):
+    def test_naming_an_unbraced_assignment_rhs_keeps_it_inside_its_branch(self):
+        source = b'''void Board::pick(int a)
+{
+    if (!attribute)
+        value = "";
+    else
+        value = *attribute->second;
+}
+'''
+        symbol = '_ZN5Board4pickEi'
+        forms = list(name_temporaries(source, find_function(source, symbol)))
+        selected = [r.source for r in forms if b'__typeof__(attribute->second)' in r.source]
+        self.assertEqual(len(selected), 1)
+        candidate = selected[0]
+        self.assertIn(b'else\n    {\n        __typeof__(attribute->second) concordTmp0 = attribute->second;\n        value = *concordTmp0;\n    }', candidate)
+        restored = [r.source for r in inline_temporaries(candidate, find_function(candidate, symbol))]
+        self.assertTrue(any(b'value = *attribute->second;' in r and b'concordTmp' not in r for r in restored))
+
     def test_overload_resolution_preserves_pointer_and_reference_types(self):
         source = b"""void Board::pick(SColor color) { value(); }
 void Board::pick(SColor* colors) { pointer(); }

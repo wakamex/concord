@@ -31,6 +31,7 @@ REGISTER = re.compile(r"\(reg(?:/[a-z]+)?:\w+\s+(\d+)(?:\s+([a-z][a-z0-9]*))?")
 TREE_PASS = re.compile(r"\.(\d+)t\.([\w_]+)$")
 SSA = re.compile(r"\b(?:[A-Za-z_$][\w.$]*|D\.\d+)_(\d+)(?:\([DAB]\))?")
 TREE_LOCATION = re.compile(r"\[([^\[\]]+?)\s*:\s*(\d+)(?::\d+)?\]")
+TREE_MIRROR = {'<': '>', '>': '<', '<=': '>=', '>=': '<=', '==': '==', '!=': '!='}
 
 
 def function_text(text: str, symbol: str) -> str:
@@ -44,6 +45,12 @@ def function_text(text: str, symbol: str) -> str:
 
 def ssa_variable(name: str) -> str:
     return re.sub(r'_\d+(?:\([DAB]\))?$', '', name)
+
+
+def same_comparison(row: dict, variables: list[str], operator: str) -> bool:
+    actual = [ssa_variable(v) for v in row['operands']]
+    return ((actual == variables and row['operator'] == operator)
+            or (actual == variables[::-1] and TREE_MIRROR[row['operator']] == operator))
 
 
 def tree_function(text: str, symbol: str) -> dict:
@@ -86,7 +93,7 @@ def tree_function(text: str, symbol: str) -> dict:
     return {'definitions': definitions, 'comparisons': comparisons, 'statements': statements}
 
 
-def tree_history(directory: Path, symbol: str, operands: list[str]) -> dict:
+def tree_history(directory: Path, symbol: str, operands: list[str], *, operator: str | None = None) -> dict:
     """Follow one uniquely identified pair of declarations across SSA passes.
 
     The comparison's source spelling can reverse and loop copying can replace
@@ -94,6 +101,7 @@ def tree_history(directory: Path, symbol: str, operands: list[str]) -> dict:
     occurrence count, links those passes. Ambiguous copies remain unresolved.
     """
     variables = [ssa_variable(name) for name in operands]
+    identities = operands if variables[0] == variables[1] else variables
     paths = sorted((p for p in directory.iterdir() if TREE_PASS.search(p.name)),
                    key=lambda p: int(TREE_PASS.search(p.name)[1]))
     comparisons, changes, mirrors, snapshots = [], [], [], []
@@ -106,9 +114,17 @@ def tree_history(directory: Path, symbol: str, operands: list[str]) -> dict:
         parsed = tree_function(text, symbol)
         stage = {'pass': name, 'pass_number': int(number), 'dump': str(path)}
         snapshots.append((stage, parsed))
-        matches = [row for row in parsed['comparisons']
-                   if sorted(ssa_variable(v) for v in row['operands']) == sorted(variables)
-                   and all(SSA.fullmatch(v) for v in row['operands'])]
+        matches = []
+        for row in parsed['comparisons']:
+            actual = row['operands'] if variables[0] == variables[1] else [ssa_variable(v) for v in row['operands']]
+            if sorted(actual) != sorted(identities) or not all(SSA.fullmatch(v) for v in row['operands']):
+                continue
+            if operator is not None and not ((actual == identities and row['operator'] == operator)
+                                             or (actual == identities[::-1] and TREE_MIRROR[row['operator']] == operator)):
+                continue
+            matches.append(row)
+        if len(matches) > 1:
+            matches = [row for row in matches if sorted(row['operands']) == sorted(operands)]
         if len(matches) != 1:
             continue
         comparison = {**stage, **matches[0]}
@@ -117,12 +133,13 @@ def tree_history(directory: Path, symbol: str, operands: list[str]) -> dict:
         comparisons.append(comparison)
         if len(comparisons) > 1:
             before = comparisons[-2]
-            mirror = {'<': '>', '>': '<', '<=': '>=', '>=': '<=', '==': '==', '!=': '!='}
-            if ([ssa_variable(v) for v in before['operands']] == [ssa_variable(v) for v in comparison['operands']][::-1]
-                    and mirror[before['operator']] == comparison['operator']):
+            before_names = before['operands'] if variables[0] == variables[1] else [ssa_variable(v) for v in before['operands']]
+            after_names = comparison['operands'] if variables[0] == variables[1] else [ssa_variable(v) for v in comparison['operands']]
+            if (before_names == after_names[::-1]
+                    and TREE_MIRROR[before['operator']] == comparison['operator']):
                 mirrors.append({'kind': 'comparison-mirrored', 'before': before, 'after': comparison})
-        by_variable = {ssa_variable(v): int(SSA.fullmatch(v)[1]) for v in comparison['operands']}
-        order = by_variable[variables[0]] < by_variable[variables[1]]
+        by_variable = {(v if variables[0] == variables[1] else ssa_variable(v)): int(SSA.fullmatch(v)[1]) for v in comparison['operands']}
+        order = by_variable[identities[0]] < by_variable[identities[1]]
         if previous_order is not None and order != previous_order:
             changes.append({'kind': 'ssa-version-order-change', 'before': comparisons[-2], 'after': comparison})
         previous_order = order
@@ -152,6 +169,7 @@ def tree_history(directory: Path, symbol: str, operands: list[str]) -> dict:
             if index < created_at and old != value:
                 recycled = {**stage, 'name': old, 'definition': definition, 'snapshot': index}
         return {'name': value, 'variable': ssa_variable(value), 'version': version,
+                'origin_kind': 'function-entry' if value.endswith('(D)') else 'statement' if creation else 'unresolved',
                 'creation': creation, 'last_definition': last, 'recycled_from': recycled}
 
     traced = [origin(value) for value in operands]
@@ -250,7 +268,7 @@ def expression_key(text: str):
 
     from concord.transforms import CPP
 
-    text = re.sub(r'(?<=[\w.$])D\.\d+', '', text)
+    text = re.sub(r'(?<=[\w$])D\.\d+', '', text)
     text = re.sub(r'\b[A-Za-z_$][\w$]*(?:\.[\w$]+)+\b',
                   lambda match: 'gimple_' + match[0].encode().hex(), text)
     tree = Parser(CPP).parse(('int f() { return ' + text + '; }').encode())
@@ -286,6 +304,34 @@ def replaced_expression(value: str, replacements: dict[int, str], partitions: di
     return None if failed else result
 
 
+def block_context(parsed: dict, block: int, replacements: dict[int, str], partitions: dict[int, str]) -> dict:
+    """Emitted definitions and ordered successors around a GIMPLE condition."""
+    definitions, successors, other = set(), [], 0
+    for row in parsed['statements']:
+        if row['block'] != block or row.get('kind') == 'phi':
+            continue
+        jump = re.fullmatch(r'goto <bb (\d+)>;', row['text'])
+        if jump:
+            successors.append(int(jump[1]))
+            continue
+        if row.get('name'):
+            version = int(SSA.fullmatch(row['name'])[1])
+            if version in replacements:
+                continue
+            name = partitions.get(version)
+            rhs = replaced_expression(row['text'].partition('=')[2].strip().removesuffix(';'), replacements, partitions)
+            if name and rhs == name:
+                continue
+        else:
+            match = re.match(r'([\w.$]+)\s*=', row['text'])
+            name = re.sub(r'(?<=[\w$])D\.\d+', '', match[1]) if match else None
+        if name:
+            definitions.add(name)
+        else:
+            other += 1
+    return {'definitions': sorted(definitions), 'successors': successors, 'other_statements': other}
+
+
 def tree_comparison(directory: Path, symbol: str, uid: int) -> dict:
     """Resolve an RTL UID to a unique pre-expansion SSA comparison."""
     expand = next((p for p in directory.iterdir() if p.name.endswith('r.expand')), None)
@@ -297,7 +343,8 @@ def tree_comparison(directory: Path, symbol: str, uid: int) -> dict:
     final = next((p for p in directory.iterdir() if p.name.endswith('t.final_cleanup')), None)
     if final is None:
         return {'status': 'unresolved', 'reason': 'no final GIMPLE dump'}
-    rows = tree_function(final.read_text(errors='replace'), symbol)['comparisons']
+    final_parsed = tree_function(final.read_text(errors='replace'), symbol)
+    rows = final_parsed['comparisons']
     rows = [r for r in rows if r['block'] == statement['block']]
     if len(rows) != 1:
         return {'status': 'unresolved', 'reason': 'expand block does not identify a unique comparison'}
@@ -306,12 +353,13 @@ def tree_comparison(directory: Path, symbol: str, uid: int) -> dict:
     # old dumps whose repeated len/i spellings would silently select a copy.
     direct = all(re.fullmatch(r'[\w.$]*D\.\d+', v) for v in variables)
     named_uids = {}
-    for match in re.finditer(r'\b([\w.$]+?)D\.(\d+)', function_text(final.read_text(errors='replace'), symbol)):
+    scalar_types = {'int', 'char', 'bool', 'short', 'long', 'float', 'double', 'void', 'wchar_t'}
+    for match in re.finditer(r'\b([\w.$]*[\w$])D\.(\d+)', function_text(final.read_text(errors='replace'), symbol)):
         named_uids.setdefault(match[1], set()).add(match[2])
     folded_names_unique = all(len(named_uids[name]) == 1 for value in variables
                               if not re.fullmatch(r'[\w.$]*D\.\d+', value)
-                              for name in re.findall(r'\b([\w.$]+?)D\.\d+', value)
-                              if name not in {'int', 'char', 'bool', 'short', 'long', 'float', 'double', 'void', 'wchar_t'})
+                              for name in re.findall(r'\b([\w.$]*[\w$])D\.\d+', value)
+                              if name not in scalar_types)
     optimized = next((p for p in directory.iterdir() if p.name.endswith('t.optimized')), None)
     replacements, partitions = replacement_map(optimized.read_text(errors='replace'), symbol) if optimized else ({}, {})
     paths = sorted((p for p in directory.iterdir() if TREE_PASS.search(p.name)
@@ -320,27 +368,40 @@ def tree_comparison(directory: Path, symbol: str, uid: int) -> dict:
     tried_replacements = False
     for path in paths:
         parsed = tree_function(path.read_text(errors='replace'), symbol)
-        found = [r for r in parsed['comparisons'] if sorted(ssa_variable(v) for v in r['operands']) == sorted(variables)] if direct else []
+        found = [r for r in parsed['comparisons'] if same_comparison(r, variables, rows[0]['operator'])] if direct else []
         method = 'declaration-uids'
-        if not found and replacements and partitions and folded_names_unique and not tried_replacements:
+        if len(found) != 1 and partitions and folded_names_unique and not tried_replacements:
             tried_replacements = True
+            found = []
             wanted = [expression_key(v) for v in variables]
             if all(v is not None for v in wanted):
                 for row in parsed['comparisons']:
                     if row['operator'] != rows[0]['operator'] or not all(SSA.fullmatch(v) for v in row['operands']):
                         continue
-                    anchors = [(wanted, got) for wanted, got in zip(variables, row['operands'], strict=True)
-                               if re.fullmatch(r'[\w.$]*D\.\d+', wanted)]
-                    if not anchors or any(wanted != ssa_variable(got) for wanted, got in anchors):
+                    ambiguous = [(wanted, got) for wanted, got in zip(variables, row['operands'], strict=True)
+                                 if any(len(named_uids[name]) > 1 for name in re.findall(r'\b([\w.$]*[\w$])D\.\d+', wanted)
+                                        if name not in scalar_types)]
+                    if any(wanted != ssa_variable(got) for wanted, got in ambiguous):
                         continue
                     expanded = [replaced_expression(v, replacements, partitions) for v in row['operands']]
                     if all(v is not None for v in expanded) and [expression_key(v) for v in expanded] == wanted:
                         found.append(row)
                 method = 'temporary-expression-replacement'
         if found:
+            alternatives = list(found)
+            context = None
+            if len(found) > 1 and partitions:
+                context = block_context(final_parsed, rows[0]['block'], {}, {})
+                if len(context['successors']) == 2:
+                    found = [row for row in found if row['block'] == rows[0]['block']
+                             and block_context(parsed, row['block'], replacements, partitions) == context]
+                    method = 'gimple-block-context'
             if len(found) != 1 or not all(SSA.fullmatch(v) for v in found[0]['operands']):
-                return {'status': 'unresolved', 'reason': 'multiple SSA comparisons use this declaration pair'}
-            history = tree_history(directory, symbol, found[0]['operands'])
+                return {'status': 'unresolved', 'reason': 'multiple SSA comparisons use this declaration pair',
+                        'ssa_candidates': [{**row, 'dump': str(path),
+                                            'definitions': {v: parsed['definitions'].get(v) for v in row['operands']}}
+                                           for row in alternatives]}
+            history = tree_history(directory, symbol, found[0]['operands'], operator=found[0]['operator'])
             scopes = {}
             for dump in reversed(paths):
                 scopes.update(tree_scopes(dump.read_text(errors='replace'), symbol))
@@ -348,6 +409,7 @@ def tree_comparison(directory: Path, symbol: str, uid: int) -> dict:
                 operand['scopes'] = scopes.get(operand['variable'], [])
             return {**history,
                     'join': {'instruction_uid': uid, 'expanded': statement, 'gimple': rows[0], 'ssa_dump': str(path), 'method': method,
+                             'block_context': context,
                              'replacements': replacements if method == 'temporary-expression-replacement' else {},
                              'partitions': partitions if method == 'temporary-expression-replacement' else {}}}
     return {'status': 'unresolved', 'reason': 'no SSA comparison with these declaration UIDs'}
@@ -444,6 +506,8 @@ def search(harvest: Harvest, report: dict, *, budget: int = 64, apply: bool = Fa
                      'object_sha256': hashlib.sha256(after.object.read_bytes()).hexdigest() if after.object else None,
                      'before': before.fuzzy.get(symbol), 'after': after.fuzzy.get(symbol),
                      'exact': bool(verdict and verdict.row['exact']), 'worse': worse,
+                     'regressions': {name: {'before': before.fuzzy[name], 'after': after.fuzzy.get(name)} for name in worse},
+                     'lost_exact': sorted(before.exact_functions() - after.exact_functions()),
                      'eligible': authored.keep(before, after, symbol)})
     eligible = [n for n, row in enumerate(rows) if row['eligible']]
     chosen = max(eligible, key=lambda n: (rows[n]['exact'], rows[n]['after']), default=None)
@@ -677,6 +741,17 @@ def _report(harvest, unit, symbol, directory, canonical, traced, metadata, mappi
             if f.cause == Cause.OPERAND_ORDER:
                 row['tree_ssa'] = tree_comparison(directory, symbol, instruction['uid'])
                 tree = row['tree_ssa']
+                for operand in tree.get('operands', []):
+                    if operand['origin_kind'] == 'function-entry':
+                        from concord.transforms import find_function
+
+                        source = (harvest.root / 'src' / harvest.source(unit)).read_bytes()
+                        try:
+                            scope = find_function(source, symbol)
+                        except KeyError:
+                            continue
+                        operand['declaration_source'] = source_construct(harvest.root, {
+                            'path': 'src/' + harvest.source(unit), 'line': source.count(b'\n', 0, scope.start_byte) + 1})
                 for operand in tree.get('dependencies', []) + tree.get('recycling_dependencies', []):
                     operand['scopes'] = [source_construct(harvest.root, location) for location in operand.get('scopes', [])]
                     for stage in ('creation', 'last_definition'):
@@ -726,6 +801,10 @@ def show(report: dict) -> list[str]:
                 creation = operand['creation']
                 if creation:
                     lines.append(f"    {operand['name']} created in {creation['pass']}: {creation['definition']['text']}")
+                elif operand['origin_kind'] == 'function-entry':
+                    declaration = operand.get('declaration_source') or {}
+                    lines.append(f"    {operand['name']} is a function-entry value: "
+                                 f"{declaration.get('path', '?')}:{declaration.get('line', '?')}")
                 if operand.get('scopes'):
                     caller = operand['scopes'][0]
                     lines.append(f"      {caller['path']}:{caller['line']}: {caller.get('text', '')}")

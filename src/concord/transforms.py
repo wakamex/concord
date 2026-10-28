@@ -537,10 +537,19 @@ def name_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
     inference; it drops references, so a temporary of class type is a copy, which
     the byte comparison then rejects."""
     for statement in _descendants(scope, "expression_statement") + _descendants(scope, "declaration"):
-        if statement.parent is None or statement.parent.type != "compound_statement":
+        parent = statement.parent
+        if parent is None:
+            continue
+        branch = (parent.type == 'else_clause' and parent.named_children[-1] == statement
+                  or parent.type == 'if_statement' and parent.child_by_field_name('consequence') == statement
+                  or parent.type in ('for_statement', 'while_statement') and parent.child_by_field_name('body') == statement)
+        if parent.type != 'compound_statement' and not branch:
             continue
         indent = source[_line_start(source, statement.start_byte) : statement.start_byte]
         if indent.strip():
+            continue
+        parent_indent = source[_line_start(source, parent.start_byte):parent.start_byte]
+        if branch and parent_indent.strip():
             continue
         for node in _subexpressions(statement):
             if node.type not in HOISTABLE or node.parent == statement or b"\n" in node.text or _written(node):
@@ -553,12 +562,18 @@ def name_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
             declaration = b"__typeof__(" + node.text + b") " + name + b" = " + node.text + b";\n" + indent
             replaced = source[: node.start_byte] + name + source[node.end_byte :]
             at = statement.start_byte
+            if branch:
+                body = statement.text[:node.start_byte - at] + name + statement.text[node.end_byte - at:]
+                block = parent_indent + b'{\n' + indent + declaration + body + b'\n' + parent_indent + b'}'
+                candidate = source[:_line_start(source, at)] + block + source[statement.end_byte:]
+            else:
+                candidate = replaced[:at] + declaration + replaced[at:]
             line = source.count(b"\n", 0, node.start_byte) + 1
             yield Rewrite(
                 "named-temporary",
                 Cause.REGISTER_ALLOCATION,
                 f"line {line}: {node.text.decode()} named",
-                replaced[:at] + declaration + replaced[at:],
+                candidate,
             )
 
 

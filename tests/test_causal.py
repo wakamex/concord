@@ -17,6 +17,125 @@ CODE = bytes.fromhex('8d460583c7030fafc7c3')
 
 
 class CompilerDecisions(unittest.TestCase):
+    def test_repeated_values_require_matching_block_context_to_resolve(self):
+        header = ';; Function f (_Z1fv)\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / 'trace.122t.uncprop').write_text(header + '''<bb 2>:
+  aD.1_1 = 1;
+  bD.2_2 = 2;
+  if (aD.1_1 != bD.2_2)
+    goto <bb 5>;
+    goto <bb 7>;
+<bb 3>:
+  aD.1_3 = 3;
+  bD.2_4 = 4;
+  if (aD.1_3 != bD.2_4)
+    goto <bb 6>;
+    goto <bb 7>;
+''')
+            (directory / 'trace.123t.optimized').write_text(header + '''After Base variable replacement:
+Partition 0 (a - 1 3 )
+Partition 1 (b - 2 4 )
+''')
+            final = header + '''<bb 2>:
+  aD.1 = 1;
+  bD.2 = 2;
+  if (aD.1 != bD.2)
+    goto <bb 5>;
+    goto <bb 7>;
+'''
+            (directory / 'trace.126t.final_cleanup').write_text(final)
+            (directory / 'trace.128r.expand').write_text(header + ''';; Generating RTL for gimple basic block 2
+;; if (a != b)
+(insn 7 6 8 (set (reg:CC 17 flags) (compare:CC (reg:SI 60) (reg:SI 61))))
+''')
+            trace = causal.tree_comparison(directory, '_Z1fv', 7)
+            self.assertEqual(trace['status'], 'observed-ssa-pair')
+            self.assertEqual(trace['operands'][0]['name'], 'aD.1_1')
+            (directory / 'trace.126t.final_cleanup').write_text(final.replace('<bb 5>', '<bb 15>'))
+            unresolved = causal.tree_comparison(directory, '_Z1fv', 7)
+            self.assertEqual(unresolved['status'], 'unresolved')
+            self.assertEqual(len(unresolved['ssa_candidates']), 2)
+
+    def test_history_keeps_a_resolved_pair_when_a_declaration_has_other_comparisons(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / 'trace.122t.uncprop').write_text(''';; Function f (_Z1fv)
+<bb 2>:
+  aD.1_1 = 1;
+  bD.2_2 = 2;
+  if (aD.1_1 != bD.2_2)
+<bb 3>:
+  aD.1_3 = 3;
+  bD.2_4 = 4;
+  if (aD.1_3 != bD.2_4)
+''')
+            history = causal.tree_history(directory, '_Z1fv', ['aD.1_1', 'bD.2_2'], operator='!=')
+        self.assertEqual(history['status'], 'observed-ssa-pair')
+        self.assertEqual(history['comparisons'][0]['operands'], ['aD.1_1', 'bD.2_2'])
+
+    def test_partition_join_handles_two_versions_of_the_same_declaration(self):
+        header = ';; Function f (_Z1fv)\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / 'trace.122t.uncprop').write_text(header + '''<bb 2>:
+  temporaryD.3_1 = 1;
+  temporaryD.3_2 = 2;
+  if (temporaryD.3_1 < temporaryD.3_2)
+<bb 3>:
+  temporaryD.3_3 = 3;
+  temporaryD.3_4 = 4;
+  if (temporaryD.3_3 < temporaryD.3_4)
+''')
+            (directory / 'trace.123t.optimized').write_text(header + '''After Base variable replacement:
+Partition 0 (left - 1 )
+Partition 1 (right - 2 )
+Partition 2 (other_left - 3 )
+Partition 3 (other_right - 4 )
+''')
+            (directory / 'trace.126t.final_cleanup').write_text(header + '<bb 2>:\n  if (leftD.5 < rightD.6)\n')
+            (directory / 'trace.128r.expand').write_text(header + ''';; Generating RTL for gimple basic block 2
+;; if (left < right)
+(insn 7 6 8 (set (reg:CC 17 flags) (compare:CC (reg:SI 60) (reg:SI 61))))
+''')
+            trace = causal.tree_comparison(directory, '_Z1fv', 7)
+        self.assertEqual(trace['status'], 'observed-ssa-pair')
+        self.assertEqual([v['name'] for v in trace['operands']], ['temporaryD.3_1', 'temporaryD.3_2'])
+        self.assertEqual(len(trace['comparisons']), 1)
+
+    def test_comparison_join_distinguishes_equality_from_ordering_on_the_same_values(self):
+        header = ';; Function f (_Z1fv)\n'
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / 'trace.122t.uncprop').write_text(header + '''<bb 2>:
+  aD.1_1 = 1;
+  bD.2_2 = 2;
+  if (aD.1_1 != bD.2_2)
+<bb 3>:
+  if (aD.1_1 < bD.2_2)
+''')
+            (directory / 'trace.126t.final_cleanup').write_text(header + '<bb 2>:\n  if (aD.1 != bD.2)\n')
+            (directory / 'trace.128r.expand').write_text(header + ''';; Generating RTL for gimple basic block 2
+;; if (a != b)
+(insn 7 6 8 (set (reg:CC 17 flags) (compare:CC (reg:SI 60) (reg:SI 61))))
+''')
+            trace = causal.tree_comparison(directory, '_Z1fv', 7)
+        self.assertEqual(trace['status'], 'observed-ssa-pair')
+        self.assertEqual(trace['comparisons'][0]['operator'], '!=')
+
+    def test_ssa_entry_values_are_identified_without_fabricating_a_definition(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / 'trace.023t.ssa').write_text(''';; Function f (_Z1fv)
+<bb 2>:
+  pointerD.2_2 = fieldD.3_3;
+  if (valueD.1_1(D) == pointerD.2_2)
+''')
+            trace = causal.tree_history(directory, '_Z1fv', ['valueD.1_1(D)', 'pointerD.2_2'])
+        self.assertEqual(trace['operands'][0]['origin_kind'], 'function-entry')
+        self.assertIsNone(trace['operands'][0]['creation'])
+
     def test_search_finishes_a_selected_candidate_before_the_author_gate(self):
         from concord.harvest import Evaluation
         from concord.transforms import Rewrite
@@ -60,6 +179,14 @@ assert all(row.source.startswith(b'\\n'*300) for row in rows)
         self.assertEqual(causal.expression_key('(a + (b * c))'), causal.expression_key('a + b * c'))
         self.assertNotEqual(causal.expression_key('(a + b) * c'), causal.expression_key('a + b * c'))
         self.assertIsNone(causal.expression_key('MEM[index: ivtmp.5]'))
+
+    def test_folded_members_preserve_anonymous_bases_and_gnu_identifier_names(self):
+        dumped = 'buildingsD.1->D.2.D.6._M_implD.3._M_finishD.4 == it$_M_currentD.5'
+        expanded = '(buildings)->D.2.D.6._M_impl._M_finish == (it$_M_current)'
+        key = causal.expression_key(dumped)
+        self.assertIsNotNone(key)
+        self.assertEqual(key, causal.expression_key(expanded))
+        self.assertNotEqual(key, causal.expression_key(dumped.replace('->D.2.', '->D.8.')))
 
     def test_inline_scope_locations_belong_to_the_correct_declaration(self):
         dump = ''';; Function f (_Z1fv)
