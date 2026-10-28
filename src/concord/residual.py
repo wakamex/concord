@@ -105,8 +105,10 @@ def _enum_offsets(
             continue
         unit = harvest.source(verdict.unit)
         if unit not in source_cache:
-            source_cache[unit] = (harvest.root / "src" / unit).read_bytes()
-        if source_candidates(source_cache[unit], verdict.symbol, members):
+            path = harvest.root / "src" / unit
+            # A stale match report can name a unit whose source has moved.
+            source_cache[unit] = path.read_bytes() if path.is_file() else None
+        if source_cache[unit] is not None and source_candidates(source_cache[unit], verdict.symbol, members):
             offsets[(verdict.unit, verdict.symbol)] = set(missing)
     return offsets
 

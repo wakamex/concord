@@ -8,7 +8,12 @@ HARVEST = Path(os.environ.get("CONCORD_HARVEST", "../harvest"))
 BUILD = "1.18-linux-amd64"
 
 
-@unittest.skipUnless((HARVEST / "build" / "match" / BUILD).is_dir(), "needs a Harvest checkout after `hv match`")
+# The census covers the whole build and names functions inexact at Harvest 9a39d4d, so it runs
+# only against a checkout named explicitly.
+@unittest.skipUnless(
+    os.environ.get("CONCORD_HARVEST") and (HARVEST / "build" / "match" / BUILD).is_dir(),
+    "needs CONCORD_HARVEST naming a Harvest checkout after `hv match`",
+)
 class HarvestResidual(unittest.TestCase):
     def test_known_residuals_and_source_patterns_are_classified(self):
         from concord.harvest import Harvest
