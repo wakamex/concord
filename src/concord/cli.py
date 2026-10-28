@@ -32,6 +32,7 @@ from concord import (
     results,
     scores,
     scratch,
+    signedness,
     statics,
     symbol_audit,
     symbol_table,
@@ -439,6 +440,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_comparison_flips.add_argument("--harvest", type=Path, required=True, help="Harvest checkout after `hv match`")
     p_comparison_flips.add_argument("--save", type=Path, help="write the census as JSON")
 
+    p_signedness = sub.add_parser(
+        "signedness", help="rank signedness-related instruction pairs in inexact functions"
+    )
+    p_signedness.add_argument("--harvest", type=Path, required=True, help="Harvest checkout after `hv match`")
+    p_signedness.add_argument("--unit", help="limit the scan to one Harvest unit")
+    p_signedness.add_argument("--save", type=Path, help="write the census as JSON")
+
     return parser
 
 
@@ -497,6 +505,37 @@ def main(argv: list[str] | None = None) -> int:
                 source = flip["source"]
                 location = f" at {source['path']}:{source['line']}" if source else ""
                 print(f"    {flip['inlined_function'] or 'inline source unavailable'}{location}")
+        return 0
+    if args.command == "signedness":
+        report = signedness.report(Harvest(args.harvest), args.unit)
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        summary = report["summary"]
+        symbols = {row["symbol"] for row in report["functions"]}
+        names = dict(zip(sorted(symbols), _short_names(symbols), strict=True)) if symbols else {}
+        print(
+            f"{summary['functions']} inexact functions contain {summary['pairs']} aligned signedness pairs; "
+            f"{summary['only_signedness']} differ only by signedness"
+        )
+        for row in report["functions"]:
+            score = f"{row['score']:.2f}"
+            print(
+                f"{row['unit']}:{names[row['symbol']]} size {row['size']} bytes, score {score}, "
+                f"signedness explains {row['explained_instruction_slots']}/{row['differing_instruction_slots']} "
+                f"differing instruction slots ({row['explanation']:.1%})"
+            )
+            for pair in row["pairs"]:
+                target_offsets = ", ".join(f"+{offset:#x}" for offset in pair["differing_target_offsets"])
+                candidate_offsets = ", ".join(f"+{offset:#x}" for offset in pair["differing_candidate_offsets"])
+                source = pair["source"]
+                location = f"{source['path']}:{source['line']}" if source else "source line unavailable"
+                target_text = "; ".join(pair["target"])
+                candidate_text = "; ".join(pair["candidate"])
+                print(
+                    f"  {pair['kind']} target +{pair['target_offsets'][0]:#x} "
+                    f"candidate +{pair['candidate_offsets'][0]:#x}: {target_text} vs {candidate_text}; "
+                    f"changed bytes target [{target_offsets}] candidate [{candidate_offsets}]; {location}"
+                )
         return 0
     if args.command == "match":
         return _match(args)
