@@ -21,6 +21,7 @@ limits = "Applies to comparisons of two non-constant operands written in the fun
 evidence = [
   { commit = "4f54643", function = "harvest::gui::CStatisticsScreen::OnEvent" },
   { commit = "15eaefb", function = "ox::video::SMaterial::operator!=", note = "colorsDiffer(AmbientColor, other.AmbientColor) instead of colorsDiffer(other.AmbientColor, AmbientColor)" },
+  { commit = "823b979", function = "daisy::io::CZipFileList::CZipFileList", note = "At 0x536b00 and 0x537c50, the 4,424-byte C2 and C1 each differ at +0x7a5: the target compares `folder` and `directory` characters as `cmp bl, dl`, while the candidate has `cmp dl, bl` in the filtered branch. The unit has 16/18 exact functions, with zero phase-locked functions or witnesses; scratch-history records 37 searches and zero failed resets. Reversing the overloaded CString equality through an explicit CString temporary lowers both constructors from 99.99029 to 91.66408, so author rejects the candidate and does not run the oracle. The unchanged checkout's score gate reports `0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0`. No correction is retained; a source form that reverses only this compare remains unidentified." },
 ]
 
 [[idiom]]
