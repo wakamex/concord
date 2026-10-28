@@ -180,7 +180,9 @@ class Harvest:
             )
         return evaluations
 
-    def evaluate_overlays(self, items: dict[str, tuple], *, baseline_target_fallback: bool = False) -> dict[str, Evaluation]:
+    def evaluate_overlays(self, items: dict[str, tuple], *, baseline_target_fallback: bool = False,
+                          units: dict[str, dict[str, int]] | None = None,
+                          claims: list[dict] | None = None) -> dict[str, Evaluation]:
         """Compile each item, a unit source path with repository files replaced
         (path under the checkout -> new bytes), in one batch, and compare it with
         the target. An item is (unit, overlays) or (unit, overlays, flags) where
@@ -200,7 +202,8 @@ class Harvest:
                     files[text].write_bytes(text)
                 mapped[path] = str(files[text])
             request_items[name] = {"unit": unit, "overlays": mapped, "flags": list(item[2]) if len(item) > 2 else []}
-        result = self._driver({"out": str(out), "items": request_items, "baseline_target_fallback": baseline_target_fallback})
+        result = self._driver({"out": str(out), "items": request_items, "baseline_target_fallback": baseline_target_fallback,
+                               "units": units or {}, "claims": claims or []})
         return {
             name: Evaluation(
                 name,

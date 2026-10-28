@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 
 from tree_sitter import Parser
 
@@ -800,3 +801,72 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | 
         "original": source,
         "source": forms.get(chosen),
     }
+
+
+def seed(harvest: Harvest, files: dict[str, bytes], units: dict[str, dict[str, int]],
+         write: bool = False, claims: list[dict] | None = None) -> dict:
+    """Measure an initial authored recovery of absent units and their headers.
+
+    Like ancestor seeding, initial recovery has no previous source behavior to
+    preserve. Every unit must add an exact function; existing dependents must
+    retain all scores. Subsequent body changes use apply() and its oracle gate.
+    Explicit names must refer to target function extents validated by the driver.
+    The whole-build scores gate remains required after installation.
+    """
+    from concord.seed import _match, _register
+
+    if not units or not units.keys() <= files.keys():
+        raise ValueError("each new unit needs source")
+    for name in files:
+        path = Path(name)
+        if path.is_absolute() or ".." in path.parts or path.suffix not in {".h", ".cpp"}:
+            raise ValueError(f"invalid authored source path: {name}")
+    for unit in units:
+        if (harvest.root / "src" / unit).exists():
+            raise ValueError(f"{unit} already exists; use a body candidate")
+    originals = {name: (harvest.root / "src" / name).read_bytes()
+                 for name in files if (harvest.root / "src" / name).exists()}
+    dependents = sorted({unit for name in originals for unit in harvest.dependents("src/" + name)})
+    overlay = {"src/" + name: body for name, body in files.items()}
+    items = {f"new-{n}": (unit, overlay) for n, unit in enumerate(units)}
+    for n, unit in enumerate(dependents):
+        items[f"before-{n}"] = (unit, {})
+        items[f"after-{n}"] = (unit, overlay)
+    measured = harvest.evaluate_overlays(items, units=units, claims=claims)
+    accepted = all(not row.error for row in measured.values())
+    accepted = accepted and all(measured[f"new-{n}"].exact_functions() for n in range(len(units)))
+    accepted = accepted and all(_preserves(measured[f"before-{n}"], measured[f"after-{n}"])
+                                for n in range(len(dependents)))
+    applied = False
+    if accepted and write:
+        for name, original in originals.items():
+            if (harvest.root / "src" / name).read_bytes() != original:
+                raise ValueError(f"{name} changed during measurement")
+        for name, body in files.items():
+            path = harvest.root / "src" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
+        for unit, placements in units.items():
+            _register(harvest.root, unit, placements)
+        if claims:
+            import json
+            import subprocess
+
+            script = """import json,sys
+from hv import symbols
+rows=symbols.load(sys.argv[1])
+known=symbols.by_name(rows)
+for claim in json.load(sys.stdin):
+    if claim['symbol'] not in known:
+        rows.append(symbols.Symbol(claim['address'],claim['size'],claim['symbol'],claim['evidence']))
+symbols.save(sys.argv[1],rows)
+"""
+            subprocess.run(["uv", "--no-config", "run", "--locked", "python", "-c", script, harvest.build],
+                           cwd=harvest.root, input=json.dumps(claims), text=True, check=True, capture_output=True)
+        for unit in units:
+            _match(harvest.root, unit, learn=True)
+        applied = True
+    return {"accepted": bool(accepted), "applied": applied, "units": list(units), "dependents": dependents,
+            "evaluations": {name: {"error": row.error, "exact": sorted(row.exact_functions()), "fuzzy": row.fuzzy,
+                                   "object": str(row.object) if row.object else None}
+                            for name, row in measured.items()}}

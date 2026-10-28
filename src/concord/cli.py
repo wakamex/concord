@@ -309,10 +309,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_calls.add_argument("--constructor-aliases", action="store_true", help="instead reconcile named constructor copies whose exact code and relocations are identical")
 
     p_author = sub.add_parser("author", help="measure registered authored source, then write a verified candidate")
-    p_author.add_argument("function", help="target function symbol")
+    p_author.add_argument("function", nargs="?", help="target function symbol")
     p_author.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
-    p_author.add_argument("--unit", required=True, help="Harvest unit, as a source path or report slug")
+    p_author.add_argument("--unit", help="Harvest unit, as a source path or report slug")
     p_author.add_argument("--apply", action="store_true", help="write an accepted candidate to its source file")
+    p_author.add_argument("--seed-manifest", type=Path, help="JSON with files, units and optional extent claims for absent authored units")
+    p_author.add_argument("--save", type=Path, help="save authored seed measurements")
     p_author.add_argument("--variant", help="select a registered authored header spelling")
     p_author.add_argument("--candidate", type=Path, help="authored unit source changing only this function body")
     p_author.add_argument("--source-candidate", type=Path,
@@ -912,6 +914,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "author":
         harvest = Harvest(args.harvest)
+        if args.seed_manifest:
+            manifest = json.loads(args.seed_manifest.read_text())
+            files = {name: (args.seed_manifest.parent / path).read_bytes() for name, path in manifest["files"].items()}
+            report = authored.seed(harvest, files, manifest["units"], write=args.apply, claims=manifest.get("claims"))
+            if args.save:
+                args.save.write_text(json.dumps(report, indent=2) + "\n")
+            for name, row in report["evaluations"].items():
+                print(f"{name}: {row['error'] or str(len(row['exact'])) + ' exact functions'}")
+            print(f"author seed: {'accepted' if report['accepted'] else 'rejected'}; applied={report['applied']}")
+            return 0 if report["accepted"] else 1
+        if not args.unit or not args.function:
+            raise ValueError("author requires --unit and function, or --seed-manifest")
         unit = harvest.source(args.unit)
         report = authored.apply(harvest, unit, args.function, write=args.apply, variant=args.variant,
                                 candidate=args.candidate.read_bytes() if args.candidate else None,

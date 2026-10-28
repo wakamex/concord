@@ -163,12 +163,16 @@ def compile_overlays(checkout: "Checkout", debug: bool, out: Path, items: dict[s
     lanes = max(1, min(len(items), _jobs()))
     work: list[list[str]] = [[] for _ in range(lanes)]
     for index, (name, item) in enumerate(items.items()):
-        prepare = [f"cp /repo/{shlex.quote(p)} {shlex.quote(p)}" for p in touched]
+        prepare = [
+            f"mkdir -p {shlex.quote(str(Path(p).parent))} && "
+            f"if test -f /repo/{shlex.quote(p)}; then cp /repo/{shlex.quote(p)} {shlex.quote(p)}; "
+            f"else rm -f {shlex.quote(p)}; fi" for p in touched
+        ]
         prepare += [
             f"cp {shlex.quote(compiler.container_path(Path(c)))} {shlex.quote(p)}" for p, c in item["overlays"].items()
         ]
         variant = checkout.compiler(debug, tuple(item.get("flags", ())))
-        command = shlex.join(variant.compile_command(checkout.by_source[item["unit"]].path, f"{prefix}/{name}"))
+        command = shlex.join(variant.compile_command(builds.ROOT / "src" / item["unit"], f"{prefix}/{name}"))
         work[index % lanes].append(
             f"if {' && '.join(prepare) or 'true'}; then {command} 2> /out/{prefix}/{name}.err; "
             f"echo $? > /out/{prefix}/{name}.status; else echo 125 > /out/{prefix}/{name}.status; fi"
@@ -279,7 +283,19 @@ class Checkout:
 def handle(request: dict, checkout: Checkout) -> object:
     global _shared
     checkout.refresh()
-    build, target, known, by_source = checkout.build, checkout.target, checkout.known, checkout.by_source
+    build, target = checkout.build, checkout.target
+    known, by_source = dict(checkout.known), dict(checkout.by_source)
+    known_list = list(checkout.known_list)
+    for source, placements_ in request.get("units", {}).items():
+        by_source[source] = units.Unit(source, placements_)
+    for claim in request.get("claims", []):
+        address, size, name = claim["address"], claim["size"], claim["symbol"]
+        if checkout.extents_by_address.get(address) != size:
+            raise ValueError(f"{name}: claim is not a target function extent")
+        if name in known and known[name] != address:
+            raise ValueError(f"{name}: conflicting address claim")
+        known[name] = address
+        known_list.append((address, size, name))
     if request.get("vtables"):
         objects = sorted((builds.ROOT / "build" / "match" / build).glob("*.o"))
         return vtable_mismatches(target, objects, known)
@@ -303,7 +319,7 @@ def handle(request: dict, checkout: Checkout) -> object:
     if project is not None:
         project.mkdir(parents=True)
     placements = {source: u.placements for source, u in by_source.items()}
-    _shared = (target, known, placements, checkout.known_list, checkout.extents_by_address, project)
+    _shared = (target, known, placements, known_list, checkout.extents_by_address, project)
     # candidates that compiled to the same bytes share one comparison: many rewrites change nothing
     first: dict[tuple[str, str], str] = {}
     same: dict[str, str] = {}
