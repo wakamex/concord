@@ -37,5 +37,20 @@ class PlayStateOnEventCallEvidenceTests(unittest.TestCase):
             self.assertIn(finding, evidence["note"])
 
 
+class LuaManagerUnitEvidenceTests(unittest.TestCase):
+    def test_unit_audit_separates_inlining_from_source_corrections(self):
+        path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
+        knowledge = tomllib.loads(path.read_text())
+        idiom = next(item for item in knowledge["idiom"] if item["id"] == "lua-manager-unit-recovery")
+        evidence = {item["function"]: item["note"] for item in idiom["evidence"]}
+
+        self.assertIn("28,021 to 36,437", evidence["Unit context"])
+        self.assertIn("same-layout", evidence["Unit context"])
+        self.assertIn("push_back", evidence["CLuaManager::addModsFromFiles"])
+        self.assertIn("operator=", evidence["CLuaManager::addModsFromFiles"])
+        self.assertIn("before adding one", evidence["CLuaManager::hookWaveButton"])
+        self.assertIn("124", evidence["CLuaManager::hookWaveButton"])
+
+
 if __name__ == "__main__":
     unittest.main()
