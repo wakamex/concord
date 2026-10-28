@@ -1037,3 +1037,14 @@ evidence = [
   { function = "update and parseSummaryPage", note = "update scores 98.36 and differs only in the comparison operand order and matching conditional branch at +0x72. Its unit-scoped permutation search compiles 31 candidates, finds no rewrite and leaves the score unchanged. parseSummaryPage scores 99.70 and differs only in a reversed loop comparison at +0x52a. Neither has a call or constant difference or an established source correction." },
   { function = "Unchanged seed gate", note = "The source and configuration remain unchanged from 08229b1. The gate reports 0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0. No configuration changes are reported." },
 ]
+
+[[idiom]]
+id = "float-loop-nan-sense"
+cause = "block-order"
+status = "confirmed"
+symptom = "A positive float loop condition scores higher after being rewritten as the negation of a nonpositive comparison, although the target's unordered branch still matters."
+fix = "Keep `while (frameDelta > 0)` when the target uses `ucomiss` followed by `jbe`. An unordered comparison sets flags that make `jbe` exit."
+limits = "At Harvest 08229b1, permute changed CShuttleRaceState::updateState at 0x4b88b0 from `frameDelta > 0` to `!(frameDelta <= 0)`, raising its score from 95.02 to 95.83 and reducing original-image differences from 66 to 0 in 5,000 cases. The first difference was a call with +infinity and 0.06f in swapped XMM registers; the rewrite improves GCC register allocation at that call rather than correcting loop semantics. Retained harvest-oracle compare traces contain NaN and both infinities as time inputs, but none reaches the loop body; the zero-difference count therefore does not validate the candidate's NaN behavior. The target and hv diff show `ucomiss` and `jbe` at the loop test, which exits for NaN. Since subtracting 0.01f leaves NaN unchanged, the negated nonpositive predicate can keep the loop running. The candidate passes the whole-build score gate, but is rejected for changing target behavior. The source comment describing the target's NaN exit is correct."
+evidence = [
+  { function = "harvest::states::CShuttleRaceState::updateState at 0x4b88b0", note = "objdump shows `ucomiss xmm0, xmm1` at 0x4b8d70 followed by `jbe` to the loop exit at 0x4b8afa. The baseline oracle comparison reports 4,934 agrees and 66 differences; seed 3 differs only in float-register order at a call. `concord author` rejects the correct predicate over the permuted candidate because its function score falls from 96.92477 to 96.460815. Restoring the source leaves its original NaN comment accurate. The candidate whole-build gate exits 0 and reports: 1 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0." },
+]
