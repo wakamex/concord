@@ -258,6 +258,72 @@ class CliTest(unittest.TestCase):
             run.assert_called_once_with(harvest.return_value)
             self.assertEqual(json.loads(save.read_text()), report)
 
+    def test_residual_prints_progress_reconciliation_and_missing_functions(self):
+        from unittest import mock
+
+        report = {
+            "summary": {
+                "functions": 0,
+                "unit_occurrences": 0,
+                "bytes": 0,
+                "inexact_code_bytes": 4,
+                "residual_analyzed_functions": 0,
+                "residual_analyzed_bytes": 0,
+                "groups": {
+                    "no-source-change": {"functions": 0, "bytes": 0},
+                    "source-pointing": {"functions": 0, "bytes": 0},
+                    "other": {"functions": 0, "bytes": 0},
+                },
+                "kinds": {},
+            },
+            "top_source_pointing": [],
+            "progress_reconciliation": {
+                "summary": {
+                    "progress_matched_functions": 1,
+                    "progress_functions": 2,
+                    "progress_inexact_functions": 1,
+                    "progress_inexact_function_bytes": 4,
+                    "unclaimed_code_bytes": 0,
+                    "inexact_code_bytes": 4,
+                    "residual_progress_inexact_functions": 0,
+                    "residual_progress_inexact_bytes": 0,
+                    "residual_progress_exact_functions": 0,
+                    "residual_progress_exact_bytes": 0,
+                    "missing_inexact_functions": 1,
+                    "missing_inexact_function_bytes": 4,
+                    "reconciled_code_bytes": 4,
+                    "untracked_residual_functions": 0,
+                    "untracked_residual_bytes": 0,
+                },
+                "groups": {
+                    "not-compiled": {
+                        "functions": [
+                            {
+                                "address": "0x1000",
+                                "symbol": "missing_symbol",
+                                "size": 4,
+                                "evidence": ["absent from base objects"],
+                                "candidate_units": [],
+                            }
+                        ],
+                        "bytes": 4,
+                        "why": "The target symbol is absent from every compiled base object.",
+                        "recommendation": "Restore the source definition.",
+                    }
+                },
+                "exact_overlaps": [],
+            },
+        }
+        output = io.StringIO()
+        with mock.patch("concord.cli.Harvest"), mock.patch(
+            "concord.cli.residual.report", return_value=report
+        ), contextlib.redirect_stdout(output):
+            self.assertEqual(main(["residual", "--harvest", "/root"]), 0)
+
+        self.assertIn("Progress reconciliation:", output.getvalue())
+        self.assertIn("0 aligned + 4 missing + 0 unclaimed = 4 bytes", output.getvalue())
+        self.assertIn("0x1000 missing_symbol size 4 bytes", output.getvalue())
+
     def test_module_entrypoint_runs(self):
         result = subprocess.run(
             [sys.executable, "-m", "concord", "--version"], capture_output=True, text=True,

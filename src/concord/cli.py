@@ -586,17 +586,85 @@ def main(argv: list[str] | None = None) -> int:
         if args.save:
             args.save.write_text(json.dumps(report, indent=2) + "\n")
         summary = report["summary"]
-        print(
-            f"{summary['functions']} distinct target functions in {summary['unit_occurrences']} inexact unit reports, "
-            f"{summary['bytes']:,} target bytes"
-        )
-        for name, label in (
+        reconciliation = report.get("progress_reconciliation")
+        if reconciliation is None:
+            print(
+                f"{summary['functions']} distinct target functions in {summary['unit_occurrences']} inexact unit reports, "
+                f"{summary['bytes']:,} target bytes"
+            )
+        else:
+            print(
+                f"{summary['functions']} progress-inexact target functions, {summary['bytes']:,} function bytes, "
+                f"{summary['inexact_code_bytes']:,} inexact executable bytes"
+            )
+            print(
+                f"residual instruction analysis: {summary['residual_analyzed_functions']} functions in "
+                f"{summary['unit_occurrences']} unit occurrences, {summary['residual_analyzed_bytes']:,} bytes"
+            )
+        group_labels = [
             ("no-source-change", "no-source-change kinds only"),
             ("source-pointing", "source-pointing"),
             ("other", "other"),
-        ):
+        ]
+        if "progress-missing" in summary["groups"]:
+            group_labels.append(("progress-missing", "missing from residual analysis"))
+        for name, label in group_labels:
             group = summary["groups"][name]
             print(f"{label}: {group['functions']} functions, {group['bytes']:,} target bytes")
+        if reconciliation is not None:
+            progress = reconciliation["summary"]
+            print("Progress reconciliation:")
+            print(
+                f"  hv.progress: {progress['progress_matched_functions']}/"
+                f"{progress['progress_functions']} exact functions; "
+                f"{progress['progress_inexact_functions']} inexact functions, "
+                f"{progress['progress_inexact_function_bytes']:,} function bytes, "
+                f"{progress['unclaimed_code_bytes']:,} unclaimed code bytes, "
+                f"{progress['inexact_code_bytes']:,} total inexact code bytes"
+            )
+            print(
+                f"  residual aligned {progress['residual_progress_inexact_functions']} inexact functions "
+                f"({progress['residual_progress_inexact_bytes']:,} bytes); "
+                f"{progress['residual_progress_exact_functions']} residual entries are exact in progress "
+                f"({progress['residual_progress_exact_bytes']:,} bytes)"
+            )
+            print(
+                f"  missing from residual: {progress['missing_inexact_functions']} inexact functions, "
+                f"{progress['missing_inexact_function_bytes']:,} bytes"
+            )
+            print(
+                f"  code total: {progress['residual_progress_inexact_bytes']:,} aligned + "
+                f"{progress['missing_inexact_function_bytes']:,} missing + "
+                f"{progress['unclaimed_code_bytes']:,} unclaimed = "
+                f"{progress['reconciled_code_bytes']:,} bytes"
+            )
+            for cause, group in reconciliation["groups"].items():
+                if not group["functions"] and not group["bytes"]:
+                    continue
+                print(f"  {cause}: {len(group['functions'])} functions, {group['bytes']:,} bytes")
+                print(f"    {group['why']}")
+                print(f"    Recommendation: {group['recommendation']}")
+                for function in group["functions"]:
+                    evidence = "; ".join(function["evidence"])
+                    candidates = ", ".join(function["candidate_units"])
+                    candidate_note = f"; candidate units {candidates}" if candidates else ""
+                    print(
+                        f"    {function['address']} {function['symbol']} size {function['size']} bytes; "
+                        f"{evidence}{candidate_note}"
+                    )
+            if reconciliation["exact_overlaps"]:
+                print("  Residual entries already exact in progress:")
+                for function in reconciliation["exact_overlaps"]:
+                    print(
+                        f"    {function['address']} {function['symbol']} size {function['size']} bytes; "
+                        f"exact in {function['progress_source_path']}; residual units "
+                        f"{', '.join(function['residual_units'])}"
+                    )
+            if progress["untracked_residual_functions"]:
+                print(
+                    f"  outside hv.progress inventory: {progress['untracked_residual_functions']} residual functions, "
+                    f"{progress['untracked_residual_bytes']:,} bytes"
+                )
         print("Differing instruction rows by kind:")
         for kind, counts in summary["kinds"].items():
             print(f"  {kind}: {counts['functions']} functions, {counts['rows']} rows, {counts['bytes']:,} target bytes")

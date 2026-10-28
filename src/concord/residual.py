@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 
 from concord.calls_constants import gather as calls_constants
@@ -216,6 +217,310 @@ def _group(kinds: set[str], signals: set[str]) -> str:
     return "other"
 
 
+PROGRESS_CAUSES = {
+    "not-compiled": {
+        "why": "The target symbol is absent from every compiled base object.",
+        "recommendation": "Restore or register the source definition first, then inspect its compiler context and callers.",
+    },
+    "compiled-but-unplaced": {
+        "why": "A base object defines the target symbol in a section that the match report could not place.",
+        "recommendation": "Place the owning section from its real target symbol or explicit unit mapping, then compare its body.",
+    },
+    "stubbed": {
+        "why": "The base object emits the target symbol as a trap-only stub.",
+        "recommendation": "Recover the function body before tuning callers or shared compiler state.",
+    },
+    "placed-in-unit-residual-skips": {
+        "why": "The base object emits the target symbol in a placed section, but no residual function row represents its target address.",
+        "recommendation": "Repair the unit's function extent or symbol mapping so residual can compare the emitted body.",
+    },
+    "matched-under-another-name": {
+        "why": "A placed candidate function reaches the target address under a different symbol.",
+        "recommendation": "Correct the symbol or alias mapping before changing source bodies.",
+    },
+    "unmapped-target-extent": {
+        "why": "The target inventory provides only an address-derived name, and no placed candidate function reaches that address.",
+        "recommendation": "Identify the owning source unit from neighboring symbols and extents, then compile and map it before body-level work.",
+    },
+    "other": {
+        "why": "The available match and object evidence does not identify a more specific cause.",
+        "recommendation": "Resolve the missing source or placement evidence before making a body change.",
+    },
+}
+
+
+def _address(value) -> int | None:
+    if value is None:
+        return None
+    return int(value, 0) if isinstance(value, str) else int(value)
+
+
+def _classify_missing(
+    function: dict,
+    candidate_functions: dict[str, list[dict]],
+    placed_by_address: dict[int, list[dict]],
+) -> dict:
+    symbol = function["symbol"]
+    address = _address(function.get("address"))
+    placed = placed_by_address.get(address, []) if address is not None else []
+    other_names = [row for row in placed if row["symbol"] != symbol]
+    if other_names:
+        return {
+            "cause": "matched-under-another-name",
+            "evidence": [f"{row['symbol']} in {row['unit']}" for row in other_names],
+            "candidate_units": sorted({row["unit"] for row in other_names}),
+        }
+
+    candidates = candidate_functions.get(symbol, [])
+    candidate_units = sorted({row["unit"] for row in candidates})
+    if any(row.get("stubbed") for row in candidates):
+        cause = "stubbed"
+    elif any(row.get("unplaced") for row in candidates):
+        cause = "compiled-but-unplaced"
+    elif candidates:
+        cause = "placed-in-unit-residual-skips"
+    elif symbol.startswith("sub_"):
+        cause = "unmapped-target-extent"
+    else:
+        cause = "not-compiled"
+
+    evidence = [f"{row['unit']}:{row['section']}" for row in candidates]
+    if not evidence:
+        if cause == "unmapped-target-extent":
+            evidence = ["no candidate function is placed at the address-derived target extent"]
+        elif cause == "not-compiled":
+            evidence = ["the symbol is absent from every compiled base object"]
+    return {"cause": cause, "evidence": evidence, "candidate_units": candidate_units}
+
+
+def _candidate_function_index(harvest: Harvest, wanted: set[str]) -> dict[str, list[dict]]:
+    """Find target symbols in compiled objects, including functions in unplaced sections."""
+    if not wanted:
+        return {}
+    from elftools.elf.elffile import ELFFile
+
+    found: dict[str, list[dict]] = defaultdict(list)
+    base_objects = harvest.objects / "base"
+    for path in sorted(base_objects.glob("*.o")) if base_objects.is_dir() else []:
+        report_path = harvest.reports / f"{path.stem}.json"
+        try:
+            match_report = json.loads(report_path.read_text())
+        except FileNotFoundError:
+            match_report = {}
+        unplaced = set(match_report.get("unplaced_sections", []))
+        unit = match_report.get("unit", path.stem)
+        with path.open("rb") as stream:
+            elf = ELFFile(stream)
+            table = elf.get_section_by_name(".symtab")
+            if table is None:
+                continue
+            sections = list(elf.iter_sections())
+            section_data = {}
+            for symbol in table.iter_symbols():
+                if symbol.name not in wanted or symbol["st_info"]["type"] != "STT_FUNC":
+                    continue
+                section_index = symbol["st_shndx"]
+                if not isinstance(section_index, int) or section_index >= len(sections):
+                    continue
+                section = sections[section_index]
+                if section_index not in section_data:
+                    section_data[section_index] = section.data()
+                start, size = symbol["st_value"], symbol["st_size"]
+                code = section_data[section_index][start : start + size]
+                trap_only = code in (b"\x0f\x0b", b"\xcc") or (
+                    code.startswith(b"\x0f\x0b") and all(byte in (0x90, 0xCC) for byte in code[2:])
+                )
+                found[symbol.name].append(
+                    {
+                        "unit": unit,
+                        "section": section.name,
+                        "size": size,
+                        "unplaced": section.name in unplaced,
+                        "stubbed": trap_only,
+                    }
+                )
+    return found
+
+
+def _progress_inventory(progress_report: dict) -> tuple[dict[int, dict], dict[int, dict], list[dict], int, int]:
+    if progress_report.get("version") != 2:
+        raise ValueError("unsupported hv.progress report version")
+    inexact = {}
+    exact = {}
+    unclaimed = []
+    function_bytes = matched_function_bytes = 0
+    for unit in progress_report["units"]:
+        metadata = unit.get("metadata", {})
+        measures = unit["measures"]
+        categories = set(metadata.get("progress_categories", []))
+        if "functions" in categories:
+            matched = measures["matched_functions"] == 1
+            for function in unit.get("functions", []):
+                address = _address(function["metadata"]["virtual_address"])
+                size = int(function["size"])
+                if address is None or address in inexact or address in exact:
+                    raise ValueError("duplicate or missing target function address in hv.progress report")
+                function_bytes += size
+                row = {
+                    "address": hex(address),
+                    "symbol": function["name"],
+                    "size": size,
+                    "fuzzy_match_percent": function.get("fuzzy_match_percent"),
+                    "source_path": metadata.get("source_path"),
+                }
+                if matched:
+                    exact[address] = row
+                    matched_function_bytes += size
+                else:
+                    inexact[address] = row
+        if "unclaimed" in categories:
+            size = int(measures["total_code"])
+            if size:
+                unclaimed.append({"unit": unit["name"], "bytes": size})
+
+    measures = progress_report["measures"]
+    total_code = int(measures["total_code"])
+    matched_code = int(measures["matched_code"])
+    unclaimed_bytes = sum(row["bytes"] for row in unclaimed)
+    if (
+        len(inexact) + len(exact) != measures["total_functions"]
+        or len(exact) != measures["matched_functions"]
+        or matched_function_bytes != matched_code
+        or function_bytes + unclaimed_bytes != total_code
+    ):
+        raise ValueError("hv.progress function and code totals disagree")
+    return inexact, exact, unclaimed, total_code, matched_code
+
+
+def _reconcile_progress(
+    progress_report: dict,
+    residual_functions: list[dict],
+    candidate_functions: dict[str, list[dict]] | None = None,
+    placed_by_address: dict[int, list[dict]] | None = None,
+) -> dict:
+    inexact, exact, unclaimed, total_code, matched_code = _progress_inventory(progress_report)
+    candidate_functions = candidate_functions or {}
+    placed_by_address = placed_by_address or {}
+
+    residual_by_address = {}
+    unaddressed_residual = []
+    for function in residual_functions:
+        address = _address(function.get("address"))
+        if address is None:
+            unaddressed_residual.append(function)
+        else:
+            residual_by_address[address] = function
+
+    classified = {address: residual_by_address[address] for address in inexact.keys() & residual_by_address.keys()}
+    exact_overlaps = {address: residual_by_address[address] for address in exact.keys() & residual_by_address.keys()}
+    missing_rows = []
+    for address in sorted(inexact.keys() - residual_by_address.keys()):
+        row = dict(inexact[address])
+        classification = _classify_missing(row, candidate_functions, placed_by_address)
+        row.update(classification)
+        missing_rows.append(row)
+
+    groups = {
+        cause: {**details, "functions": [], "bytes": 0}
+        for cause, details in PROGRESS_CAUSES.items()
+    }
+    for row in missing_rows:
+        group = groups[row["cause"]]
+        group["functions"].append(row)
+        group["bytes"] += row["size"]
+    groups["unclaimed-code"] = {
+        "why": "Executable bytes remain outside the captured FDE and thunk function extents, including linkage stubs and init/fini sections.",
+        "recommendation": "Inspect each section as padding, linkage stubs, init/fini code, or missing function extents before attributing bytes to source functions.",
+        "functions": [],
+        "bytes": sum(row["bytes"] for row in unclaimed),
+        "sections": unclaimed,
+    }
+
+    residual_bytes = sum(row["size"] for row in residual_functions)
+    classified_bytes = sum(inexact[address]["size"] for address in classified)
+    exact_overlap_bytes = sum(exact[address]["size"] for address in exact_overlaps)
+    missing_bytes = sum(row["size"] for row in missing_rows)
+    untracked = [
+        row
+        for address, row in residual_by_address.items()
+        if address not in inexact and address not in exact
+    ] + unaddressed_residual
+    untracked_bytes = sum(row["size"] for row in untracked)
+    inexact_function_bytes = sum(row["size"] for row in inexact.values())
+    unclaimed_bytes = sum(row["bytes"] for row in unclaimed)
+    inexact_code_bytes = total_code - matched_code
+    reconciled_code_bytes = classified_bytes + missing_bytes + unclaimed_bytes
+    summary = {
+        "progress_functions": len(inexact) + len(exact),
+        "progress_matched_functions": len(exact),
+        "progress_inexact_functions": len(inexact),
+        "progress_inexact_function_bytes": inexact_function_bytes,
+        "residual_raw_functions": len(residual_functions),
+        "residual_raw_bytes": residual_bytes,
+        "residual_raw_unit_occurrences": sum(len(row.get("unit_occurrences", [])) for row in residual_functions),
+        "residual_progress_inexact_functions": len(classified),
+        "residual_progress_inexact_bytes": classified_bytes,
+        "residual_progress_inexact_unit_occurrences": sum(
+            len(residual_by_address[address].get("unit_occurrences", [])) for address in classified
+        ),
+        "residual_progress_exact_functions": len(exact_overlaps),
+        "residual_progress_exact_bytes": exact_overlap_bytes,
+        "missing_inexact_functions": len(missing_rows),
+        "missing_inexact_function_bytes": missing_bytes,
+        "unclaimed_code_bytes": unclaimed_bytes,
+        "inexact_code_bytes": inexact_code_bytes,
+        "reconciled_code_bytes": reconciled_code_bytes,
+        "untracked_residual_functions": len(untracked),
+        "untracked_residual_bytes": untracked_bytes,
+    }
+    if reconciled_code_bytes != inexact_code_bytes:
+        raise ValueError("residual and hv.progress inexact code totals do not reconcile")
+    return {
+        "summary": summary,
+        "groups": groups,
+        "missing_functions": missing_rows,
+        "exact_overlaps": [
+            {
+                "address": hex(address),
+                "symbol": exact[address]["symbol"],
+                "size": exact[address]["size"],
+                "progress_source_path": exact[address]["source_path"],
+                "residual_units": residual_by_address[address].get("units", []),
+                "residual_kinds": residual_by_address[address].get("kinds", []),
+            }
+            for address in sorted(exact_overlaps)
+        ],
+        "unclaimed_code": unclaimed,
+        "untracked_residual": untracked,
+    }
+
+
+def _placed_function_index(verdicts: list[FunctionVerdict], harvest: Harvest) -> dict[int, list[dict]]:
+    placed: dict[int, list[dict]] = defaultdict(list)
+    for verdict in verdicts:
+        address = _address(verdict.row.get("address"))
+        if address is not None:
+            placed[address].append(
+                {"unit": harvest.source(verdict.unit), "symbol": verdict.symbol, "exact": verdict.row["exact"]}
+            )
+    return placed
+
+
+def _progress_reconciliation(harvest: Harvest, verdicts: list[FunctionVerdict], functions: list[dict]) -> dict | None:
+    path = harvest.root / "build" / "progress" / "report.json"
+    if not path.is_file():
+        return None
+    progress_report = json.loads(path.read_text())
+    inexact, _, _, _, _ = _progress_inventory(progress_report)
+    candidate_functions = _candidate_function_index(harvest, {row["symbol"] for row in inexact.values()})
+    return _reconcile_progress(
+        progress_report,
+        functions,
+        candidate_functions,
+        _placed_function_index(verdicts, harvest),
+    )
+
+
 def _occurrence(
     harvest: Harvest,
     verdict: FunctionVerdict,
@@ -284,7 +589,8 @@ def _occurrence(
 
 def report(harvest: Harvest) -> dict:
     """Classify every inexact emitted function and summarize distinct target extents."""
-    verdicts = [verdict for verdict in harvest.verdicts() if not verdict.row["exact"]]
+    all_verdicts = list(harvest.verdicts())
+    verdicts = [verdict for verdict in all_verdicts if not verdict.row["exact"]]
     functions_by_unit = _read_build_functions(harvest, verdicts)
     signals, pattern_counts, enum_offsets = _pattern_signals(harvest, verdicts, functions_by_unit)
 
@@ -347,10 +653,43 @@ def report(harvest: Harvest) -> dict:
         functions.append(row)
     functions.sort(key=lambda row: (-row["size"], row["address"] or "", row["symbol"]))
 
+    progress_reconciliation = _progress_reconciliation(harvest, all_verdicts, functions)
+    if progress_reconciliation is not None:
+        exact_addresses = {row["address"] for row in progress_reconciliation["exact_overlaps"]}
+        functions = [row for row in functions if row["address"] not in exact_addresses]
+        for row in progress_reconciliation["missing_functions"]:
+            functions.append(
+                {
+                    "address": row["address"],
+                    "symbol": row["symbol"],
+                    "size": row["size"],
+                    "score": None,
+                    "candidate_sizes": [],
+                    "unit_occurrences": [],
+                    "kinds": [],
+                    "source_signals": [],
+                    "units": [],
+                    "unit_count": 0,
+                    "group": "progress-missing",
+                    "residual_cause": row["cause"],
+                    "residual_evidence": row["evidence"],
+                    "recommendation": PROGRESS_CAUSES[row["cause"]]["recommendation"],
+                    "progress_fuzzy_match_percent": row["fuzzy_match_percent"],
+                    "source_path": row["source_path"],
+                }
+            )
+        functions.sort(key=lambda row: (-row["size"], row["address"] or "", row["symbol"]))
+
     group_summary = {}
     for name in ("no-source-change", "source-pointing", "other"):
         selected = [row for row in functions if row["group"] == name]
         group_summary[name] = {"functions": len(selected), "bytes": sum(row["size"] for row in selected)}
+    if progress_reconciliation is not None:
+        selected = [row for row in functions if row["group"] == "progress-missing"]
+        group_summary["progress-missing"] = {
+            "functions": len(selected),
+            "bytes": sum(row["size"] for row in selected),
+        }
 
     kind_summary = {}
     for kind in sorted({item["kind"] for row in functions for item in row["kinds"]}):
@@ -362,16 +701,30 @@ def report(harvest: Harvest) -> dict:
         }
 
     source_pointing = [row for row in functions if row["group"] == "source-pointing"]
+    summary = {
+        "functions": len(functions),
+        "unit_occurrences": sum(len(row["unit_occurrences"]) for row in functions),
+        "bytes": sum(row["size"] for row in functions),
+        "groups": group_summary,
+        "kinds": kind_summary,
+    }
+    if progress_reconciliation is not None:
+        progress = progress_reconciliation["summary"]
+        summary.update(
+            {
+                "inexact_code_bytes": progress["inexact_code_bytes"],
+                "unclaimed_code_bytes": progress["unclaimed_code_bytes"],
+                "residual_analyzed_functions": progress["residual_progress_inexact_functions"],
+                "residual_analyzed_bytes": progress["residual_progress_inexact_bytes"],
+                "residual_raw_functions": progress["residual_raw_functions"],
+                "residual_raw_bytes": progress["residual_raw_bytes"],
+            }
+        )
     return {
-        "schema": "concord.residual.v1",
+        "schema": "concord.residual.v2",
         "score_kind": "Concord instruction alignment",
-        "summary": {
-            "functions": len(functions),
-            "unit_occurrences": len(occurrences),
-            "bytes": sum(row["size"] for row in functions),
-            "groups": group_summary,
-            "kinds": kind_summary,
-        },
+        "summary": summary,
         "functions": functions,
         "top_source_pointing": source_pointing[:20],
+        "progress_reconciliation": progress_reconciliation,
     }

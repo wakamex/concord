@@ -44,6 +44,89 @@ class CallRows(unittest.TestCase):
                 self.assertEqual(source_pointing, expected_source_pointing)
 
 
+class ProgressReconciliation(unittest.TestCase):
+    def test_reconciliation_removes_exact_overlap_and_adds_missing_and_unclaimed_bytes(self):
+        from concord.residual import _reconcile_progress
+
+        def function_unit(name, address, size, matched):
+            return {
+                "name": name,
+                "measures": {
+                    "total_code": str(size),
+                    "matched_code": str(size if matched else 0),
+                    "total_functions": 1,
+                    "matched_functions": int(matched),
+                },
+                "functions": [
+                    {
+                        "name": name,
+                        "size": str(size),
+                        "fuzzy_match_percent": 100 if matched else 0,
+                        "metadata": {"virtual_address": str(address)},
+                    }
+                ],
+                "metadata": {"progress_categories": ["functions"]},
+            }
+
+        progress = {
+            "version": 2,
+            "measures": {
+                "total_code": "60",
+                "matched_code": "20",
+                "total_functions": 2,
+                "matched_functions": 1,
+            },
+            "units": [
+                function_unit("already_exact", 0x1000, 20, True),
+                function_unit("missing", 0x2000, 30, False),
+                {
+                    "name": "Unclaimed .text bytes (includes padding/stubs)",
+                    "measures": {"total_code": "10", "matched_code": "0", "total_functions": 0, "matched_functions": 0},
+                    "metadata": {"progress_categories": ["unclaimed"]},
+                },
+            ],
+        }
+        residual_functions = [{"address": "0x1000", "symbol": "already_exact", "size": 20}]
+
+        result = _reconcile_progress(progress, residual_functions)
+
+        summary = result["summary"]
+        self.assertEqual(summary["progress_inexact_functions"], 1)
+        self.assertEqual(summary["progress_inexact_function_bytes"], 30)
+        self.assertEqual(summary["residual_progress_exact_functions"], 1)
+        self.assertEqual(summary["residual_progress_exact_bytes"], 20)
+        self.assertEqual(summary["missing_inexact_functions"], 1)
+        self.assertEqual(summary["missing_inexact_function_bytes"], 30)
+        self.assertEqual(summary["unclaimed_code_bytes"], 10)
+        self.assertEqual(summary["inexact_code_bytes"], 40)
+        self.assertEqual(summary["reconciled_code_bytes"], 40)
+        self.assertEqual(result["groups"]["not-compiled"]["functions"][0]["symbol"], "missing")
+
+    def test_missing_causes_use_symbol_and_placement_evidence(self):
+        from concord.residual import _classify_missing
+
+        candidates = {
+            "unplaced": [{"unit": "unit.cpp", "section": ".text.unplaced", "unplaced": True}],
+            "stub": [{"unit": "unit.cpp", "section": ".text.stub", "unplaced": False, "stubbed": True}],
+            "placed": [{"unit": "unit.cpp", "section": ".text.placed", "unplaced": False}],
+        }
+        placed = {0x4000: [{"unit": "other.cpp", "symbol": "renamed"}]}
+        cases = (
+            ("absent", 0x1000, "not-compiled"),
+            ("unplaced", 0x2000, "compiled-but-unplaced"),
+            ("stub", 0x3000, "stubbed"),
+            ("placed", 0x3500, "placed-in-unit-residual-skips"),
+            ("different", 0x4000, "matched-under-another-name"),
+            ("sub_5000", 0x5000, "unmapped-target-extent"),
+        )
+        for symbol, address, expected in cases:
+            with self.subTest(symbol=symbol):
+                result = _classify_missing(
+                    {"symbol": symbol, "address": hex(address)}, candidates, placed
+                )
+                self.assertEqual(result["cause"], expected)
+
+
 # The census covers the whole build, so these checks require an explicitly named checkout.
 @unittest.skipUnless(
     os.environ.get("CONCORD_HARVEST") and (HARVEST / "build" / "match" / BUILD).is_dir(),
@@ -93,6 +176,44 @@ class HarvestResidual(unittest.TestCase):
         self.assertEqual(on_event_kinds["calls"], 7)
         self.assertEqual(on_event["group"], "source-pointing")
         self.assertIn(on_event, self.census["top_source_pointing"])
+
+    def test_progress_reconciliation_names_every_missing_function_and_byte_range(self):
+        reconciliation = self.census["progress_reconciliation"]
+        self.assertIsNotNone(reconciliation)
+        summary = reconciliation["summary"]
+        self.assertEqual(summary["progress_functions"], 5240)
+        self.assertEqual(summary["progress_matched_functions"], 4807)
+        self.assertEqual(summary["progress_inexact_functions"], 433)
+        self.assertEqual(summary["progress_inexact_function_bytes"], 601913)
+        self.assertEqual(summary["residual_raw_functions"], 381)
+        self.assertEqual(summary["residual_raw_bytes"], 593743)
+        self.assertEqual(summary["residual_progress_inexact_functions"], 351)
+        self.assertEqual(summary["residual_progress_exact_functions"], 30)
+        self.assertEqual(summary["missing_inexact_functions"], 82)
+        self.assertEqual(summary["missing_inexact_function_bytes"], 25396)
+        self.assertEqual(summary["unclaimed_code_bytes"], 49485)
+        self.assertEqual(summary["inexact_code_bytes"], 651398)
+        self.assertEqual(summary["reconciled_code_bytes"], 651398)
+        self.assertEqual(self.census["summary"]["functions"], 433)
+        self.assertEqual(self.census["summary"]["bytes"], 601913)
+        self.assertEqual(self.census["summary"]["inexact_code_bytes"], 651398)
+
+        groups = reconciliation["groups"]
+        self.assertEqual(len(groups["not-compiled"]["functions"]), 20)
+        self.assertEqual(groups["not-compiled"]["bytes"], 4387)
+        self.assertEqual(len(groups["unmapped-target-extent"]["functions"]), 62)
+        self.assertEqual(groups["unmapped-target-extent"]["bytes"], 21009)
+        self.assertEqual(len(reconciliation["exact_overlaps"]), 30)
+        self.assertEqual(groups["unclaimed-code"]["bytes"], 49485)
+        self.assertEqual(self.census["summary"]["groups"]["progress-missing"], {"functions": 82, "bytes": 25396})
+        self.assertEqual(len(self.census["functions"]), 433)
+        self.assertEqual(
+            sum(row["bytes"] for row in reconciliation["unclaimed_code"]),
+            49485,
+        )
+        self.assertTrue(
+            all(row["size"] > 0 and row["evidence"] for row in reconciliation["missing_functions"])
+        )
 
 
 @unittest.skipUnless(
