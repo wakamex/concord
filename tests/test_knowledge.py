@@ -130,6 +130,15 @@ class PlayStateUnitEvidenceTests(unittest.TestCase):
             "lowers objdiff to 88.86471",
             "returned reference",
             "without an oracle",
+            "target [rsp+0x70..0x7c]",
+            "candidate uses [rsp+0xe0..0xec] for rightEdge",
+            "and [rsp+0x60..0x6c] for marker boxes",
+            "target [rsp+0x90..0x9c]",
+            "[rsp+0x80..0x8c] for minimap area",
+            "88.927734 to 87.59664",
+            "88.927734 to 87.68823",
+            "273 aligned stack-slot constraints",
+            "remaining 48 bytes",
         ):
             self.assertIn(fact, minimap)
         self.assertIn("unchanged-source", evidence["CPlayState::renderRangeCircle"])
