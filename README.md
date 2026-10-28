@@ -197,16 +197,18 @@ concord is the deterministic half of matching: it verifies candidates with the t
 
 ### Finishing Harvest's platform layer
 
-`python -m hv.progress report` splits Harvest's Linux binary into four layers (plus 264 PLT thunks, all matched). The table compares each layer's exact functions on Harvest's master, which includes [banteg/harvest#38](https://github.com/banteg/harvest/pull/38), and with [banteg/harvest#40](https://github.com/banteg/harvest/pull/40). Bytes are target code bytes; more exact is better. Layer totals differ by a few functions between the two because learned addresses split some extents.
+`python -m hv.progress report` splits Harvest's Linux binary into four layers (plus 264 PLT thunks, all matched). The table compares each layer's exact functions on Harvest's master, which includes [banteg/harvest#38](https://github.com/banteg/harvest/pull/38), with [banteg/harvest#40](https://github.com/banteg/harvest/pull/40), and with the next batch, built on #40 and kept on the `seed/after-encore` branch of [wakamex/harvest](https://github.com/wakamex/harvest) at e86091f. Bytes are target code bytes; more exact is better. Layer totals differ by a few functions between the two because learned addresses split some extents.
 
-| Layer | Exact on master (functions, bytes, share of layer) | Exact with #40 (functions, bytes, share of layer) |
-| --- | ---: | ---: |
-| game | 1,339 of 1,452 (426,924 of 707,867, 60.3%) | 1,339 of 1,452 (426,924 of 707,867, 60.3%) |
-| engine | 1,515 of 1,619 (278,274 of 386,647, 72.0%) | 1,519 of 1,620 (279,106 of 386,817, 72.2%) |
-| toolkit | 488 of 558 (152,892 of 231,777, 66.0%) | 488 of 558 (152,892 of 231,777, 66.0%) |
-| platform | 1,383 of 1,611 (432,380 of 622,318, 69.5%) | 1,426 of 1,610 (456,455 of 622,148, 73.4%) |
+| Layer | Exact on master (functions, bytes, share of layer) | Exact with #40 (functions, bytes, share of layer) | Exact with the next batch (functions, bytes, share of layer) |
+| --- | ---: | ---: | ---: |
+| game | 1,339 of 1,452 (426,924 of 707,867, 60.3%) | 1,339 of 1,452 (426,924 of 707,867, 60.3%) | 1,339 of 1,452 (426,924 of 707,867, 60.3%) |
+| engine | 1,515 of 1,619 (278,274 of 386,647, 72.0%) | 1,519 of 1,620 (279,106 of 386,817, 72.2%) | 1,519 of 1,620 (279,106 of 386,817, 72.2%) |
+| toolkit | 488 of 558 (152,892 of 231,777, 66.0%) | 488 of 558 (152,892 of 231,777, 66.0%) | 489 of 558 (152,912 of 231,777, 66.0%) |
+| platform | 1,383 of 1,611 (432,380 of 622,318, 69.5%) | 1,426 of 1,610 (456,455 of 622,148, 73.4%) | 1,460 of 1,610 (487,754 of 622,148, 78.4%) |
 
 Over the whole binary that is 65.83% of code bytes matched against master's 64.59%, and a fuzzy score of 80.56% against 78.93%. Against master's evidence, 49 functions are newly matched and 3,047 more data bytes match, with none lost; the two functions that score lower are `CXFileReader::getNextTokenAsString` (99.83%) and `TArray<SXAnimationSet>::~TArray` (99.92%), taken under Goal 2's exception because `concord scratch-history` places their one-byte peephole2 register choices in unit-wide inlining the restored bodies do not control.
+
+The next batch adds 35 exact functions and 31,319 code bytes over #40, 67.40% of the binary's code bytes against 65.83%, with a fuzzy score of 81.26% against 80.56% and 6,186 more data bytes matched; the whole-build gate reports no function worse at any step. Its matches come from translation rules (`reserve` for indexed buffers, Irrlicht's `wideToAnsi`, the libjpeg source manager), the census commands (`enum-switch`, `statics`, `place-bss`) and authored corrections (the `sortRiver` and shadow-volume dispatch fixes, `CVideoOpenGL`'s batching and screenshot code). What remains inexact is measured by `concord residual`: of 381 inexact functions, 151 hold only differences no source change has moved (reversed comparisons, register choice, instruction order and selection, padding), and most of the rest is how GCC distributes inlined `CString` constructions across a unit, which `inline-budget` reports per call site without a source lever found yet.
 
 All 42 daisy units in the Mac debug map that have a file in `third_party/irrlicht-0.7/source/Irrlicht/` are seeded; the only two unrecovered daisy units without a `.cpp` file are the Winsock network device and its socket object (46 functions, 9.6 KB). With #40, no unit or header holds a `__builtin_trap()` stub.
 

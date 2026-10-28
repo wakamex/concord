@@ -43,20 +43,20 @@ Evaluation:
 
 Gaps: Codex `gpt-6.1-terra` has one diagnosis row and is being evaluated as a cheaper Codex option at half Sol's price;  Muse has no diagnosis or rule row.
 
-## Grades (2026-10-27, afternoon)
+## Grades (2026-10-28)
 
 Each executor is scored out of 100 on four parts: results (40), what its work moved, from exact functions to findings that closed or opened a lever; reliability (30), clean gates, diffs that hold and rules kept; efficiency (20), cost and wall time for what it delivered; and reports (10), whether its report was accurate and complete enough to act on without rereading its work. The score is the sum of the four parts. A is 90 and above, B 80 to 89, C 70 to 79, D 60 to 69; within a band, x0 to x3 is a minus, x4 to x6 plain and x7 to x9 a plus. These are the master session's judgment from the rows below, not a benchmark, and they move as rows are added.
 
 | Executor | Grade | Score | Results | Reliability | Efficiency | Reports | Median wall time per task | What it is for |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| Codex `gpt-6.1-sol` | A- | 91 | 39 | 27 | 16 | 9 | 19.6 minutes in its one concord aop run; 17 minutes over 31 aop runs in w3sim; about 1 to 4 hours per task in its earlier native session | multi-unit recoveries that need new tooling and a whole-build gate; its first aop task cost $1.75, near its w3sim median |
-| Codex `gpt-6.1-terra` at `--effort max` | B+ | 88 | 34 | 29 | 16 | 9 | 8.4 minutes (6.2 to 18.4, eight runs) | diagnosing a concrete source lead from the sweep; found the `sortRiver` fallback (1 newly matched, five copies up to 87.79) and showed two sweep leads were tool artifacts, fixing the tool each time |
-| Antigravity Gemini 4 Argon (second reader) | B | 85 | 37 | 22 | 18 | 8 | not timed | choosing the next lever; its levers held every time, about half its details did not |
-| Devin `swe-2-high` | B- | 81 | 33 | 22 | 19 | 7 | 23.4 minutes (under 1 to 120, 39 runs) | bounded diagnoses and capability work at no cost; matched MD2 `loadFile` and generalized the reserve rule; one knowledge entry that failed the suite, reported as passing, and one commit made with losses |
+| Codex `gpt-6-luna` at `--effort max` | A- | 92 | 36 | 27 | 20 | 9 | 20.1 minutes (6.4 to 66.5, 28 runs), median $0.16 | first-pass diagnoses and census capabilities: the XML conversion (5 exact), enum-switch (7), place-bss (5), statics, comparison-flips, residual; skipped a memory check twice and said so |
+| Codex `gpt-6.1-terra` at `--effort max` | A- | 90 | 36 | 29 | 16 | 9 | 8.5 minutes (1.0 to 18.4, 18 runs), median $0.74 | a concrete lead with a new hypothesis: the shadow-volume switch (the match that carried the batch past one point), the highscore table layout, the sortRiver fallback, and refuting leads that were tool artifacts |
+| Antigravity Gemini 4 Argon (second reader) | B | 85 | 37 | 22 | 18 | 8 | not timed | choosing the next lever, now as a fresh aop run per question |
+| Claude `claude-haiku-5-5` at `--effort max` | B | 84 | 33 | 27 | 14 | 10 | 28.5 minutes (5.7 to 38.0, four runs), median $1.31 | the JPEG source manager (7 exact) and the secondInit style argument; thorough, accurate reports; one run lost to a sign-in race since fixed in aop |
+| Codex `gpt-6.1-sol` | B | 84 | 37 | 27 | 11 | 9 | 34.0 minutes through aop (19.6 to 138.3, six runs), median $2.58 | whole-unit and mechanism work: CVideoOpenGL (2 exact, data +1,591), the causal tracer and the inline-distribution report; the costliest per exact function |
+| Devin `swe-2-high` | C+ | 79 | 33 | 22 | 19 | 5 | 24.9 minutes (7.5 to 120, 36 runs) | bounded diagnoses at no cost; its callee triage named one firm source lead that a later run showed was a misread branch |
 | Muse `muse-wonder-full-1.0` | C+ | 78 | 30 | 28 | 10 | 10 | 49 minutes (12.5 to 128, three runs) | a capability with a careful proof (the report naming fix, merged upstream as #39); its subscription runs out fast |
-| Cursor `composer-2.5` | D+ | 67 | 20 | 20 | 18 | 9 | 12.6 minutes (1.3 to 23, seven runs; one held 4 hours by an aop bug, now fixed) | small tool fixes written as numbered checkable rules; its string-pool comparison holds after fixes, but it added co-author trailers twice, a test tied to its own worktree, and a mechanism that accepted a zero-gain edit |
-
-Muse's and Cursor's earlier scores (80 and 74) did not equal the sum of their parts; the sums are 78 and 67.
+| Cursor `composer-2.5` | D+ | 67 | 20 | 20 | 18 | 9 | 12.6 minutes (1.3 to 23, seven runs; one held 4 hours by an aop bug, now fixed) | small tool fixes written as numbered checkable rules; co-author trailers twice, a test tied to its own worktree, and a mechanism that accepted a zero-gain edit |
 
 Wall time is from aop's start and finish records for each run, waiting for memory excluded. Many of Devin's runs report `failed` only because of aop's trajectory-export bug while their work completed; the times count them.
 
