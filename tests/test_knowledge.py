@@ -282,5 +282,30 @@ class HighscoreUnitResidualTests(unittest.TestCase):
         self.assertIn("saves 5,240 functions and 1,631 matched data runs", evidence["Clean source gate"])
 
 
+class DaisyGuiCallDistributionTests(unittest.TestCase):
+    def test_residual_calls_scores_and_rejected_overlays_are_recorded(self):
+        idiom = next(
+            item for item in knowledge.load("gcc-4.4.3")
+            if item.id == "daisy-gui-call-distribution"
+        )
+        notes = {item["function"]: item["note"] for item in idiom.evidence}
+
+        self.assertEqual(idiom.status, "hypothesis")
+        for name in (
+            "CGUITextButton::CGUITextButton",
+            "CGUITabControl::CGUITabControl",
+            "CGUIRadioList::CGUIRadioList",
+            "CGUIContextMenu::CGUIContextMenu",
+            "CGUIContextMenu::~CGUIContextMenu",
+            "CGUIButton::~CGUIButton",
+        ):
+            self.assertIn(name, notes["Six residual functions"])
+        for score in ("80.41", "83.75", "79.19", "81.70", "67.95", "72.96"):
+            self.assertIn(score, notes["Six residual functions"])
+        self.assertIn("zero gains", notes["Shared header overlays"])
+        self.assertIn("Neither inexact candidate received an oracle check", idiom.limits)
+        self.assertIn("0 worse; data bytes matched: +0 -0", notes["Baseline whole-build gate"])
+
+
 if __name__ == "__main__":
     unittest.main()
