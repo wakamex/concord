@@ -412,11 +412,33 @@ _RIVER_FALLBACK = HeaderFunctionEdit(
     ),
 )
 
+_FLOW_CURSOR = HeaderFunctionEdit(
+    "flow-cursor-and-extents", "ox/gui/IGUILayoutInline.h", (
+        Replacement(b"int left = x - rect.getWidth();", b"x -= rect.getWidth();", 1),
+        Replacement(b"if (spacingX > left && !first)", b"if (spacingX > x && !first)", 1),
+        Replacement(b"left = width - rect.getWidth();", b"x = width - rect.getWidth();", 1),
+        Replacement(b"placed(left, y, left + rect.getWidth(), rect.getHeight() + y)",
+                    b"placed(x, y, x + rect.getWidth(), rect.getHeight() + y)", 1),
+        Replacement(b"            (*it)->setRelativePosition(placed);\n            x = left - spacingX;",
+                    b"            x -= spacingX;\n            (*it)->setRelativePosition(placed);", 1),
+        Replacement(b"            if (width - x > maxWidth)\n                maxWidth = width - x;",
+                    b"            maxWidth = width - x < maxWidth ? maxWidth : width - x;", 1),
+        Replacement(b"y + rowHeight + spacingY - area.getHeight()",
+                    b"y + rowHeight + (spacingY + area.UpperLeftCorner.Y - area.LowerRightCorner.Y)", 1),
+        Replacement(b"maxWidth - area.getWidth()",
+                    b"maxWidth + area.UpperLeftCorner.X - area.LowerRightCorner.X", 1),
+    ),
+)
+
 # The target substitutes "tab" for absent layout flags at all three sites.
 HEADER_FUNCTION_AUTHORED = {
     (f"daisy/gui/{name}.cpp", "_ZN2ox3gui10IGUILayout9sortRiverEbiib"): _RIVER_FALLBACK
     for name in ("CGUIClickArea", "CGUIEnvironment", "CGUIModalScreen", "CGUITabControl", "CGUIWindow")
 }
+HEADER_FUNCTION_AUTHORED.update({
+    (f"daisy/gui/{name}.cpp", "_ZN2ox3gui10IGUILayout8sortFlowEiibb"): _FLOW_CURSOR
+    for name in ("CGUIClickArea", "CGUIEnvironment", "CGUIModalScreen", "CGUITabControl", "CGUIWindow")
+})
 
 # Several spellings of one header operation can be screened with causal-trial.
 # author requires an explicit name before measuring and writing a family member.

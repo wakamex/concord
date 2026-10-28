@@ -548,6 +548,33 @@ const char* example = "CG_PROGRAM = 4125";
 
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class HeaderFunction(unittest.TestCase):
+    def test_flow_cursor_correction_is_registered_for_every_layout_unit(self):
+        symbol = '_ZN2ox3gui10IGUILayout8sortFlowEiibb'
+        source = b'''inline void IGUILayout::sortFlow(int spacingX, int spacingY, bool rightToLeft, bool resize)
+{
+            int left = x - rect.getWidth();
+            if (spacingX > left && !first)
+                left = width - rect.getWidth();
+            core::CRect<int> placed(left, y, left + rect.getWidth(), rect.getHeight() + y);
+            (*it)->setRelativePosition(placed);
+            x = left - spacingX;
+            if (width - x > maxWidth)
+                maxWidth = width - x;
+    int growY = y + rowHeight + spacingY - area.getHeight();
+    int growX = maxWidth - area.getWidth();
+}
+void other() { int growX = maxWidth - area.getWidth(); }
+'''
+        for name in ('CGUIClickArea', 'CGUIEnvironment', 'CGUIModalScreen', 'CGUITabControl', 'CGUIWindow'):
+            edits = authored.header_edits(f'daisy/gui/{name}.cpp', symbol)
+            self.assertEqual(len(edits), 1)
+            result = authored.header_function_candidate(source, symbol, edits[0])
+            self.assertIn(b'x -= spacingX;\n            (*it)->setRelativePosition(placed);', result)
+            self.assertNotIn(b'int left', result)
+            self.assertIn(b'maxWidth = width - x < maxWidth ? maxWidth : width - x;', result)
+            self.assertIn(b'void other() { int growX = maxWidth - area.getWidth(); }', result)
+            self.assertIsNone(authored.header_function_candidate(result, symbol, edits[0]))
+
     def test_header_spelling_edits_an_inline_overload_and_scores_its_caller(self):
         source = b'int Board::pick(int a) { return a; }\nint Board::skip() { return 0; }\n'
         edit = authored.HeaderFunctionEdit(
