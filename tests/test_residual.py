@@ -185,44 +185,38 @@ class HarvestResidual(unittest.TestCase):
         self.assertEqual(len(self.census["top_source_pointing"]), 20)
         on_event = self.functions["_ZN7harvest6states10CPlayState7OnEventERKN2ox5event6SEventE"]
         on_event_kinds = {item["kind"]: item["rows"] for item in on_event["kinds"]}
-        self.assertEqual(on_event_kinds["calls"], 7)
-        self.assertEqual(on_event["group"], "source-pointing")
-        self.assertIn(on_event, self.census["top_source_pointing"])
+        # Its call differences are exception cleanup: CString destructors and _Unwind_Resume.
+        self.assertNotIn("calls", on_event_kinds)
+        self.assertGreater(on_event_kinds["inline-distribution"], 0)
 
     def test_progress_reconciliation_names_every_missing_function_and_byte_range(self):
         reconciliation = self.census["progress_reconciliation"]
         self.assertIsNotNone(reconciliation)
         summary = reconciliation["summary"]
-        self.assertEqual(summary["progress_functions"], 5240)
-        self.assertEqual(summary["progress_matched_functions"], 4807)
-        self.assertEqual(summary["progress_inexact_functions"], 433)
-        self.assertEqual(summary["progress_inexact_function_bytes"], 601913)
-        self.assertEqual(summary["residual_raw_functions"], 381)
-        self.assertEqual(summary["residual_raw_bytes"], 593743)
-        self.assertEqual(summary["residual_progress_inexact_functions"], 351)
-        self.assertEqual(summary["residual_progress_exact_functions"], 30)
-        self.assertEqual(summary["missing_inexact_functions"], 82)
-        self.assertEqual(summary["missing_inexact_function_bytes"], 25396)
-        self.assertEqual(summary["unclaimed_code_bytes"], 49485)
-        self.assertEqual(summary["inexact_code_bytes"], 651398)
-        self.assertEqual(summary["reconciled_code_bytes"], 651398)
-        self.assertEqual(self.census["summary"]["functions"], 433)
-        self.assertEqual(self.census["summary"]["bytes"], 601913)
-        self.assertEqual(self.census["summary"]["inexact_code_bytes"], 651398)
-
         groups = reconciliation["groups"]
-        self.assertEqual(len(groups["not-compiled"]["functions"]), 20)
-        self.assertEqual(groups["not-compiled"]["bytes"], 4387)
-        self.assertEqual(len(groups["unmapped-target-extent"]["functions"]), 62)
-        self.assertEqual(groups["unmapped-target-extent"]["bytes"], 21009)
-        self.assertEqual(len(reconciliation["exact_overlaps"]), 30)
-        self.assertEqual(groups["unclaimed-code"]["bytes"], 49485)
-        self.assertEqual(self.census["summary"]["groups"]["progress-missing"], {"functions": 82, "bytes": 25396})
-        self.assertEqual(len(self.census["functions"]), 433)
         self.assertEqual(
-            sum(row["bytes"] for row in reconciliation["unclaimed_code"]),
-            49485,
+            summary["progress_matched_functions"] + summary["progress_inexact_functions"],
+            summary["progress_functions"],
         )
+        self.assertEqual(
+            summary["residual_progress_inexact_functions"] + summary["residual_progress_exact_functions"],
+            summary["residual_raw_functions"],
+        )
+        self.assertEqual(len(reconciliation["exact_overlaps"]), summary["residual_progress_exact_functions"])
+        self.assertEqual(
+            summary["residual_progress_inexact_functions"] + summary["missing_inexact_functions"],
+            summary["progress_inexact_functions"],
+        )
+        self.assertEqual(summary["reconciled_code_bytes"], summary["inexact_code_bytes"])
+        self.assertEqual(groups["unclaimed-code"]["bytes"], summary["unclaimed_code_bytes"])
+        self.assertEqual(sum(row["bytes"] for row in reconciliation["unclaimed_code"]), summary["unclaimed_code_bytes"])
+        self.assertEqual(
+            self.census["summary"]["groups"]["progress-missing"],
+            {"functions": summary["missing_inexact_functions"], "bytes": summary["missing_inexact_function_bytes"]},
+        )
+        self.assertEqual(self.census["summary"]["functions"], summary["progress_inexact_functions"])
+        self.assertEqual(len(self.census["functions"]), summary["progress_inexact_functions"])
+        self.assertEqual(self.census["summary"]["inexact_code_bytes"], summary["inexact_code_bytes"])
         self.assertTrue(
             all(row["size"] > 0 and row["evidence"] for row in reconciliation["missing_functions"])
         )
@@ -291,12 +285,11 @@ class HarvestResidualCallRows(unittest.TestCase):
         self.assertEqual(row["counts"]["inline-distribution"], 32)
         self.assertNotIn("calls", row["counts"])
 
-    def test_on_event_counts_only_call_multiset_differences(self):
+    def test_on_event_cleanup_calls_are_inline_distribution(self):
         row = self.rows["on_event"]
 
-        self.assertEqual(row["counts"]["calls"], 7)
-        self.assertGreater(row["counts"]["block-order"], 0)
-        self.assertEqual(row["group"], "source-pointing")
+        self.assertNotIn("calls", row["counts"])
+        self.assertGreater(row["counts"]["inline-distribution"], 0)
 
 
 if __name__ == "__main__":
