@@ -106,11 +106,13 @@ cause = "block-order"
 status = "confirmed"
 symptom = "tests on one value happen in a different order, or a compare chain appears where the target branches differently"
 fix = "Write tests on a single value as a switch instead of an if/else-if chain, or the reverse. GCC 4.4 lowers the two forms to different compare orders and block layouts."
+limits = "At setMeshToRenderFrom, the switch matches the Irrlicht 0.7 ancestor, but two authored if forms both score 92.0941 against the 99.62 baseline. Neither source form is established as a fix."
 before = "if (event.GUIEvent.EventType == EGET_BUTTON_CLICKED) { ... } else if (event.GUIEvent.EventType == EGET_MESSAGEBOX_YES) { ... }"
 after = "switch (event.GUIEvent.EventType) { case EGET_BUTTON_CLICKED: ... break; case EGET_MESSAGEBOX_YES: ... break; default: break; }"
 evidence = [
   { commit = "4f54643", function = "harvest::gui::CIngameMenuScreen::OnEvent" },
   { commit = "50b223e", function = "harvest::gui::CMenuInfoDialog", note = "switch on the event type and button id" },
+  { function = "daisy::scene::CShadowVolumeSceneNode::setMeshToRenderFrom at 0x57a010", note = "At Harvest 0d482f0, hv diff scores 99.45% with six differing instruction rows and concord diff scores 99.62%. At +0x01fa the target bytes 85 c0 encode test eax,eax, while the candidate bytes 83 f8 01 encode cmp eax,1. The target branch at +0x0200 is 0f 85 6a 0e 00 00; the candidate branch one byte later is 0f 84 69 0e 00 00. The target has 83 f8 01 0f 85 06 f2 ff ff at +0x1070, where the candidate starts the second copy loop. The aligned padding rows are target 0f 1f 00 versus candidate 66 90, and target 0f 1f 84 00 00 00 00 00 versus candidate 90. The source switch matches the Irrlicht 0.7 ancestor. The target extent is 4393 bytes and the candidate is 4377 bytes, placing the following constructor at 0x57b130 instead of 0x57b140; the method name and vtable slot at 0x57a010 are correct. The unit phase scan finds 50/52 exact, 0 locked functions and 0 witnesses. A canonical-object-verified scratch trace records four successful searches in render and inlined ISceneNode::setName, with no searches in setMeshToRenderFrom. The authored nested-guard form and standard-first if/else-if form both score 92.0941 and are rejected. No oracle or whole-build gate runs because neither form improved." },
 ]
 
 [[idiom]]

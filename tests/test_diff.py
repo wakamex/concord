@@ -410,6 +410,25 @@ class KnowledgeBase(unittest.TestCase):
             with self.subTest(detail=detail):
                 self.assertIn(detail, note)
 
+    def test_shadow_vertex_switch_limit_is_recorded(self):
+        from concord import knowledge
+
+        entries = [i for i in knowledge.load("gcc-4.4.3") if i.id == "switch-or-if-chain"]
+        self.assertEqual(len(entries), 1)
+        notes = [
+            e["note"] for e in entries[0].evidence
+            if e.get("function") == "daisy::scene::CShadowVolumeSceneNode::setMeshToRenderFrom at 0x57a010"
+        ]
+        self.assertEqual(len(notes), 1)
+        for detail in (
+            "+0x01fa", "+0x0200", "+0x1070", "4393 bytes", "4377 bytes",
+            "92.0941", "0 locked functions", "0 witnesses", "four successful searches",
+            "85 c0", "83 f8 01", "0f 85 6a 0e 00 00", "0f 84 69 0e 00 00",
+            "0f 1f 00", "66 90", "0f 1f 84 00 00 00 00 00", "neither form improved",
+        ):
+            with self.subTest(detail=detail):
+                self.assertIn(detail, notes[0])
+
 
 if __name__ == "__main__":
     unittest.main()
