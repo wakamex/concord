@@ -76,6 +76,29 @@ class PlayStateOnEventCallEvidenceTests(unittest.TestCase):
         ):
             self.assertIn(finding, evidence["note"])
 
+    def test_latest_screen_records_rejected_candidates_and_gate(self):
+        path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
+        data = tomllib.loads(path.read_text())
+        idiom = next(item for item in data["idiom"] if item["id"] == "event-dispatch-audit")
+        evidence = next(
+            (
+                item["note"] for item in idiom["evidence"]
+                if item.get("function") == "harvest::states::CPlayState::OnEvent at Harvest a3b9f79"
+            ),
+            None,
+        )
+        self.assertIsNotNone(evidence)
+
+        for finding in (
+            "7 call rows, 12 enum-check rows, 3 data rows and 1,130 block-order rows",
+            "six target-only wide CString destructor calls",
+            "eight missing range checks at lines 1673 and 1678",
+            "Two authored marker-field-order candidates",
+            "rejected before oracle evaluation",
+            "0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0",
+        ):
+            self.assertIn(finding, evidence)
+
 
 class LuaManagerUnitEvidenceTests(unittest.TestCase):
     def test_unit_audit_separates_inlining_from_source_corrections(self):
