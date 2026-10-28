@@ -1155,7 +1155,13 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
     improved = _key(result.best) > _key(result.baseline) or repaired
     finished = finish(harvest, source, symbol, result.source, original) if improved else None
     verdict = None
-    if finished is not None and not result.best.exact:
+    if finished is not None and not result.best.exact and any(step.startswith("nan-sense") for step in result.steps):
+        # A nan-sense step changes only what happens on NaN, which the oracle's cases
+        # may never feed that comparison; only an exact match proves it.
+        print("an inexact candidate with a nan-sense step is unproven; nothing written")
+        finished = None
+        verdict = {"error": "inexact nan-sense step"}
+    elif finished is not None and not result.best.exact:
         kept, verdict = oracle.gate(harvest, source, symbol, original, finished)
         if not kept:
             if verdict and "error" in verdict:

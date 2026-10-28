@@ -207,6 +207,38 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(main(["permute", "--harvest", tmp, "--near-miss", "99", "--unit", "a.cpp"]), 0)
             self.assertEqual([call.args[1:3] for call in run.call_args_list], [("a.cpp", "one"), ("a.cpp", "three")])
 
+    def test_permute_keeps_no_inexact_candidate_with_a_nan_sense_step(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest import mock
+
+        def diff(score, exact=False):
+            return SimpleNamespace(exact=exact, fuzzy=score, score=score, findings=[])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            unit = Path(tmp) / "src" / "a.cpp"
+            unit.parent.mkdir()
+            unit.write_bytes(b"while (d > 0) {}")
+            found = SimpleNamespace(
+                baseline=diff(95.0), best=diff(95.8), source=b"while (!(d <= 0)) {}",
+                steps=["nan-sense line 1: d > 0 as !(d <= 0)"], reason="budget spent", tried=8,
+            )
+            with mock.patch("concord.cli.Harvest", return_value=SimpleNamespace(source=lambda unit: unit, root=Path(tmp))), \
+                    mock.patch("concord.cli.permute", return_value=found), \
+                    mock.patch("concord.cli.repair", return_value=(found.source, [])), \
+                    mock.patch("concord.cli.finish", return_value=found.source), \
+                    mock.patch("concord.cli.results.commit", return_value="abc"), \
+                    mock.patch("concord.cli.results.save_patch", return_value=None), \
+                    mock.patch("concord.cli.oracle.gate") as gate, \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                code = main(["permute", "--harvest", tmp, "--unit", "a.cpp", "f", "--apply-improved",
+                             "--results", str(Path(tmp) / "runs.jsonl")])
+            self.assertEqual(code, 0)
+            gate.assert_not_called()
+            self.assertIn("unproven", output.getvalue())
+            self.assertEqual(unit.read_bytes(), b"while (d > 0) {}")
+
     def test_rename_gives_helpers_plain_names(self):
         import tempfile
         from pathlib import Path
