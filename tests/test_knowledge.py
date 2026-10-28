@@ -236,5 +236,22 @@ class DropshipUnitEvidenceTests(unittest.TestCase):
         self.assertIn("15 differing", evidence["Rejected search"])
 
 
+class HighscoreUnitResidualTests(unittest.TestCase):
+    def test_rejected_source_forms_and_unit_context_are_recorded(self):
+        path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
+        data = tomllib.loads(path.read_text())
+        idiom = next(item for item in data["idiom"] if item["id"] == "harvest-highscore-unit-residuals")
+        notes = {item["function"]: item["note"] for item in idiom["evidence"]}
+
+        self.assertEqual(idiom["status"], "hypothesis")
+        self.assertIn("10 emitted inline and template copies, all 10 placed", notes["Unit context"])
+        self.assertIn("63.147266 to 99.81066", notes["parseHighscoreString"])
+        self.assertIn("4928 to 4784", notes["parseHighscoreString"])
+        self.assertIn("89.835526 to 89.5", notes["setVisible"])
+        self.assertIn("A 32-candidate unit-scoped permutation search finds no score gain", notes["OnEvent"])
+        self.assertIn("31 candidates, finds no rewrite", notes["update and parseSummaryPage"])
+        self.assertIn("0 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0", notes["Unchanged seed gate"])
+
+
 if __name__ == "__main__":
     unittest.main()
