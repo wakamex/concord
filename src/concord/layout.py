@@ -12,10 +12,10 @@ points at a field the declarations place differently from the original.
 from __future__ import annotations
 
 import json
-import subprocess
 from collections import defaultdict
 from dataclasses import dataclass
 
+from concord import oracle
 from concord.harvest import Harvest
 
 
@@ -29,11 +29,19 @@ class Mismatch:
 def accesses(harvest: Harvest, symbol: str, unit: str | None = None) -> list[dict]:
     """The function's memory accesses in the original executable, or in the unit's
     object from the last `hv match` when `unit` is given."""
-    command = ["harvest-oracle", "accesses", symbol]
+    arguments = ["accesses", symbol]
     if unit is not None:
-        command += ["--object", str(harvest.reports / f"{harvest.slug(unit)}.o")]
-    done = subprocess.run(command, cwd=harvest.root, capture_output=True, text=True, check=True)
-    [function] = json.loads(done.stdout).values()
+        arguments += ["--object", str(harvest.reports / f"{harvest.slug(unit)}.o")]
+    done = oracle.run_harvest_oracle(arguments, harvest.root)
+    try:
+        report = json.loads(done.stdout)
+    except json.JSONDecodeError as error:
+        raise oracle.OracleInvocationError("harvest-oracle accesses returned no valid JSON report") from error
+    if not isinstance(report, dict) or len(report) != 1:
+        raise oracle.OracleInvocationError("harvest-oracle accesses returned an invalid JSON report")
+    [function] = report.values()
+    if not isinstance(function, dict) or not isinstance(function.get("accesses"), list):
+        raise oracle.OracleInvocationError("harvest-oracle accesses omitted the function data")
     return function["accesses"]
 
 

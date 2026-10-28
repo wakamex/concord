@@ -7,6 +7,7 @@ import json
 import random
 import shlex
 import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -481,7 +482,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def _dispatch(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command is None:
@@ -1136,13 +1137,17 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
     original = (harvest.root / "src" / source).read_bytes()
     result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth)
     result.source, repairs = repair(harvest, source, symbol, result.source, result.baseline.fuzzy or 0.0)
-    improved = _key(result.best) > _key(result.baseline) or bool(repairs)
+    repaired = any("error" not in step for step in repairs)
+    improved = _key(result.best) > _key(result.baseline) or repaired
     finished = finish(harvest, source, symbol, result.source, original) if improved else None
     verdict = None
     if finished is not None and not result.best.exact:
         kept, verdict = oracle.gate(harvest, source, symbol, original, finished)
         if not kept:
-            print(f"the rewrite changes behavior without moving closer to the original; nothing written: {verdict}")
+            if verdict and "error" in verdict:
+                print(f"candidate rejected by oracle: {verdict['error']}")
+            else:
+                print(f"the rewrite changes behavior without moving closer to the original; nothing written: {verdict}")
             finished = None
         elif verdict and "original" in verdict:
             print(f"the rewrite changes behavior toward the original: {verdict['original']}")
@@ -1173,7 +1178,10 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
     for step in result.steps:
         print(f"  {step}")
     for step in repairs:
-        print(f"  repair {step['rewrite']}: original differences {step['original_differences']}")
+        if "error" in step:
+            print(f"  repair {step['rewrite']}: rejected by oracle: {step['error']}")
+        else:
+            print(f"  repair {step['rewrite']}: original differences {step['original_differences']}")
     print(f"{result.reason}: score {result.best.score:.2f}, exact {result.best.exact}, {result.tried} candidates compiled")
     _print_result(result.best, "gcc-4.4.3")
     if improved and finished is None and verdict is None:
@@ -1706,6 +1714,14 @@ def _survey_lines(harvest: Harvest, found: list, limit: int) -> None:
     for key, entry in ranked[:limit]:
         causes = ", ".join(f"{c} {n}" for c, n in entry["causes"].most_common())
         print(f"  {key:56} {len(entry['functions']):>3} functions {len(entry['units']):>3} units  {causes}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        return _dispatch(argv)
+    except oracle.OracleError as error:
+        print(f"concord: {error}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

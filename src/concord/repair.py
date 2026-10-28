@@ -42,9 +42,27 @@ def repair(harvest: Harvest, unit: str, symbol: str, source: bytes, floor: float
             score = _diff(harvest, e, symbol).fuzzy or 0.0
             if score > floor and not worse_elsewhere(others, e, symbol) and base.exact_functions() <= e.exact_functions():
                 candidates.append((flip, score))
-        counts = oracle.original_differences(
-            harvest, unit, symbol, {"current": source, **{f"c{n}": flip.source for n, (flip, _) in enumerate(candidates)}}
-        ) if candidates else None  # fmt: skip
+        counts = None
+        if candidates:
+            sources = {"current": source, **{f"c{n}": flip.source for n, (flip, _) in enumerate(candidates)}}
+            try:
+                counts = oracle.original_differences(harvest, unit, symbol, sources)
+            except oracle.OracleInvocationError:
+                baseline = oracle.original_differences(harvest, unit, symbol, {"current": source})
+                if not baseline or "current" not in baseline:
+                    raise oracle.OracleBaselineError(f"oracle could not evaluate the baseline for {symbol}")
+                counts = {"current": baseline["current"]}
+                for n, (flip, _) in enumerate(candidates):
+                    name = f"c{n}"
+                    try:
+                        single = oracle.original_differences(
+                            harvest, unit, symbol, {"current": source, name: flip.source}
+                        )
+                    except oracle.OracleInvocationError as error:
+                        steps.append({"rewrite": flip.description, "error": str(error)})
+                        continue
+                    if single and name in single:
+                        counts[name] = single[name]
         best = None
         if counts and "current" in counts:
             for n, (flip, score) in enumerate(candidates):
