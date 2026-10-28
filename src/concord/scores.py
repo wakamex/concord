@@ -100,22 +100,39 @@ def _bytes(runs: list) -> set[int]:
 
 
 def normalized(checkout: Path, base: str) -> tuple[dict, dict, dict]:
-    """Compare committed sources using the head's configuration on both sides.
+    """Compare sources using the head's configuration on both sides.
 
     The isolated worktree owns its captures and build outputs. The caller's
-    source, index, matching reports and committed evidence are never replaced.
+    tracked source changes are snapshotted into it without changing the index,
+    matching reports or committed evidence. Configuration must be committed.
     """
     checkout = checkout.resolve()
     def git(*args):
         return subprocess.check_output(['git', '-C', str(checkout), *args])
     head = git('rev-parse', 'HEAD').decode().strip()
     base = git('rev-parse', '--verify', base + '^{commit}').decode().strip()
-    if git('status', '--porcelain', '--untracked-files=normal', '--', 'src', 'third_party', 'config', 'tools', 'builds.json', 'uv.lock', 'toolchain'):
-        raise ValueError('normalized scores require committed measurement inputs; commit or isolate source/config changes first')
-    added_units = [path.removeprefix('src/') for path in git(
-        'diff', '--name-only', '--diff-filter=A', '-z', base, head, '--', 'src'
-    ).decode().split('\0') if path.endswith('.cpp')]
-    changed = git('diff', '--name-only', '-z', base, head, '--', 'src', 'third_party').decode().split('\0')
+    def workspace_inputs():
+        if (git('status', '--porcelain', '--untracked-files=normal', '--', 'config', 'tools', 'builds.json', 'uv.lock', 'toolchain')
+                or git('ls-files', '--others', '--exclude-standard', '-z', '--', 'src', 'third_party')):
+            raise ValueError('normalized scores require committed measurement inputs; commit or isolate source/config changes first')
+        dirty = filter(None, git(
+            'diff', '--name-only', '--no-renames', '-z', 'HEAD', '--', 'src', 'third_party'
+        ).decode().split('\0'))
+        files = {}
+        for name in dirty:
+            path = checkout / name
+            if path.is_symlink() or (path.exists() and not path.is_file()):
+                raise ValueError(f'cannot snapshot non-file source input: {name}')
+            files[name] = path.read_bytes() if path.exists() else None
+        return files
+
+    workspace_source = workspace_inputs()
+    added_paths = git('diff', '--name-only', '--diff-filter=A', '-z', base, head, '--', 'src') + git(
+        'diff', '--name-only', '--diff-filter=A', '-z', base, '--', 'src'
+    )
+    added_units = sorted({path.removeprefix('src/') for path in added_paths.decode().split('\0')
+                          if path.endswith('.cpp')})
+    changed = git('diff', '--name-only', '-z', base, '--', 'src', 'third_party').decode().split('\0')
     with tempfile.TemporaryDirectory(prefix='concord-gate-') as tmp:
         root = Path(tmp) / 'worktree'
         subprocess.run(['git', '-C', str(checkout), 'worktree', 'add', '-q', '--detach', str(root), head], check=True)
@@ -159,9 +176,24 @@ def normalized(checkout: Path, base: str) -> tuple[dict, dict, dict]:
                     'git', '-C', str(root), 'restore', '--source', head, '--worktree', '--', str(config_dir)
                 ], check=True)
             subprocess.run(['git', '-C', str(root), 'restore', '--source', head, '--worktree', '--', 'src', 'third_party'], check=True)
+            for name, content in workspace_source.items():
+                path = root / name
+                if content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(content)
             after = snapshot(report(root, capture=True))
+            try:
+                unchanged = git('rev-parse', 'HEAD').decode().strip() == head and workspace_inputs() == workspace_source
+            except ValueError as error:
+                raise ValueError('measurement inputs changed while capturing scores') from error
+            if not unchanged:
+                raise ValueError('measurement inputs changed while capturing scores')
             config = root / config_dir
             evidence = {'base': base, 'head': head, 'source_paths': sorted(filter(None, changed)),
+                        'workspace_source': {name: hashlib.sha256(content).hexdigest() if content is not None else None
+                                             for name, content in workspace_source.items()},
                         'configuration': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(config.iterdir()) if p.is_file()},
                         'configuration_changes': configuration_changes, 'absent_base_units': absent,
                         'configuration_baseline': configuration_before,

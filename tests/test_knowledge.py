@@ -2,6 +2,46 @@ import tomllib
 import unittest
 from pathlib import Path
 
+from concord import knowledge
+from concord.model import Cause
+
+
+class EventDispatchEvidenceTests(unittest.TestCase):
+    def test_block_order_guidance_includes_measured_event_dispatches(self):
+        idioms = knowledge.for_causes(knowledge.load("gcc-4.4.3"), {Cause.BLOCK_ORDER})
+        idiom = next(item for item in idioms if item.id == "event-dispatch-audit")
+        notes = {item["function"]: item["note"] for item in idiom.evidence}
+
+        self.assertIn("compare", idiom.fix.lower())
+        for function, facts in {
+            "daisy::gui::CGUIWindow::OnEvent": ("62.919464", "29.791946", "same outer"),
+            "harvest::states::CIntroState::OnEvent": ("67.644806", "same outer"),
+            "harvest::gui::CStoryScreen::OnEvent": ("97.92593", "42.851852", "43.74074"),
+        }.items():
+            with self.subTest(function=function):
+                for fact in facts:
+                    self.assertIn(fact, notes[function])
+
+    def test_thumb_call_evidence_keeps_unit_regressions_visible(self):
+        idiom = next(item for item in knowledge.load("gcc-4.4.3") if item.id == "event-dispatch-audit")
+        note = next(item["note"] for item in idiom.evidence if item["function"] == "daisy::gui::CGUIScrollBar::OnEvent")
+        for fact in ("82.203125", "86.67969", "87.46484", "80.71875", "62.880596", "81.41122"):
+            self.assertIn(fact, note)
+
+    def test_large_handler_tables_are_compared_entry_by_entry(self):
+        idiom = next(item for item in knowledge.load("gcc-4.4.3") if item.id == "event-dispatch-audit")
+        notes = {item["function"]: item["note"] for item in idiom.evidence}
+        for function, address in (
+            ("harvest::states::CMainMenuState::OnEvent", "0x608150"),
+            ("harvest::states::CPlayState::OnEvent", "0x608d88"),
+        ):
+            with self.subTest(function=function):
+                self.assertIn(address, notes[function])
+                self.assertIn("all eight entries", notes[function])
+        menu = notes["harvest::states::CMainMenuState::OnEvent"]
+        self.assertIn("five case orders", menu)
+        self.assertIn("52.809746", menu)
+
 
 class InlinedStringReferenceKnowledgeTests(unittest.TestCase):
     def test_dropship_call_distribution_evidence_is_recorded(self):
