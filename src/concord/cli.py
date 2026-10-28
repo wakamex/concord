@@ -360,6 +360,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_budget.add_argument("dump", type=Path)
     p_budget.add_argument("--against", type=Path, help="compare against an unchanged-source dump")
     p_budget.add_argument("--save", type=Path)
+    p_budget.add_argument("--params-def", type=Path, help="pinned GCC params.def for integer unit and function growth budgets")
+    p_budget.add_argument("--harvest", type=Path, help="also compare CString literal sites in compiled objects")
+    p_budget.add_argument("--unit", help="unit for the literal-site comparison")
+    p_budget.add_argument("--symbol", action="append", default=[], help="function to compare (repeatable)")
+    p_budget.add_argument("--probe-constructions", action="store_true", help="screen named temporary forms at mismatched literal sites as overlays")
+    p_budget.add_argument("--apply", action="store_true", help="apply an eligible construction probe through author and its oracle")
 
     p_inlines = sub.add_parser(
         "inlines", help="compare a unit's out-of-line inline and template copies with the target's"
@@ -655,7 +661,27 @@ def main(argv: list[str] | None = None) -> int:
         args.save.write_text(json.dumps(result, indent=2) + "\n")
         return 0
     if args.command == "inline-budget":
+        if args.apply and not args.probe_constructions:
+            parser.error('--apply requires --probe-constructions')
         report = inline_budget.load(args.dump)
+        if args.params_def:
+            import hashlib
+
+            metadata_path = args.dump.parent / 'metadata.json'
+            metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
+            report['budgets'] = inline_budget.budgets(report, inline_budget.parameters(args.params_def, metadata.get('command', [])))
+            report['params_def_sha256'] = hashlib.sha256(args.params_def.read_bytes()).hexdigest()
+            report['compiler'] = metadata
+        if args.harvest or args.unit or args.symbol:
+            if not (args.harvest and args.unit and args.symbol):
+                parser.error('literal sites require --harvest, --unit and --symbol')
+            harvest = Harvest(args.harvest)
+            report['verification'] = inline_budget.verify_dump(harvest, args.unit, args.symbol, args.dump)
+            report['literal_sites'] = inline_budget.sites(harvest, args.unit, args.symbol)
+        if args.probe_constructions:
+            if not (args.harvest and args.unit and len(args.symbol) == 1):
+                parser.error('--probe-constructions requires --harvest, --unit and one --symbol')
+            report['probe'] = inline_budget.probe(Harvest(args.harvest), args.unit, args.symbol[0], apply=args.apply)
         if args.against:
             baseline = inline_budget.load(args.against)
             report['comparison'] = inline_budget.compare(baseline, report)
@@ -668,6 +694,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {count}: {reason}")
         for row in report.get('comparison', {}).get('functions', [])[:12]:
             print(f"  {row['delta']:+d}: {row['name']}")
+        for function in report.get('literal_sites', []):
+            differences = [r for r in function['sites'] if r['ours']['decision'] != r['target']['decision']]
+            print(f"  {function['symbol']}: {len(function['sites'])} literal sites, {len(differences)} different decisions")
+            for row in differences:
+                print(f"    {row['source_line']}: {row['literal']}: ours {row['ours']['decision']}, target {row['target']['decision']}")
+        if 'probe' in report:
+            probe = report['probe']
+            print(f"  {len(probe['candidates'])} construction overlays; chosen: {probe['chosen'] or 'none'}; applied: {probe['applied']}")
         return 0
     if args.command == "inlines":
         harvest = Harvest(args.harvest)
