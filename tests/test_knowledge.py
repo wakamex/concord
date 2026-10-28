@@ -135,5 +135,20 @@ class PlayStateUnitEvidenceTests(unittest.TestCase):
         self.assertNotIn("no source line is missing or different", previous)
 
 
+class MissileTurretUnitResidualTests(unittest.TestCase):
+    def test_authored_changes_and_remaining_unit_blockers_are_recorded(self):
+        path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
+        data = tomllib.loads(path.read_text())
+        idiom = next(item for item in data["idiom"] if item["id"] == "harvest-missile-turret-unit-residuals")
+        notes = {item["function"]: item["note"] for item in idiom["evidence"]}
+
+        self.assertEqual(idiom["status"], "hypothesis")
+        self.assertIn("73/77 functions exact", notes["Final unit snapshot"])
+        self.assertIn("3 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0", notes["Final unit snapshot"])
+        self.assertIn("5,000 oracle cases", notes["Accepted source corrections"])
+        self.assertIn("mov qword ptr [rsp + 0x58], 0", notes["CMissileTurretEntity::findPriorityAlien"])
+        self.assertIn("32 explicitly unit-scoped rewrite candidates", notes["CMissileTurretEntity::render"])
+
+
 if __name__ == "__main__":
     unittest.main()
