@@ -39,12 +39,14 @@ class OverlayGate(unittest.TestCase):
         report = {"comparison": {"original vs before": {"differ": 52}, "original vs after": {"differ": 0}},
                   "outcomes": outcome}
         different = EquivalenceResult(False, "differential-test", '{"verdict": "differ"}')
-        with patch("concord.oracle.check_objects", return_value=different), patch(
+        with patch.dict(os.environ, {"CONCORD_ORACLE_CASES": "17"}), patch(
+            "concord.oracle.check_objects", return_value=different
+        ), patch(
             "concord.oracle.original_comparison_objects", return_value=report
         ):
             accepted, evidence = oracle.gate_objects(None, UNIT, SYMBOL, Path("before.o"), Path("after.o"))
             self.assertTrue(accepted)
-            self.assertEqual(evidence["original"], {"before": 52, "after": 0, "cases": 5000, "outcomes": outcome})
+            self.assertEqual(evidence["original"], {"before": 52, "after": 0, "cases": 17, "outcomes": outcome})
             report["comparison"]["original vs after"]["differ"] = 52
             self.assertFalse(oracle.gate_objects(None, UNIT, SYMBOL, Path("before.o"), Path("after.o"))[0])
 
@@ -124,6 +126,25 @@ raise SystemExit(8)
             self.assertEqual(oracle.timeout_seconds(), 60.0)
         with patch.dict(os.environ, {oracle.TIMEOUT_VARIABLE: "12.5"}):
             self.assertEqual(oracle.timeout_seconds(), 12.5)
+
+    def test_case_count_defaults_can_be_overridden_and_validated(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(oracle.case_count(), 5000)
+        with patch.dict(os.environ, {"CONCORD_ORACLE_CASES": "17"}, clear=True):
+            self.assertEqual(oracle.case_count(), 17)
+        for value in ("soon", "0"):
+            with patch.dict(os.environ, {"CONCORD_ORACLE_CASES": value}, clear=True), self.assertRaisesRegex(
+                oracle.OracleSetupError, "CONCORD_ORACLE_CASES"
+            ):
+                oracle.case_count()
+
+    def test_check_uses_the_configured_case_count(self):
+        with patch.dict(os.environ, {"CONCORD_ORACLE_CASES": "17"}, clear=True), patch(
+            "concord.oracle.command", return_value="harvest-oracle"
+        ), patch("concord.oracle._run", return_value=SimpleNamespace(stdout='{"verdict":"agree"}')) as run:
+            result = oracle.check_objects(self.CompiledHarvest(), UNIT, SYMBOL, Path("before.o"), Path("after.o"))
+        self.assertTrue(result.equivalent)
+        self.assertEqual(run.call_args.args[0][-1], "17")
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ from concord.model import EquivalenceResult
 
 VARIABLE = "CONCORD_ORACLE"
 TIMEOUT_VARIABLE = "CONCORD_ORACLE_TIMEOUT"
+CASES_VARIABLE = "CONCORD_ORACLE_CASES"
 DEFAULT_TIMEOUT = 60.0
 # A float comparison changed so it differs only for NaN can show in about 0.2% of
 # generated cases (CDropshipEntity::updateLogic: 4 of 2,000); 5,000 cases catch
@@ -76,6 +77,20 @@ def timeout_seconds() -> float:
     if not math.isfinite(seconds) or seconds <= 0:
         raise OracleSetupError(f"{TIMEOUT_VARIABLE} must be a positive number of seconds")
     return seconds
+
+
+def case_count() -> int:
+    """The positive number of cases per oracle check, 5,000 by default."""
+    value = os.environ.get(CASES_VARIABLE)
+    if value is None:
+        return CASES
+    try:
+        count = int(value)
+    except ValueError as error:
+        raise OracleSetupError(f"{CASES_VARIABLE} must be a positive integer") from error
+    if count <= 0:
+        raise OracleSetupError(f"{CASES_VARIABLE} must be a positive integer")
+    return count
 
 
 def _run(argv: list[str], cwd: Path, allowed: tuple[int, ...], label: str) -> subprocess.CompletedProcess:
@@ -171,7 +186,7 @@ def check_objects(harvest: Harvest, unit: str, symbol: str, before: Path, after:
     if prefix is None:
         return None
     argv = [*_command_args(prefix, "oracle"), "check", str(before), str(after),
-            "--symbol", symbol, "--unit", unit, "--cases", str(CASES)]
+            "--symbol", symbol, "--unit", unit, "--cases", str(case_count())]
     done = _run(argv, harvest.root, (0, 1), "oracle check")
     report = _report(done.stdout, "oracle check")
     verdict = report.get("verdict")
@@ -207,7 +222,7 @@ def original_comparison_objects(harvest: Harvest, symbol: str, objects: dict[str
     if prefix is None:
         raise ValueError("an oracle is required for an original comparison")
     argv = [*_command_args(prefix, "oracle"), "compare", symbol, "original=image",
-            *(f"{name}={obj}" for name, obj in objects.items()), "--cases", str(CASES)]
+            *(f"{name}={obj}" for name, obj in objects.items()), "--cases", str(case_count())]
     done = _run(argv, harvest.root, (0, 1), "oracle comparison")
     try:
         report = json.loads(done.stdout)
@@ -230,7 +245,7 @@ def toward_original(harvest: Harvest, unit: str, symbol: str, before: bytes, aft
     counts = original_differences(harvest, unit, symbol, {"before": before, "after": after})
     if not counts or len(counts) < 2:
         return None
-    return {**counts, "cases": CASES}
+    return {**counts, "cases": case_count()}
 
 
 def gate(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> tuple[bool, dict | None]:
@@ -275,7 +290,7 @@ def gate_objects(harvest: Harvest, unit: str, symbol: str, before: Path, after: 
     record["original"] = {
         "before": comparison["original vs before"]["differ"],
         "after": comparison["original vs after"]["differ"],
-        "cases": CASES,
+        "cases": case_count(),
         "outcomes": report.get("outcomes", {}),
     }
     return record["original"]["after"] < record["original"]["before"], record

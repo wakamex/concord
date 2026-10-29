@@ -88,3 +88,82 @@ class AuthorOverlay(unittest.TestCase):
             report = authored.overlay(harvest, {'H.h': b'new'}, write=True)
             self.assertFalse(report['applied'])
             self.assertEqual(path.read_bytes(), b'old')
+
+    def test_header_candidate_may_lower_a_score_when_its_unit_nets_a_gain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / 'src/H.h'
+            path.parent.mkdir()
+            path.write_bytes(b'old')
+            config = root / 'config/1.18-linux-amd64'
+            config.mkdir(parents=True)
+            (config / 'symbols.tsv').write_text('address\tsize\tsymbol\tprovenance\n')
+            reports = root / 'build/match/1.18-linux-amd64'
+            reports.mkdir(parents=True)
+            harvest = Mock(root=root, build='1.18-linux-amd64', reports=reports)
+            harvest.dependents.return_value = ['daisy/gui/CGUIEnvironment.cpp']
+            functions = [
+                {'symbol': 'breakText', 'exact': False, 'size': 4473},
+                {'symbol': 'environmentD2', 'exact': False, 'size': 410},
+                {'symbol': 'alreadyExact', 'exact': True, 'size': 100},
+            ]
+            data_ranges = [{'address': '0x1000', 'size': 4, 'kind': 'section'}]
+            before = Evaluation(
+                'before', 'environment', object=Path('before.o'),
+                sections=[{'functions': functions, 'data_ranges': data_ranges}],
+                fuzzy={'breakText': 34.03512, 'environmentD2': 51.0198, 'alreadyExact': 100.0},
+            )
+            after = Evaluation(
+                'after', 'environment', object=Path('after.o'),
+                sections=[{'functions': functions, 'data_ranges': data_ranges}],
+                fuzzy={'breakText': 71.4539, 'environmentD2': 37.0099, 'alreadyExact': 100.0},
+            )
+            harvest.evaluate_overlays.return_value = {
+                'before-0': before,
+                'after-0': after,
+            }
+            with patch('concord.authored.oracle.gate_objects', return_value=(True, {'verdict': 'same'})) as gate:
+                report = authored.overlay(harvest, {'H.h': b'new'}, write=True)
+            self.assertTrue(report['accepted'])
+            self.assertTrue(report['applied'])
+            self.assertEqual(path.read_bytes(), b'new')
+            self.assertEqual([gain['symbol'] for gain in report['gains']], ['breakText'])
+            self.assertEqual(report['gains'][0]['oracle'], {'verdict': 'same'})
+            gate.assert_called_once_with(harvest, 'daisy/gui/CGUIEnvironment.cpp', 'breakText', before.object, after.object)
+
+    def test_header_candidate_cannot_lose_matched_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / 'src/H.h'
+            path.parent.mkdir()
+            path.write_bytes(b'old')
+            config = root / 'config/1.18-linux-amd64'
+            config.mkdir(parents=True)
+            (config / 'symbols.tsv').write_text('address\tsize\tsymbol\tprovenance\n')
+            reports = root / 'build/match/1.18-linux-amd64'
+            reports.mkdir(parents=True)
+            harvest = Mock(root=root, build='1.18-linux-amd64', reports=reports)
+            harvest.dependents.return_value = ['daisy/gui/CGUIEnvironment.cpp']
+            functions = [{'symbol': 'breakText', 'exact': False, 'size': 4473}]
+            before = Evaluation(
+                'before', 'environment', object=Path('before.o'),
+                sections=[{'functions': functions, 'data_ranges': [
+                    {'address': '0x1000', 'size': 4, 'kind': 'section'},
+                ]}],
+                fuzzy={'breakText': 34.03512},
+            )
+            after = Evaluation(
+                'after', 'environment', object=Path('after.o'),
+                sections=[{'functions': functions, 'data_ranges': []}],
+                fuzzy={'breakText': 71.4539},
+            )
+            harvest.evaluate_overlays.return_value = {
+                'before-0': before,
+                'after-0': after,
+            }
+            with patch('concord.authored.oracle.gate_objects', return_value=(True, {'verdict': 'same'})) as gate:
+                report = authored.overlay(harvest, {'H.h': b'new'}, write=True)
+            self.assertFalse(report['accepted'])
+            self.assertFalse(report['applied'])
+            self.assertEqual(path.read_bytes(), b'old')
+            gate.assert_not_called()

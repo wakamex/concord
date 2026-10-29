@@ -255,7 +255,7 @@ class WinsockNotifyReceiveResidualTests(unittest.TestCase):
 
 
 class StaticTextBreakTextEvidenceTests(unittest.TestCase):
-    def test_rejected_loop_translations_and_unit_cost_are_recorded(self):
+    def test_loop_oracle_and_exact_match_failures_are_recorded(self):
         idiom = next(
             item for item in knowledge.load("gcc-4.4.3")
             if item.id == "igui-static-text-breaktext-residual"
@@ -264,9 +264,12 @@ class StaticTextBreakTextEvidenceTests(unittest.TestCase):
 
         self.assertEqual(idiom.status, "hypothesis")
         self.assertIn("506 block-order rows", notes["IGUIStaticText::breakText"])
-        self.assertIn("rejected before an oracle check", idiom.limits)
-        for fact in ("34.03512 to 71.4539", "51.0198 to 37.0099", "34.03512 to 33.62423", "oracle check"):
-            self.assertIn(fact, notes["Rejected loop translations"])
+        self.assertIn("246 of 500 cases", idiom.limits)
+        self.assertIn("no further ancestor-shaped edit was tried", idiom.limits)
+        for fact in ("34.03512 to 71.4539", "51.019802 to 37.0099", "1,679.5229 score-bytes", "500 of 500"):
+            self.assertIn(fact, notes["Full Irrlicht-shaped loop"])
+        for fact in ("100 to 99.94827", "100 to 99.788734", "500 of 500"):
+            self.assertIn(fact, notes["Loop-only form"])
 
     def test_seed_context_and_residual_snapshot_is_recorded(self):
         path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"

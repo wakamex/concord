@@ -715,6 +715,17 @@ def _preserves(before: Evaluation, after: Evaluation) -> bool:
             and all(name in after.fuzzy and after.fuzzy[name] >= score for name, score in before.fuzzy.items()))
 
 
+def _matched_data(evaluation: Evaluation) -> set[int]:
+    return {
+        address + offset
+        for section in evaluation.sections
+        for row in section.get("data_ranges", [])
+        for address in [int(row["address"], 0) if isinstance(row["address"], str) else int(row["address"])]
+        for offset in range(int(row["size"]))
+    }
+
+
+
 def _preserves_with_exact_copies(before: Evaluation, after: Evaluation, other_exact_addresses: set[str]) -> bool:
     """Allow a unit to drop an exact duplicate already emitted by another unchanged unit."""
     if after.error:
@@ -991,12 +1002,13 @@ symbols.save(sys.argv[1],rows)
 
 
 def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> dict:
-    """Measure authored source changes in every consumer.
+    """Measure authored source in every dependent unit under Goal 2.
 
-    Every emitted score must be preserved and at least one function must improve.
+    Each unit keeps its exact functions, except a copy another unchanged unit
+    still emits exactly, and its matched data. A lower function score is allowed
+    when that function is exact elsewhere or the unit's size-weighted score rises.
     A new function counts as a gain only when it is exact and named in symbols.tsv.
-    Each improved inexact function requires oracle evidence, including when its
-    body is unchanged and a header correction changes its generated code.
+    Improved inexact functions require oracle evidence before the source is written.
     """
     originals = {}
     units = set()
@@ -1033,18 +1045,45 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
     gains = []
     for n, unit in enumerate(units):
         before, after = measured[f'before-{n}'], measured[f'after-{n}']
-        accepted = accepted and _preserves_with_exact_copies(before, after, other_exact_addresses) and not before.error
+        if before.error or after.error:
+            accepted = False
+            continue
+        if not _preserves_with_exact_copies(before, after, other_exact_addresses):
+            lowered = [name for name, score in before.fuzzy.items()
+                       if after.fuzzy.get(name, 0.0) < score
+                       and (before.verdict(name) is None
+                            or before.verdict(name).row.get("address") not in other_exact_addresses)]
+            lost_exact = any(not (before.verdict(name) and before.verdict(name).row.get("address") in other_exact_addresses)
+                             for name in {row["symbol"] for section in before.sections
+                                          for row in section.get("functions", [])
+                                          if row["exact"] and function_key(row) not in after.exact_functions()})
+            if lost_exact or not lowered or net_gain(before, after) <= 0:
+                accepted = False
+                continue
+        if not _matched_data(before) <= _matched_data(after):
+            accepted = False
+            continue
         for symbol in after.fuzzy:
-            if keep_improvement(before, after, symbol, known=symbol in known_symbols,
-                                other_exact_addresses=other_exact_addresses):
-                verdict = after.verdict(symbol)
-                evidence = None
-                kept = True
-                if not verdict.row['exact']:
-                    kept, evidence = oracle.gate_objects(harvest, unit, symbol, before.object, after.object)
-                    kept = kept and evidence is not None
-                accepted = accepted and kept
-                gains.append({'unit': unit, 'symbol': symbol, 'before': before.fuzzy.get(symbol),
+            old_score = before.fuzzy.get(symbol)
+            verdict = after.verdict(symbol)
+            old_verdict = before.verdict(symbol)
+            if verdict is None:
+                continue
+            if old_score is None:
+                improved = bool(verdict.row['exact'] and symbol in known_symbols)
+            else:
+                improved = (after.fuzzy[symbol] > old_score
+                            or bool(verdict.row['exact'] and old_verdict and not old_verdict.row['exact']))
+            if not improved:
+                continue
+            evidence = None
+            kept = True
+            if not verdict.row['exact']:
+                kept, evidence = oracle.gate_objects(harvest, unit, symbol, before.object, after.object)
+                kept = kept and evidence is not None
+            accepted = accepted and kept
+            if kept:
+                gains.append({'unit': unit, 'symbol': symbol, 'before': old_score,
                               'score': after.fuzzy[symbol], 'exact': verdict.row['exact'], 'oracle': evidence})
     accepted = bool(accepted and gains)
     if accepted and write:
