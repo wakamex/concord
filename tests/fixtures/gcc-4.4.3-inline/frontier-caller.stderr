@@ -1,0 +1,38 @@
+/out/frontier.cpp: In destructor 'virtual Box::~Box()':
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:24: warning: called from here
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:24: warning: called from here
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:24: warning: called from here
+/out/frontier.cpp: In destructor 'virtual Box::~Box()':
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:24: warning: called from here
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:24: warning: called from here
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:24: warning: called from here
+/out/frontier.cpp: In constructor 'Box::Box(const char*)':
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:23: warning: called from here
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:23: warning: called from here
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:23: warning: called from here
+/out/frontier.cpp: In function 'void credits()':
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:23: warning: called from here
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:23: warning: called from here
+/out/frontier.cpp:17: warning: inlining failed in call to 'Text::~Text()': call is unlikely and code size would grow
+/out/frontier.cpp:23: warning: called from here
+/out/frontier.cpp:23: warning: inlining failed in call to 'Box::Box(const char*)': --param large-function-growth limit reached
+/out/frontier.cpp:32: warning: called from here
+/out/frontier.cpp:23: warning: inlining failed in call to 'Box::Box(const char*)': --param large-function-growth limit reached
+/out/frontier.cpp:33: warning: called from here
+/out/frontier.cpp:23: warning: inlining failed in call to 'Box::Box(const char*)': --param large-function-growth limit reached
+/out/frontier.cpp:34: warning: called from here
+/out/frontier.cpp:23: warning: inlining failed in call to 'Box::Box(const char*)': --param large-function-growth limit reached
+/out/frontier.cpp:35: warning: called from here
+/out/frontier.cpp:23: warning: inlining failed in call to 'Box::Box(const char*)': --param large-function-growth limit reached
+/out/frontier.cpp:36: warning: called from here

@@ -9,7 +9,7 @@ from pathlib import Path
 from hv import builds, toolchain
 
 
-def collect(unit: str, destination: str) -> dict:
+def collect(unit: str, destination: str, inline_unit_growth: str | None = None) -> dict:
     root = builds.ROOT.resolve()
     out = Path(destination).resolve()
     if not out.is_relative_to(root / "build" / "concord"):
@@ -21,9 +21,14 @@ def collect(unit: str, destination: str) -> dict:
     command = compiler.compile_command(source, "trace")
     command[command.index('-c')] = '-S'
     command[command.index('-o') + 1] = '/out/trace.s'
-    command += ["-g", "-dp", "-fdump-tree-all-details-lineno-uid-blocks", "-fdump-rtl-all",
+    command += ["-g", "-dp", "-Winline", "-fdump-tree-all-details-lineno-uid-blocks", "-fdump-rtl-all",
                 "-fdump-rtl-expand-details", "-fdump-ipa-inline",
                 "-dumpbase", "/out/trace"]
+    if inline_unit_growth is not None:
+        growth = int(inline_unit_growth)
+        if growth < 0:
+            raise ValueError('inline-unit-growth must be nonnegative')
+        command += ['--param', f'inline-unit-growth={growth}']
     assembler = [compiler.flags['compiler'], '-c', '/out/trace.s', '-o', '/out/trace.o', '-Wa,-adln']
     # Listings can quote non-UTF-8 source bytes. Keep the original bytes rather
     # than routing them through toolchain.command's strict text decoder.

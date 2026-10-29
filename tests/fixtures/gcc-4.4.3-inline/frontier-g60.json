@@ -1,0 +1,32 @@
+{
+  "compiler_version": "g++ (Ubuntu 4.4.3-4ubuntu5) 4.4.3",
+  "command": [
+    "g++",
+    "-O2",
+    "-Isrc",
+    "-Isrc/HarvestFull",
+    "-Ithird_party/luajit-2.0.0-beta8/include",
+    "-MD",
+    "-MF",
+    "/out/g60.d",
+    "-c",
+    "/out/frontier.cpp",
+    "-o",
+    "/out/g60.o",
+    "-Winline",
+    "-fdump-ipa-inline",
+    "-fdump-tree-einline-details",
+    "-dumpbase",
+    "/out/g60",
+    "--param",
+    "large-unit-insns=1",
+    "--param",
+    "inline-unit-growth=60"
+  ],
+  "source_sha256": "53417430c641b4879fb49cb4f323c1bf8692ca730866b5e7d0d5eba159527930",
+  "raw_dump_sha256": "caf9c6426de3da6f33753b9240acc3fcc1b0b5e54a307a0882bffa706f52f58b",
+  "excerpt_sha256": "cfa99fedc892cdec2ef9e5ac9aa3bef09915fcf68f8980f6cf0fd9dc3fd8ef30",
+  "extraction": "Complete decision block followed by non-clone graph estimate lines, in compiler order.",
+  "container_image_id": "b94ef6033199879fb811edc1d642923532b9213f245eb081646157559e3d45dd",
+  "package_manifest_sha256": "e379f2252a8cdda9e94b71c872e83c863e7e7961180fa62ea95e8f763fafaf5e"
+}

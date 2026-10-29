@@ -383,6 +383,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_budget.add_argument("--harvest", type=Path, help="also compare CString literal sites in compiled objects")
     p_budget.add_argument("--unit", help="unit for the literal-site comparison")
     p_budget.add_argument("--symbol", action="append", default=[], help="function to compare (repeatable)")
+    p_budget.add_argument("--literal-callee", help="also inspect literal arguments of this constructor (unqualified type name)")
+    p_budget.add_argument("--warnings", type=Path, help="GCC -Winline stderr, including final rejected source sites")
+    p_budget.add_argument("--probe-unit-growth", type=int, action="append", default=[], help="diagnostic unchanged-source unit-growth cap (repeat for an ordered frontier)")
     p_budget.add_argument("--probe-constructions", action="store_true", help="screen named temporary forms at mismatched literal sites as overlays")
     p_budget.add_argument("--apply", action="store_true", help="apply an eligible construction probe through author and its oracle")
 
@@ -789,8 +792,22 @@ def _dispatch(argv: list[str] | None = None) -> int:
             if not (args.harvest and args.unit and args.symbol):
                 parser.error('literal sites require --harvest, --unit and --symbol')
             harvest = Harvest(args.harvest)
-            report['verification'] = inline_budget.verify_dump(harvest, args.unit, args.symbol, args.dump)
-            report['literal_sites'] = inline_budget.sites(harvest, args.unit, args.symbol)
+            report['verification'] = inline_budget.verify_dump(harvest, args.unit, args.symbol, args.dump, warnings=args.warnings)
+            report['literal_sites'] = inline_budget.sites(harvest, args.unit, args.symbol, callee=args.literal_callee)
+        if args.warnings:
+            import hashlib
+
+            report['rejected_sites'] = inline_budget.rejected_sites(report, args.warnings.read_text(errors='replace'))
+            report['warnings'] = {'path': str(args.warnings.resolve()),
+                                  'sha256': hashlib.sha256(args.warnings.read_bytes()).hexdigest()}
+        if args.probe_unit_growth:
+            if not (args.harvest and args.unit and len(args.symbol) == 1 and args.params_def):
+                parser.error('--probe-unit-growth requires --harvest, --unit, one --symbol and --params-def')
+            if min(args.probe_unit_growth) < 0:
+                parser.error('--probe-unit-growth must be nonnegative')
+            report['unit_growth_probe'] = inline_budget.unit_growth_probe(
+                Harvest(args.harvest), args.unit, args.symbol[0], args.probe_unit_growth,
+                args.params_def, callee=args.literal_callee)
         if args.probe_constructions:
             if not (args.harvest and args.unit and len(args.symbol) == 1):
                 parser.error('--probe-constructions requires --harvest, --unit and one --symbol')
@@ -805,13 +822,28 @@ def _dispatch(argv: list[str] | None = None) -> int:
         print(f"pass_ipa_inline: {report['starting_insns']} -> {report['final_insns']} estimated instructions; {report['inlined_calls']} calls inlined")
         for reason, count in report['rejections'].items():
             print(f"  {count}: {reason}")
+        for row in report.get('rejected_sites', []):
+            if args.symbol:
+                from concord.transforms import demangle
+
+                if not any((row.get('caller') or '').endswith(demangle(s)) for s in args.symbol):
+                    continue
+            if row['call_chain']:
+                site = row['call_chain'][-1]
+                state = f"unit {row['unit_final_insns']}/{row.get('unit_limit')}"
+                if 'projected_caller_insns' in row:
+                    state += f"; projected caller {row['projected_caller_insns']}/{row.get('function_growth_limit')}"
+                print(f"  {site['path']}:{site['line']}: {row['deciding_quantity']}: {state}")
         for row in report.get('comparison', {}).get('functions', [])[:12]:
             print(f"  {row['delta']:+d}: {row['name']}")
         for function in report.get('literal_sites', []):
             differences = [r for r in function['sites'] if r['ours']['decision'] != r['target']['decision']]
             print(f"  {function['symbol']}: {len(function['sites'])} literal sites, {len(differences)} different decisions")
             for row in differences:
-                print(f"    {row['source_line']}: {row['literal']}: ours {row['ours']['decision']}, target {row['target']['decision']}")
+                print(f"    {row['source_line']}: {row['literal']!r}: ours {row['ours']['decision']}, target {row['target']['decision']}")
+        for row in report.get('unit_growth_probe', {}).get('site_order_witnesses', []):
+            print(f"  {row['source_line']}: {row['literal']!r}: heap pop {row['heap_pop_order']}, "
+                  f"growth {row.get('edge_growth')}, unit {row['unit_insns_before']}/{row.get('unit_limit_before')}")
         if 'probe' in report:
             probe = report['probe']
             print(f"  {len(probe['candidates'])} construction overlays; chosen: {probe['chosen'] or 'none'}; applied: {probe['applied']}")

@@ -1,0 +1,150 @@
+Deciding on inlining.  Starting with 822 insns.
+
+Inlining always_inline functions:
+
+Deciding on smaller functions:
+Considering inline candidate Box::Box(const char*).
+Considering inline candidate Text::~Text().
+Considering inline candidate Text::Text(const char*).
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +19 insns.
+ Estimated badness is 24, frequency 1.00.
+ Inlined into virtual Box::~Box() which now has 139 insns,net change of +2 insns.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +17 insns.
+ Estimated badness is 22, frequency 1.00.
+ Inlined into virtual Box::~Box() which now has 152 insns,net change of +2 insns.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +15 insns.
+ Estimated badness is 20, frequency 1.00.
+ Inlined into virtual Box::~Box() which now has 154 insns,net change of +2 insns.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +13 insns.
+ Estimated badness is 18, frequency 1.00.
+ Inlined into virtual Box::~Box() which now has 156 insns,net change of +2 insns.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +11 insns.
+ Estimated badness is 16, frequency 1.00.
+ Inlined into virtual Box::~Box() which now has 158 insns,net change of +2 insns.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +9 insns.
+ Estimated badness is 14, frequency 1.00.
+ Inlined into virtual Box::~Box() which now has 141 insns,net change of +2 insns.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +7 insns.
+ Estimated badness is 12, frequency 1.00.
+ Inlined into virtual Box::~Box() which now has 143 insns,net change of +2 insns.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +5 insns.
+ Estimated badness is 10, frequency 1.00.
+ Inlined into virtual Box::~Box() which now has 145 insns,net change of +2 insns.
+
+Considering Text::Text(const char*) with 43 insns
+ to be inlined into Box::Box(const char*)
+ Estimated growth after inlined into all callees is +73 insns.
+ Estimated badness is 147, frequency 1.00.
+ Inlined into Box::Box(const char*) which now has 170 insns,net change of +29 insns.
+
+Considering Text::Text(const char*) with 43 insns
+ to be inlined into Box::Box(const char*)
+ Estimated growth after inlined into all callees is +44 insns.
+ Estimated badness is 118, frequency 1.00.
+ Inlined into Box::Box(const char*) which now has 199 insns,net change of +29 insns.
+
+Considering Text::Text(const char*) with 43 insns
+ to be inlined into Box::Box(const char*)
+ Estimated growth after inlined into all callees is +15 insns.
+ Estimated badness is 89, frequency 1.00.
+ Inlined into Box::Box(const char*) which now has 228 insns,net change of +29 insns.
+
+Considering Text::Text(const char*) with 43 insns
+ to be inlined into Box::Box(const char*)
+ Estimated growth after inlined into all callees is -14 insns.
+ Estimated badness is 60, frequency 1.00.
+ Inlined into Box::Box(const char*) which now has 257 insns,net change of -14 insns.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 515, frequency 0.00.
+ inline_failed:call is unlikely and code size would grow.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 515, frequency 0.00.
+ inline_failed:call is unlikely and code size would grow.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 515, frequency 0.00.
+ inline_failed:call is unlikely and code size would grow.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into Box::Box(const char*)
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 515, frequency 0.00.
+ inline_failed:call is unlikely and code size would grow.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into Box::Box(const char*)
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 515, frequency 0.00.
+ inline_failed:call is unlikely and code size would grow.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into Box::Box(const char*)
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 515, frequency 0.00.
+ inline_failed:call is unlikely and code size would grow.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 515, frequency 0.00.
+ inline_failed:call is unlikely and code size would grow.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 515, frequency 0.00.
+ inline_failed:call is unlikely and code size would grow.
+
+Considering Text::~Text() with 15 insns
+ to be inlined into virtual Box::~Box()
+ Estimated growth after inlined into all callees is +3 insns.
+ Estimated badness is 515, frequency 0.00.
+ inline_failed:call is unlikely and code size would grow.
+
+Considering Box::Box(const char*) with 257 insns
+ to be inlined into void credits()
+ Estimated growth after inlined into all callees is +1201 insns.
+ Estimated badness is 1823, frequency 1.00.
+ Inlined into void credits() which now has 579 insns,net change of +243 insns.
+
+Deciding on functions called once:
+
+Inlined 14 calls, eliminated 2 functions, 822 insns turned to 1154 insns.
+
+void credits()/14(10): availability:available 336 insns (579 after inlining) needed body externally_visible finalized inlinable
+virtual Box::~Box()/13(9): availability:available 150 insns (158 after inlining) needed body externally_visible finalized inlinable
+virtual Box::~Box()/12(8): availability:available 137 insns (145 after inlining) needed body externally_visible finalized inlinable
+Box::Box(const char*)/9(6): availability:available 141 insns (257 after inlining) reachable body externally_visible finalized inlinable
+Text::~Text()/6(4): availability:available 15 insns reachable body externally_visible finalized inlinable

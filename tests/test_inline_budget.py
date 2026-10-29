@@ -8,6 +8,111 @@ FIXTURE = Path(__file__).parent / 'fixtures/gcc-4.4.3-inline/reader.inline'
 
 
 class InlineBudget(unittest.TestCase):
+    def test_caller_limit_rejection_keeps_projected_size_and_heap_order(self):
+        from concord.inline_budget import budgets
+
+        report = parse('''Deciding on inlining.  Starting with 1000 insns.
+Deciding on smaller functions:
+Considering inline candidate Box::Box().
+Considering Box::Box() with 367 insns
+ to be inlined into caller()
+ Estimated growth after inlined into all callees is +329 insns.
+ Estimated badness is 1219, frequency 1.00.
+ Not inlining into caller():--param large-function-growth limit reached.
+Inlined 0 calls, eliminated 0 functions, 1000 insns turned to 1000 insns.
+caller()/1(1): availability:available 2381 insns
+Box::Box()/2(2): availability:available 155 insns (367 after inlining)
+''')
+        edge = report['events'][-1]
+        self.assertEqual(edge['outcome'], 'rejected')
+        self.assertEqual(edge['heap_pop_order'], 1)
+        params = {'large-unit-insns': 10000, 'inline-unit-growth': 30,
+                  'large-function-insns': 2700, 'large-function-growth': 100}
+        [budget] = budgets(report, params)['events']
+        self.assertEqual(budget['caller_insns_before'], 2381)
+        self.assertEqual(budget['function_growth_limit'], 4762)
+        self.assertEqual(budget['unit_insns_before'], 1000)
+
+    def test_warning_sites_name_the_final_gate_without_guessing_pop_order(self):
+        from concord.inline_budget import warning_sites
+
+        text = '''src/story.h:28: warning: inlining failed in call to 'Box::Box(const wchar_t*)': --param inline-unit-growth limit reached
+src/scenario.cpp:391: warning: called from here
+src/string.h:103: warning: inlining failed in call to 'String::~String()': call is unlikely and code size would grow
+src/story.h:30: warning: called from here
+src/scenario.cpp:379: warning: called from here
+'''
+        rows = warning_sites(text)
+        self.assertEqual(rows[0]['call_chain'], [{'path': 'src/scenario.cpp', 'line': 391}])
+        self.assertEqual(rows[0]['deciding_quantity'], 'inline-unit-growth')
+        self.assertEqual(len(rows[1]['call_chain']), 2)
+        self.assertEqual(rows[1]['deciding_quantity'], 'edge-frequency')
+        self.assertNotIn('heap_pop_order', rows[0])
+
+    def test_indirect_constructor_literals_are_opt_in_and_decode_simple_escapes(self):
+        from concord.inline_budget import literal_sites
+        from tests.test_calls_constants import refs
+
+        source = b'new Box(L"Jens\\nCredit");'
+        sections = {'.rodata.str4.8': 'Jens\nCredit\0'.encode('utf-32le')}
+        body = refs(datarefs=[(0, '.rodata.str4.8', 0, 'mov', '')])
+        self.assertEqual(literal_sites(source, body, body, sections, sections), [])
+        [row] = literal_sites(source, body, body, sections, sections, callee='Box')
+        self.assertEqual(row['literal'], 'Jens\nCredit')
+        self.assertEqual(row['construction_callee'], 'Box')
+        self.assertEqual(row['ours']['decision'], 'out-of-line')
+
+    def test_frontier_join_requires_one_changed_site_and_an_identical_decision_prefix(self):
+        from concord.inline_budget import frontier_join
+
+        edge = {'callee': 'Box::Box()', 'caller': 'caller()', 'callee_insns': 367,
+                'outcome': 'inlined', 'phase': 'smaller-functions', 'order': 10,
+                'heap_pop_order': 2, 'edge_growth': 348}
+        before = {'events': [], 'sites': [{'literal': 'One', 'source_line': 12, 'ours': {'decision': 'out-of-line'}}]}
+        after = {'events': [edge], 'sites': [{'literal': 'One', 'source_line': 12, 'construction_callee': 'Box', 'ours': {'decision': 'inlined'}}],
+                 'budgets': {'events': [{'order': 10, 'unit_insns_before': 1000, 'unit_limit_before': 1100}]}}
+        [witness] = frontier_join(before, after)
+        self.assertEqual(witness['literal'], 'One')
+        self.assertEqual(witness['heap_pop_order'], 2)
+        self.assertEqual(witness['edge_growth'], 348)
+        self.assertEqual(witness['unit_limit_before'], 1100)
+        before['events'] = [{**edge, 'outcome': 'rejected'}]
+        self.assertEqual(frontier_join(before, after), [])
+
+    def test_real_reproducer_names_unit_and_caller_gates(self):
+        import hashlib
+        import json
+
+        from concord.inline_budget import budgets, rejected_sites
+
+        directory = FIXTURE.parent
+        report = load(directory / 'frontier-caller.inline')
+        params = {'large-unit-insns': 1, 'inline-unit-growth': 60, 'large-function-insns': 700,
+                  'large-function-growth': 100, 'inline-call-cost': 12}
+        report['budgets'] = budgets(report, params)
+        warnings = rejected_sites(report, (directory / 'frontier-caller.stderr').read_text())
+        box = [r for r in warnings if r['callee'] == 'Box::Box(const char*)']
+        self.assertEqual(len(box), 5)
+        self.assertEqual(box[0]['deciding_quantity'], 'large-function-growth')
+        self.assertEqual(box[0]['projected_caller_insns'], 822)
+        self.assertEqual(box[0]['function_growth_limit'], 700)
+        self.assertEqual(report['budgets']['unit_limit'], 1315)
+        self.assertEqual(report['final_insns'], 1154)
+        rejected = [e for e in report['events'] if e.get('reason') == '--param large-function-growth limit reached']
+        self.assertEqual(len(rejected), 5)
+        report = load(directory / 'frontier-g30.inline')
+        report['budgets'] = budgets(report, {**params, 'inline-unit-growth': 30, 'large-function-insns': 2700})
+        warnings = rejected_sites(report, (directory / 'frontier-g30.stderr').read_text())
+        box = [r for r in warnings if r['callee'] == 'Box::Box(const char*)']
+        self.assertEqual(len(box), 5)
+        self.assertEqual(box[0]['deciding_quantity'], 'inline-unit-growth')
+        self.assertEqual(box[0]['unit_limit'], 1068)
+        self.assertEqual(box[0]['unit_final_insns'], 1154)
+        meta = json.loads((directory / 'frontier-caller.json').read_text())
+        self.assertEqual(meta['source_sha256'], hashlib.sha256((directory / 'frontier.cpp').read_bytes()).hexdigest())
+        self.assertEqual(meta['excerpt_sha256'], hashlib.sha256((directory / 'frontier-caller.inline').read_bytes()).hexdigest())
+
+
     def test_real_dump_estimates_and_decisions(self):
         report = load(FIXTURE)
         self.assertEqual(report['starting_insns'], 9029)

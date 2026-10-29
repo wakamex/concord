@@ -17,6 +17,7 @@ def parse(text: str) -> dict:
     if not start or not summary:
         raise ValueError('expected a complete GCC IPA inline decision summary')
     events, functions, current = [], {}, None
+    heap_pops = 0
     phase = None
     decision_end = text[:summary.start()].count('\n') + 1
     for number, line in enumerate(text.splitlines(), 1):
@@ -31,6 +32,9 @@ def parse(text: str) -> dict:
         if number < decision_end and (match := CONSIDER.match(line)):
             current = {'callee': match[1], 'callee_insns': int(match[2]), 'line': number,
                        'order': len(events) + 1, 'phase': phase}
+            if phase == 'smaller-functions':
+                heap_pops += 1
+                current['heap_pop_order'] = heap_pops
             events.append(current)
         elif number < decision_end and line.startswith('Considering inline candidate '):
             current = {'callee': line.removeprefix('Considering inline candidate ').removesuffix('.'),
@@ -51,6 +55,8 @@ def parse(text: str) -> dict:
                     current['caller_insns_after'] = int(caller[1])
             elif 'inline_failed:' in line:
                 current.update(outcome='rejected', reason=line.split('inline_failed:', 1)[1].strip())
+            elif match := re.match(r' Not inlining into (.+):(--param .+)\.$', line):
+                current.update(caller=match[1], outcome='rejected', reason=match[2])
             elif line.startswith('Inlining failed: '):
                 current.update(outcome='rejected', reason=line.removeprefix('Inlining failed: '))
             elif 'Inline limit reached, not inlined.' in line:
@@ -64,6 +70,8 @@ def parse(text: str) -> dict:
     sizes = {row['name']: row['initial_insns'] for row in functions.values() if names[row['name']] == 1}
     for event in events:
         caller = event.get('caller')
+        if caller in sizes:
+            event.setdefault('caller_insns_before', sizes[caller])
         if 'caller_insns_after' in event:
             before = event.get('caller_insns_before', sizes.get(caller))
             if before is not None:
@@ -79,12 +87,13 @@ def parse(text: str) -> dict:
             'functions': sorted(functions.values(), key=lambda r: (-r['initial_insns'], r['name']))}
 
 
-def literal_sites(source: bytes, ours, target, ours_sections: dict, target_sections: dict) -> list[dict]:
+def literal_sites(source: bytes, ours, target, ours_sections: dict, target_sections: dict, *, callee: str | None = None) -> list[dict]:
     """CString literal constructions with raw reference offsets on both sides.
 
     One reference denotes an out-of-line construction and three denote the
-    inlined pointer constructor in this pinned build. Repeated literals and
-    other counts stay unresolved, since counts cannot identify their sites.
+    expanded string loop in this pinned build. A named enclosing constructor
+    is opt-in because its reference multiplicity must be established first.
+    Repeated literals and other counts stay unresolved.
     """
     from concord.calls_constants import _pooled_literal
     from concord.transforms import CPP, Parser
@@ -114,21 +123,30 @@ def literal_sites(source: bytes, ours, target, ours_sections: dict, target_secti
         else:
             continue
         function = call.child_by_field_name('function') if call else None
+        if call is not None and call.type == 'new_expression':
+            function = call.child_by_field_name('type')
         if call is not None and call.type == 'init_declarator' and call.parent.type == 'declaration':
             function = call.parent.child_by_field_name('type')
-        if function is None or not re.search(rb'\bCString\s*<\s*(?:char|wchar_t)\s*>$', function.text):
+        if function is None or not (re.search(rb'\bCString\s*<\s*(?:char|wchar_t)\s*>$', function.text)
+                                    or (callee and function.text.decode().split('::')[-1] == callee)):
             continue
         raw = node.text
-        # Escaped and concatenated literals need C++ evaluation; do not
-        # guess their byte values or the compiler's reference multiplicity.
-        if not raw.startswith((b'"', b'L"')) or b'\\' in raw:
+        # Concatenated and raw literals need C++ evaluation.
+        if not raw.startswith((b'"', b'L"')):
             continue
         encoding = 'utf32le' if raw.startswith(b'L') else 'utf8'
         value = raw[2:-1] if encoding == 'utf32le' else raw[1:-1]
+        # Only decode common single-character C++ escapes. Numeric escapes,
+        # concatenation and raw strings need compiler evaluation.
+        escapes = {'n': '\n', 'r': '\r', 't': '\t', '\\': '\\', '"': '"', "'": "'"}
         label = value.decode('utf8', 'backslashreplace')
-        value = label.encode('utf-32le') if encoding == 'utf32le' else value
+        if any(m[1] not in escapes for m in re.finditer(r'\\(.)?', label)):
+            continue
+        label = re.sub(r'\\(.)', lambda m, escapes=escapes: escapes[m[1]], label)
+        value = label.encode('utf-32le' if encoding == 'utf32le' else 'utf8')
         row = {'literal': label, 'encoding': encoding, 'source_line': source.count(b'\n', 0, node.start_byte) + 1,
                'source_occurrences': counts[raw]}
+        row['construction_callee'] = function.text.decode()
         for side, found in zip(('ours', 'target'), references, strict=True):
             offsets = found[encoding, value]
             decision = {1: 'out-of-line', 3: 'inlined'}.get(len(offsets), 'unresolved') if counts[raw] == 1 else 'unresolved'
@@ -137,7 +155,7 @@ def literal_sites(source: bytes, ours, target, ours_sections: dict, target_secti
     return rows
 
 
-def sites(harvest, unit: str, symbols: list[str]) -> list[dict]:
+def sites(harvest, unit: str, symbols: list[str], *, callee: str | None = None) -> list[dict]:
     from concord.calls_constants import read_refs, read_string_sections
     from concord.transforms import find_function
 
@@ -152,7 +170,7 @@ def sites(harvest, unit: str, symbols: list[str]) -> list[dict]:
     for symbol in symbols:
         scope = find_function(source, symbol)
         first_line = source.count(b'\n', 0, scope.start_byte)
-        literals = literal_sites(scope.text, ours[symbol], target[symbol], ours_sections, target_sections)
+        literals = literal_sites(scope.text, ours[symbol], target[symbol], ours_sections, target_sections, callee=callee)
         for row in literals:
             row['source_line'] += first_line
         rows.append({'unit': unit, 'symbol': symbol, 'source_sha256': hashlib.sha256(source).hexdigest(),
@@ -162,7 +180,7 @@ def sites(harvest, unit: str, symbols: list[str]) -> list[dict]:
     return rows
 
 
-def verify_dump(harvest, unit: str, symbols: list[str], path: Path) -> dict:
+def verify_dump(harvest, unit: str, symbols: list[str], path: Path, *, warnings: Path | None = None) -> dict:
     """Reject stale diagnostics and confirm the traced function's canonical bytes."""
     import json
 
@@ -180,6 +198,9 @@ def verify_dump(harvest, unit: str, symbols: list[str], path: Path) -> dict:
             raise ValueError(f'diagnostic function differs from the canonical compile: {symbol}')
     if metadata.get('artifacts', {}).get(path.name) != hashlib.sha256(path.read_bytes()).hexdigest():
         raise ValueError('inline dump changed after collection')
+    if warnings is not None and (warnings.parent.resolve() != path.parent.resolve()
+                                or metadata.get('artifacts', {}).get(warnings.name) != hashlib.sha256(warnings.read_bytes()).hexdigest()):
+        raise ValueError('warnings must be an unchanged artifact of the same dump collection')
     return {'inputs_verified': True, 'function_bytes_and_relocation_offsets_verified': True,
             'diagnostic_object_sha256': hashlib.sha256(diagnostic.read_bytes()).hexdigest()}
 
@@ -201,10 +222,10 @@ def budgets(report: dict, params: dict[str, int]) -> dict:
     for event in report['events']:
         if event['phase'] == 'smaller-functions' and greedy_start is None:
             greedy_start = minimum = size
-        if 'net_change' not in event:
-            continue
         before = size
-        size += event['net_change']
+        size += event.get('net_change', 0)
+        if 'net_change' not in event and event.get('outcome') != 'rejected':
+            continue
         row = {'order': event['order'], 'unit_insns_before': before, 'unit_insns_after': size}
         if event['phase'] == 'smaller-functions':
             row['unit_limit_before'] = max(minimum, params['large-unit-insns']) * (100 + params['inline-unit-growth']) // 100
@@ -214,6 +235,8 @@ def budgets(report: dict, params: dict[str, int]) -> dict:
         if caller is not None and callee is not None:
             base = max(caller, callee)
             row['function_growth_limit'] = max(params['large-function-insns'], base + base * params['large-function-growth'] // 100)
+        if 'caller_insns_before' in event:
+            row['caller_insns_before'] = event['caller_insns_before']
         trace.append(row)
     complete = size == report['final_insns']
     limit = max(minimum, params['large-unit-insns']) * (100 + params['inline-unit-growth']) // 100 if minimum is not None else None
@@ -223,6 +246,134 @@ def budgets(report: dict, params: dict[str, int]) -> dict:
             'accounted_final_insns': size, 'complete_net_change_trace': complete,
             'events': trace,
             'site_order': 'The dump orders caller/callee decisions but does not print edge IDs or literal arguments; literal sites cannot be assigned a heap-pop order from this dump.'}
+
+
+def warning_sites(text: str) -> list[dict]:
+    """Read GCC -Winline's final rejected sites, including nested call chains."""
+    rows, current = [], None
+    caller = None
+    for line in text.splitlines():
+        if match := re.search(r"In (?:member function|function|constructor|destructor) '(.+)':$", line):
+            caller = match[1]
+        if match := re.match(r"(.+):(\d+): warning: inlining failed in call to '(.+)': (.+)$", line):
+            reason = match[4]
+            parameter = re.search(r'--param ([\w-]+)', reason)
+            current = {'callee': match[3], 'caller': caller,
+                       'definition': {'path': match[1], 'line': int(match[2])},
+                       'reason': reason, 'call_chain': [],
+                       'deciding_quantity': parameter[1] if parameter else 'edge-frequency' if reason.startswith('call is unlikely') else 'unresolved'}
+            rows.append(current)
+        elif current is not None and (match := re.match(r'(.+):(\d+): warning: called from here$', line)):
+            current['call_chain'].append({'path': match[1], 'line': int(match[2])})
+    return rows
+
+
+def rejected_sites(report: dict, warnings: str) -> list[dict]:
+    """Name final gates with observed unit state and caller growth estimates.
+
+    A drained heap does not print a pop for each remaining edge. Keep those
+    sites unordered; do not mistake the final caller size for its size at an
+    earlier heap pop or claim that an unvisited edge passed the caller limit.
+    """
+    rows = warning_sites(warnings)
+    budget = report.get('budgets', {})
+    functions = defaultdict(list)
+    for function in report['functions']:
+        functions[function['name']].append(function)
+    for row in rows:
+        row['unit_final_insns'] = report['final_insns']
+        row['unit_limit'] = budget.get('unit_limit')
+        events = [e for e in report['events'] if e.get('callee') == row['callee'] and 'edge_growth' in e]
+        growth = {e['edge_growth'] for e in events}
+        callers = functions.get(row['caller'], [])
+        if len(callers) == 1:
+            caller = callers[0]
+            row['caller_final_insns'] = caller['final_insns']
+            if len(growth) == 1:
+                row['observed_same_callee_edge_growth'] = next(iter(growth))
+                row['projected_caller_insns'] = caller['final_insns'] + next(iter(growth))
+            params = budget.get('params')
+            callees = functions.get(row['callee'], [])
+            if params and len(callees) == 1:
+                base = max(caller['initial_insns'], callees[0]['initial_insns'])
+                row['function_growth_limit'] = max(params['large-function-insns'], base + base * params['large-function-growth'] // 100)
+    return rows
+
+
+def frontier_join(before: dict, after: dict) -> list[dict]:
+    """Join one literal's transition to one new accepted edge, never by position.
+
+    Lower unit caps stop the same greedy stream sooner. Require its entire
+    printed prefix to agree, and exactly one new accepted edge and one literal
+    transition. Equal-priority edges without such a witness stay unresolved.
+    """
+    def stream(sample):
+        return [e for e in sample['events'] if 'heap_pop_order' in e]
+
+    old, new = stream(before), stream(after)
+    keys = ('callee', 'caller', 'outcome', 'reason', 'callee_insns', 'growth_all_calls', 'badness', 'frequency', 'caller_insns_after', 'net_change')
+    if before.get('starting_insns') != after.get('starting_insns') or len(new) < len(old) or any(any(a.get(k) != b.get(k) for k in keys) for a, b in zip(old, new, strict=False)):
+        return []
+    accepted = [e for e in new[len(old):] if e.get('outcome') == 'inlined']
+    previous = {(r['literal'], r['source_line']): r for r in before['sites']}
+    changed = [r for r in after['sites'] if (r['literal'], r['source_line']) in previous
+               and r['ours']['decision'] == 'inlined'
+               and previous[r['literal'], r['source_line']]['ours']['decision'] == 'out-of-line']
+    if len(accepted) != 1 or len(changed) != 1:
+        return []
+    edge, site = accepted[0], changed[0]
+    if after.get('caller') and not edge.get('caller', '').endswith(after['caller']):
+        return []
+    constructor = site.get('construction_callee', '').split('::')[-1]
+    if not constructor or not re.search(r'(?:^|::)' + re.escape(constructor) + r'\(', edge['callee']):
+        return []
+    budget = next((r for r in after['budgets']['events'] if r['order'] == edge['order']), {})
+    return [{'literal': site['literal'], 'source_line': site['source_line'], **edge, **budget}]
+
+
+def unit_growth_probe(harvest, unit: str, symbol: str, growths: list[int], params_def: Path, *, callee: str | None = None) -> dict:
+    """Collect unchanged-source compiler counterfactuals, leaving build flags alone."""
+    import json
+
+    from concord import causal
+    from concord.calls_constants import read_refs, read_string_sections
+    from concord.transforms import demangle, find_function
+
+    unit = harvest.source(unit)
+    source = (harvest.root / 'src' / unit).read_bytes()
+    scope = find_function(source, symbol)
+    target_path = harvest.objects / 'target' / f'{harvest.slug(unit)}.o'
+    target = read_refs(target_path, {symbol})[symbol]
+    target_sections = read_string_sections(target_path)
+    samples, witnesses = [], []
+    inputs = None
+    for growth in sorted(set(growths)):
+        directory = causal.collect(harvest, unit, inline_unit_growth=growth)
+        dump = next(directory.glob('*.inline'))
+        metadata = json.loads((directory / 'metadata.json').read_text())
+        causal.verify_inputs(harvest.root, unit, metadata)
+        if metadata['inputs']['src/' + unit] != hashlib.sha256(source).hexdigest() or (inputs is not None and metadata['inputs'] != inputs):
+            raise ValueError('source inputs changed during unit-growth probe')
+        inputs = metadata['inputs']
+        report = load(dump)
+        report['compiler'] = metadata
+        report['caller'] = demangle(symbol)
+        report['inline_unit_growth'] = growth
+        report['budgets'] = budgets(report, parameters(params_def, metadata['command']))
+        report['rejected_sites'] = rejected_sites(report, (directory / 'compiler.stderr').read_text(errors='replace'))
+        obj = directory / 'trace.o'
+        report['object_sha256'] = hashlib.sha256(obj.read_bytes()).hexdigest()
+        report['sites'] = literal_sites(scope.text, read_refs(obj, {symbol})[symbol], target,
+                                        read_string_sections(obj), target_sections, callee=callee)
+        for row in report['sites']:
+            row['source_line'] += source.count(b'\n', 0, scope.start_byte)
+        if samples:
+            for witness in frontier_join(samples[-1], report):
+                witnesses.append({**witness, 'before_unit_growth': samples[-1]['inline_unit_growth'], 'after_unit_growth': growth})
+        samples.append(report)
+    return {'changed_input': 'inline-unit-growth', 'source_sha256': hashlib.sha256(source).hexdigest(),
+            'samples': samples, 'site_order_witnesses': witnesses,
+            'target_compiler_estimates': 'unavailable: the target is a binary, not a compiler trace'}
 
 
 def parameters(path: Path, command: list[str] = ()) -> dict:

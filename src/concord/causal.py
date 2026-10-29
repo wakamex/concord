@@ -775,9 +775,10 @@ def verify_inputs(root: Path, unit: str, metadata: dict) -> None:
             raise ValueError(f'dump source input changed: {name}')
 
 
-def collect(harvest: Harvest, unit: str) -> Path:
+def collect(harvest: Harvest, unit: str, *, inline_unit_growth: int | None = None) -> Path:
     out = harvest.root / 'build' / 'concord' / 'causal' / uuid.uuid4().hex
-    done = subprocess.run(['uv', '--no-config', 'run', '--locked', 'python', str(Path(__file__).with_name('causal_driver.py')), unit, str(out)],
+    arguments = [unit, str(out)] + ([str(inline_unit_growth)] if inline_unit_growth is not None else [])
+    done = subprocess.run(['uv', '--no-config', 'run', '--locked', 'python', str(Path(__file__).with_name('causal_driver.py')), *arguments],
                           cwd=harvest.root, capture_output=True, text=True, check=False)
     if done.returncode:
         raise RuntimeError(f'pinned dump collection failed:\n{done.stderr[-4000:]}')
