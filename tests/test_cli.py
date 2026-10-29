@@ -10,6 +10,22 @@ from concord.cli import build_parser, main
 
 
 class CliTest(unittest.TestCase):
+    def test_author_prints_unchanged_source_evidence(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / 'overlay.json'
+            manifest.write_text(json.dumps({'files': {}}))
+            report = {'accepted': True, 'applied': False, 'gains': [
+                {'symbol': 'f', 'before': 50, 'score': 60, 'unchanged_source': {'inlined': ['helper']}}]}
+            with (mock.patch('concord.cli.Harvest'), mock.patch('concord.cli.authored.overlay', return_value=report),
+                  contextlib.redirect_stdout(io.StringIO()) as output):
+                self.assertEqual(main(['author', '--harvest', directory, '--overlay-manifest', str(manifest)]), 0)
+            self.assertIn("unchanged_source={'inlined': ['helper']}", output.getvalue())
+
     def test_scores_base_uses_normalized_snapshots(self):
         from pathlib import Path
         from unittest import mock

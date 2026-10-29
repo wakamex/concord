@@ -26,7 +26,7 @@ from pathlib import Path
 
 from tree_sitter import Parser
 
-from concord import oracle
+from concord import oracle, unchanged_source
 from concord.harvest import Evaluation, Harvest, function_key
 from concord.search import net_gain, other_scores, worse_elsewhere
 from concord.statics import data_layout_improves
@@ -1008,7 +1008,8 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
     still emits exactly, and its matched data. A lower function score is allowed
     when that function is exact elsewhere or the unit's size-weighted score rises.
     A new function counts as a gain only when it is exact and named in symbols.tsv.
-    Improved inexact functions require oracle evidence before the source is written.
+    Improved inexact functions require oracle evidence, or unchanged source for
+    their own body and all transitive inlines in both compiles, before writing.
     """
     originals = {}
     units = set()
@@ -1040,7 +1041,8 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
     for n, unit in enumerate(units):
         items[f'before-{n}'] = (unit, {})
         items[f'after-{n}'] = (unit, {'src/' + name: body for name, body in files.items()})
-    measured = harvest.evaluate_overlays(items)
+    changed = unchanged_source.changed_functions(originals, files)
+    measured = harvest.evaluate_overlays(items, inline_decisions=changed is not None)
     accepted = bool(units)
     gains = []
     for n, unit in enumerate(units):
@@ -1077,14 +1079,19 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
             if not improved:
                 continue
             evidence = None
+            unchanged = None
             kept = True
             if not verdict.row['exact']:
-                kept, evidence = oracle.gate_objects(harvest, unit, symbol, before.object, after.object)
-                kept = kept and evidence is not None
+                unchanged = unchanged_source.evidence(before.object, after.object, symbol, changed)
+                if unchanged is None:
+                    kept, evidence = oracle.gate_objects(harvest, unit, symbol, before.object, after.object)
+                    kept = kept and evidence is not None
             accepted = accepted and kept
             if kept:
-                gains.append({'unit': unit, 'symbol': symbol, 'before': old_score,
-                              'score': after.fuzzy[symbol], 'exact': verdict.row['exact'], 'oracle': evidence})
+                gain = {'unit': unit, 'symbol': symbol, 'before': old_score,
+                        'score': after.fuzzy[symbol], 'exact': verdict.row['exact']}
+                gain.update({'unchanged_source': unchanged} if unchanged is not None else {'oracle': evidence})
+                gains.append(gain)
     accepted = bool(accepted and gains)
     if accepted and write:
         for name, original in originals.items():

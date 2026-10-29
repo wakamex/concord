@@ -1,0 +1,276 @@
+
+;; Function int leaf(int) (_Z4leafi)
+
+int leaf(int) (int value)
+{
+  int D.2072;
+
+<bb 2>:
+  D.2072_2 = value_1(D) + 3;
+  return D.2072_2;
+
+}
+
+
+
+;; Function int middle(int) (_Z6middlei)
+
+Considering inline candidate int leaf(int).
+ Inlining int leaf(int) into int middle(int).
+Removing basic block 3
+;; basic block 3, loop depth 0, count 0
+;; prev block 2, next block 4
+;; pred:
+;; succ:       4 [100.0%]  (fallthru,exec)
+<bb 3>:
+
+
+Merging blocks 4 and 5
+
+
+Registering new PHI nodes in block #0
+
+
+
+Registering new PHI nodes in block #2
+
+
+
+Registering new PHI nodes in block #7
+
+
+
+Registering new PHI nodes in block #8
+
+
+
+Registering new PHI nodes in block #3
+
+Updating SSA information for statement D.2098 = D.2099_13;
+
+Updating SSA information for statement D.2082_7 = D.2098;
+
+
+
+Registering new PHI nodes in block #6
+
+
+
+Registering new PHI nodes in block #5
+
+
+
+Registering new PHI nodes in block #4
+
+
+
+Symbols to be put in SSA form
+
+{ D.2098 }
+
+
+Incremental SSA update started at block: 0
+
+Number of blocks in CFG: 9
+Number of blocks to update: 8 ( 89%)
+
+Affected blocks: 0 2 3 4 5 6 7 8
+
+
+Scope blocks after cleanups:
+
+{ Scope block #0
+
+  { Scope block #2
+
+    { Scope block #3
+      int index;
+
+      { Scope block #4 src/daisy/gui/CGUIEnvironment.cpp:6 Originating from :  static int leaf (int);
+        int value; (unused)
+
+        { Scope block #5 Originating from :#0
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+int middle(int) (int value)
+{
+  int D.2099;
+  int D.2098;
+  int D.2098;
+  int index;
+  int D.2087;
+  int iftmp.0;
+  int D.2082;
+  bool D.2080;
+
+<bb 2>:
+  index_4 = 0;
+  goto <bb 7>;
+
+<bb 3>:
+  D.2099_13 = value_2 + 3;
+  D.2098_14 = D.2099_13;
+  D.2082_7 = D.2098_14;
+  if (value_2 > index_3)
+    goto <bb 4>;
+  else
+    goto <bb 5>;
+
+<bb 4>:
+  iftmp.0_8 = 7;
+  goto <bb 6>;
+
+<bb 5>:
+  iftmp.0_9 = 11;
+
+<bb 6>:
+  # iftmp.0_1 = PHI <iftmp.0_8(4), iftmp.0_9(5)>
+  value_10 = D.2082_7 * iftmp.0_1;
+  index_11 = index_3 + 1;
+
+<bb 7>:
+  # value_2 = PHI <value_5(D)(2), value_10(6)>
+  # index_3 = PHI <index_4(2), index_11(6)>
+  D.2080_6 = index_3 <= 11;
+  if (D.2080_6 != 0)
+    goto <bb 3>;
+  else
+    goto <bb 8>;
+
+<bb 8>:
+  D.2087_12 = value_2;
+  return D.2087_12;
+
+}
+
+
+
+;; Function int caller(int) (_Z6calleri)
+
+Considering inline candidate int middle(int).
+ Inlining int middle(int) into int caller(int).
+Merging blocks 2 and 3
+Merging blocks 8 and 9
+
+
+Registering new PHI nodes in block #0
+
+
+
+Registering new PHI nodes in block #2
+
+
+
+Registering new PHI nodes in block #6
+
+
+
+Registering new PHI nodes in block #3
+
+
+
+Registering new PHI nodes in block #4
+
+
+
+Registering new PHI nodes in block #5
+
+
+
+Registering new PHI nodes in block #7
+
+Updating SSA information for statement D.2102 = value_4;
+
+Updating SSA information for statement D.2092_2 = D.2102;
+
+
+
+Symbols to be put in SSA form
+
+{ D.2102 }
+
+
+Incremental SSA update started at block: 0
+
+Number of blocks in CFG: 8
+Number of blocks to update: 7 ( 88%)
+
+Affected blocks: 0 2 3 4 5 6 7
+
+
+Scope blocks after cleanups:
+
+{ Scope block #0
+
+  { Scope block #6 src/daisy/gui/CGUIEnvironment.cpp:10 Originating from :  static int middle (int);
+    int value;
+
+    { Scope block #9 Originating from :#3
+      int index;
+
+      { Scope block #10 src/daisy/gui/CGUIEnvironment.cpp:6 Originating from :  static int leaf (int);
+        int value = int; (nonlocalized)
+
+        { Scope block #11 Originating from :#0
+
+        }
+
+      }
+
+    }
+
+  }
+
+}
+int caller(int) (int value)
+{
+  int iftmp.0;
+  int index;
+  int D.2103;
+  int D.2103;
+  int D.2102;
+  int D.2102;
+  int value;
+  int D.2092;
+  int D.2091;
+
+<bb 2>:
+  goto <bb 6>;
+
+<bb 3>:
+  D.2103_5 = value_4 + 3;
+  if (value_4 > index_6)
+    goto <bb 5>;
+  else
+    goto <bb 4>;
+
+<bb 4>:
+
+<bb 5>:
+  # iftmp.0_7 = PHI <7(3), 11(4)>
+  value_8 = D.2103_5 * iftmp.0_7;
+  index_9 = index_6 + 1;
+
+<bb 6>:
+  # value_4 = PHI <value_1(D)(2), value_8(5)>
+  # index_6 = PHI <0(2), index_9(5)>
+  if (index_6 <= 11)
+    goto <bb 3>;
+  else
+    goto <bb 7>;
+
+<bb 7>:
+  D.2102_10 = value_4;
+  D.2092_2 = D.2102_10;
+  D.2091_3 = D.2092_2 + -1;
+  return D.2091_3;
+
+}

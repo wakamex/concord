@@ -182,11 +182,13 @@ class Harvest:
 
     def evaluate_overlays(self, items: dict[str, tuple], *, baseline_target_fallback: bool = False,
                           units: dict[str, dict[str, int]] | None = None,
-                          claims: list[dict] | None = None) -> dict[str, Evaluation]:
+                          claims: list[dict] | None = None, inline_decisions: bool = False) -> dict[str, Evaluation]:
         """Compile each item, a unit source path with repository files replaced
         (path under the checkout -> new bytes), in one batch, and compare it with
         the target. An item is (unit, overlays) or (unit, overlays, flags) where
         flags are extra compiler options for measuring, such as --param values.
+        inline_decisions retains GCC's IPA and early-inline dumps beside each
+        object, with a separate dump base for every item.
         A flag audit can fall back to its own freshly delinked baseline target
         if a variant cannot be delinked; ordinary searches never use it."""
         out = self.root / "build" / "concord" / "overlays" / uuid.uuid4().hex
@@ -201,7 +203,8 @@ class Harvest:
                     files[text] = out / f"overlay{len(files)}{Path(path).suffix}"
                     files[text].write_bytes(text)
                 mapped[path] = str(files[text])
-            request_items[name] = {"unit": unit, "overlays": mapped, "flags": list(item[2]) if len(item) > 2 else []}
+            request_items[name] = {"unit": unit, "overlays": mapped, "flags": list(item[2]) if len(item) > 2 else [],
+                                   "inline_decisions": inline_decisions}
         result = self._driver({"out": str(out), "items": request_items, "baseline_target_fallback": baseline_target_fallback,
                                "units": units or {}, "claims": claims or []})
         return {

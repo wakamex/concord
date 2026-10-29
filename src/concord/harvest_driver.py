@@ -172,7 +172,11 @@ def compile_overlays(checkout: "Checkout", debug: bool, out: Path, items: dict[s
             f"cp {shlex.quote(compiler.container_path(Path(c)))} {shlex.quote(p)}" for p, c in item["overlays"].items()
         ]
         variant = checkout.compiler(debug, tuple(item.get("flags", ())))
-        command = shlex.join(variant.compile_command(builds.ROOT / "src" / item["unit"], f"{prefix}/{name}"))
+        arguments = variant.compile_command(builds.ROOT / "src" / item["unit"], f"{prefix}/{name}")
+        if item.get("inline_decisions"):
+            arguments += ["-fdump-ipa-inline-details", "-fdump-tree-einline2-details",
+                          "-dumpbase", f"/out/{prefix}/{name}"]
+        command = shlex.join(arguments)
         work[index % lanes].append(
             f"if {' && '.join(prepare) or 'true'}; then {command} 2> /out/{prefix}/{name}.err; "
             f"echo $? > /out/{prefix}/{name}.status; else echo 125 > /out/{prefix}/{name}.status; fi"

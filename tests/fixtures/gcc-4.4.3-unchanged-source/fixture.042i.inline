@@ -1,0 +1,316 @@
+  function  int caller(int) Trees ::
+    param 0 : int value modified
+  Jump functions of caller  int caller(int):
+  function  int middle(int) Trees ::
+    param 0 : int value modified
+  Jump functions of caller  int middle(int):
+  function  int leaf(int) Trees ::
+    param 0 : int value
+  Jump functions of caller  int leaf(int):
+
+Deciding on inlining.  Starting with 16 insns.
+
+Inlining always_inline functions:
+
+Deciding on smaller functions:
+
+Deciding on functions called once:
+
+Inlined 2 calls, eliminated 0 functions, 16 insns turned to 16 insns.
+
+int caller(int) (int value)
+{
+  int iftmp.0;
+  int index;
+  int D.2103;
+  int D.2103;
+  int D.2091;
+
+<bb 2>:
+  goto <bb 6>;
+
+<bb 3>:
+  D.2103_5 = value_4 + 3;
+  if (value_4 > index_6)
+    goto <bb 5>;
+  else
+    goto <bb 4>;
+
+<bb 4>:
+
+<bb 5>:
+  # iftmp.0_7 = PHI <7(3), 11(4)>
+  value_8 = D.2103_5 * iftmp.0_7;
+  index_9 = index_6 + 1;
+
+<bb 6>:
+  # value_4 = PHI <value_1(D)(2), value_8(5)>
+  # index_6 = PHI <0(2), index_9(5)>
+  if (index_6 <= 11)
+    goto <bb 3>;
+  else
+    goto <bb 7>;
+
+<bb 7>:
+  D.2091_3 = value_4 + -1;
+  return D.2091_3;
+
+}
+
+
+int middle(int) (int value)
+{
+  int D.2098;
+  int D.2098;
+  int index;
+  int iftmp.0;
+
+<bb 2>:
+  goto <bb 6>;
+
+<bb 3>:
+  D.2098_13 = value_2 + 3;
+  if (value_2 > index_3)
+    goto <bb 5>;
+  else
+    goto <bb 4>;
+
+<bb 4>:
+
+<bb 5>:
+  # iftmp.0_1 = PHI <7(3), 11(4)>
+  value_10 = iftmp.0_1 * D.2098_13;
+  index_11 = index_3 + 1;
+
+<bb 6>:
+  # value_2 = PHI <value_5(D)(2), value_10(5)>
+  # index_3 = PHI <0(2), index_11(5)>
+  if (index_3 <= 11)
+    goto <bb 3>;
+  else
+    goto <bb 7>;
+
+<bb 7>:
+  return value_2;
+
+}
+
+
+int leaf(int) (int value)
+{
+  int D.2072;
+
+<bb 2>:
+  D.2072_2 = value_1(D) + 3;
+  return D.2072_2;
+
+}
+
+
+
+Reclaiming functions:callgraph:
+
+int caller(int)/2(2): availability:available 8 insns needed body externally_visible finalized inlinable
+  called by:
+  calls:
+int middle(int)/1(1): availability:available 7 insns needed body externally_visible finalized inlinable
+  called by:
+  calls:
+int leaf(int)/0(0): availability:available 1 insns needed body externally_visible finalized inlinable
+  called by:
+  calls:
+
+;; Function int leaf(int) (_Z4leafi)
+
+
+;; Function int leaf(int)
+
+;;
+3 basic blocks, 2 edges, last basic block 3.
+
+Basic block 2 (new, reachable)
+Predecessors:  ENTRY [100.0%]  (fallthru,exec)
+Successors:  EXIT [100.0%]
+
+
+int leaf(int) (int value)
+{
+  int D.2072;
+
+  # BLOCK 2 freq:10000
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  D.2072_2 = value_1(D) + 3;
+  return D.2072_2;
+  # SUCC: EXIT [100.0%]
+
+}
+
+
+
+;; Function int middle(int) (_Z6middlei)
+
+
+;; Function int middle(int)
+
+;;
+8 basic blocks, 9 edges, last basic block 8.
+
+Basic block 2 (new, reachable)
+Predecessors:  ENTRY [100.0%]  (fallthru,exec)
+Successors:  6 [100.0%]  (fallthru,exec)
+
+Basic block 3 (new, reachable)
+Predecessors:  6 [92.3%]  (true,exec)
+Successors:  5 [50.0%]  (true,exec) 4 [50.0%]  (false,exec)
+
+Basic block 4 (new, reachable)
+Predecessors:  3 [50.0%]  (false,exec)
+Successors:  5 [100.0%]  (fallthru,exec)
+
+Basic block 5 (new, reachable)
+Predecessors:  3 [50.0%]  (true,exec) 4 [100.0%]  (fallthru,exec)
+Successors:  6 [100.0%]  (fallthru,dfs_back,exec)
+
+Basic block 6 (new, reachable)
+Predecessors:  2 [100.0%]  (fallthru,exec) 5 [100.0%]  (fallthru,dfs_back,exec)
+Successors:  3 [92.3%]  (true,exec) 7 [7.7%]  (false,exec)
+
+Basic block 7 (new, reachable)
+Predecessors:  6 [7.7%]  (false,exec)
+Successors:  EXIT [100.0%]
+
+
+int middle(int) (int value)
+{
+  int D.2098;
+  int D.2098;
+  int index;
+  int iftmp.0;
+
+  # BLOCK 2 freq:769
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  goto <bb 6>;
+  # SUCC: 6 [100.0%]  (fallthru,exec)
+
+  # BLOCK 3 freq:9231
+  # PRED: 6 [92.3%]  (true,exec)
+  D.2098_13 = value_2 + 3;
+  if (value_2 > index_3)
+    goto <bb 5>;
+  else
+    goto <bb 4>;
+  # SUCC: 5 [50.0%]  (true,exec) 4 [50.0%]  (false,exec)
+
+  # BLOCK 4 freq:4615
+  # PRED: 3 [50.0%]  (false,exec)
+  # SUCC: 5 [100.0%]  (fallthru,exec)
+
+  # BLOCK 5 freq:9231
+  # PRED: 3 [50.0%]  (true,exec) 4 [100.0%]  (fallthru,exec)
+  # iftmp.0_1 = PHI <7(3), 11(4)>
+  value_10 = iftmp.0_1 * D.2098_13;
+  index_11 = index_3 + 1;
+  # SUCC: 6 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 6 freq:10000
+  # PRED: 2 [100.0%]  (fallthru,exec) 5 [100.0%]  (fallthru,dfs_back,exec)
+  # value_2 = PHI <value_5(D)(2), value_10(5)>
+  # index_3 = PHI <0(2), index_11(5)>
+  if (index_3 <= 11)
+    goto <bb 3>;
+  else
+    goto <bb 7>;
+  # SUCC: 3 [92.3%]  (true,exec) 7 [7.7%]  (false,exec)
+
+  # BLOCK 7 freq:769
+  # PRED: 6 [7.7%]  (false,exec)
+  return value_2;
+  # SUCC: EXIT [100.0%]
+
+}
+
+
+
+;; Function int caller(int) (_Z6calleri)
+
+
+;; Function int caller(int)
+
+;;
+8 basic blocks, 9 edges, last basic block 8.
+
+Basic block 2 (new, reachable)
+Predecessors:  ENTRY [100.0%]  (fallthru,exec)
+Successors:  6 [100.0%]  (fallthru,exec)
+
+Basic block 3 (new, reachable)
+Predecessors:  6 [92.3%]  (true,exec)
+Successors:  5 [50.0%]  (true,exec) 4 [50.0%]  (false,exec)
+
+Basic block 4 (new, reachable)
+Predecessors:  3 [50.0%]  (false,exec)
+Successors:  5 [100.0%]  (fallthru,exec)
+
+Basic block 5 (new, reachable)
+Predecessors:  3 [50.0%]  (true,exec) 4 [100.0%]  (fallthru,exec)
+Successors:  6 [100.0%]  (fallthru,dfs_back,exec)
+
+Basic block 6 (new, reachable)
+Predecessors:  2 [100.0%]  (fallthru,exec) 5 [100.0%]  (fallthru,dfs_back,exec)
+Successors:  3 [92.3%]  (true,exec) 7 [7.7%]  (false,exec)
+
+Basic block 7 (new, reachable)
+Predecessors:  6 [7.7%]  (false,exec)
+Successors:  EXIT [100.0%]
+
+
+int caller(int) (int value)
+{
+  int iftmp.0;
+  int index;
+  int D.2103;
+  int D.2103;
+  int D.2091;
+
+  # BLOCK 2 freq:769
+  # PRED: ENTRY [100.0%]  (fallthru,exec)
+  goto <bb 6>;
+  # SUCC: 6 [100.0%]  (fallthru,exec)
+
+  # BLOCK 3 freq:9231
+  # PRED: 6 [92.3%]  (true,exec)
+  D.2103_5 = value_4 + 3;
+  if (value_4 > index_6)
+    goto <bb 5>;
+  else
+    goto <bb 4>;
+  # SUCC: 5 [50.0%]  (true,exec) 4 [50.0%]  (false,exec)
+
+  # BLOCK 4 freq:4615
+  # PRED: 3 [50.0%]  (false,exec)
+  # SUCC: 5 [100.0%]  (fallthru,exec)
+
+  # BLOCK 5 freq:9231
+  # PRED: 3 [50.0%]  (true,exec) 4 [100.0%]  (fallthru,exec)
+  # iftmp.0_7 = PHI <7(3), 11(4)>
+  value_8 = D.2103_5 * iftmp.0_7;
+  index_9 = index_6 + 1;
+  # SUCC: 6 [100.0%]  (fallthru,dfs_back,exec)
+
+  # BLOCK 6 freq:10000
+  # PRED: 2 [100.0%]  (fallthru,exec) 5 [100.0%]  (fallthru,dfs_back,exec)
+  # value_4 = PHI <value_1(D)(2), value_8(5)>
+  # index_6 = PHI <0(2), index_9(5)>
+  if (index_6 <= 11)
+    goto <bb 3>;
+  else
+    goto <bb 7>;
+  # SUCC: 3 [92.3%]  (true,exec) 7 [7.7%]  (false,exec)
+
+  # BLOCK 7 freq:769
+  # PRED: 6 [7.7%]  (false,exec)
+  D.2091_3 = value_4 + -1;
+  return D.2091_3;
+  # SUCC: EXIT [100.0%]
+
+}

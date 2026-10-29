@@ -965,7 +965,9 @@ def _dispatch(argv: list[str] | None = None) -> int:
             for name, row in report.get("evaluations", {}).items():
                 print(f"{name}: {row['error'] or str(len(row['exact'])) + ' exact functions'}")
             for gain in report.get("gains", []):
-                print(f"{gain['symbol']}: {gain['before']} -> {gain['score']}; oracle={gain['oracle']}")
+                evidence = (f"unchanged_source={gain['unchanged_source']}" if 'unchanged_source' in gain
+                            else f"oracle={gain['oracle']}")
+                print(f"{gain['symbol']}: {gain['before']} -> {gain['score']}; {evidence}")
             print(f"author files: {'accepted' if report['accepted'] else 'rejected'}; applied={report['applied']}")
             return 0 if report["accepted"] else 1
         if not args.unit or not args.function:

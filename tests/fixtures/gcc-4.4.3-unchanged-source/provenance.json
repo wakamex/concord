@@ -1,0 +1,21 @@
+{
+  "compiler": "GCC 4.4.3",
+  "flags": {
+    "image": "harvest-toolchain",
+    "compiler": "g++",
+    "version": "g++ (Ubuntu 4.4.3-4ubuntu5) 4.4.3",
+    "flags": [
+      "-O2",
+      "-Isrc",
+      "-Isrc/HarvestFull",
+      "-Ithird_party/luajit-2.0.0-beta8/include"
+    ],
+    "scope": "reproduces every recovered unit; -I only adds the source roots and the Lua headers"
+  },
+  "diagnostics": [
+    "-fdump-ipa-inline-details",
+    "-fdump-tree-einline2-details"
+  ],
+  "source_sha256": "386f563878d48a915b0f12394764e34614a36a2469420b5db27a0783a8961356",
+  "normalization": "Trailing whitespace removed from dump lines."
+}

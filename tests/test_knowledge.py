@@ -255,17 +255,19 @@ class WinsockNotifyReceiveResidualTests(unittest.TestCase):
 
 
 class StaticTextBreakTextEvidenceTests(unittest.TestCase):
-    def test_loop_oracle_and_exact_match_failures_are_recorded(self):
+    def test_kept_loop_records_oracle_exemptions_and_unit_net(self):
         idiom = next(
             item for item in knowledge.load("gcc-4.4.3")
             if item.id == "igui-static-text-breaktext-residual"
         )
         notes = {item["function"]: item["note"] for item in idiom.evidence}
 
-        self.assertEqual(idiom.status, "hypothesis")
+        self.assertEqual(idiom.status, "confirmed")
         self.assertIn("506 block-order rows", notes["IGUIStaticText::breakText"])
-        self.assertIn("246 of 500 cases", idiom.limits)
-        self.assertIn("no further ancestor-shaped edit was tried", idiom.limits)
+        self.assertIn("4 functions changed: 0 newly matched, 1 worse; data bytes matched: +0 -0", idiom.limits)
+        self.assertIn("unchanged_source", idiom.fix)
+        self.assertIn("18 transitive inline function families", notes["Unit inline context"])
+        self.assertIn("17 for std::__unguarded_partition", notes["Unit inline context"])
         for fact in ("34.03512 to 71.4539", "51.019802 to 37.0099", "1,679.5229 score-bytes", "500 of 500"):
             self.assertIn(fact, notes["Full Irrlicht-shaped loop"])
         for fact in ("100 to 99.94827", "100 to 99.788734", "500 of 500"):
