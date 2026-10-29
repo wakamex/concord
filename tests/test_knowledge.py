@@ -430,5 +430,32 @@ class HarvestGameLayerResidualTests(unittest.TestCase):
         self.assertIn("data bytes matched: +0 -11", notes["CWorld::update rejected source forms"])
 
 
+class HarvestOutOfLineExtentTests(unittest.TestCase):
+    def test_rejected_extent_candidates_record_their_gate_evidence(self):
+        idioms = {item.id: item for item in knowledge.load("gcc-4.4.3")}
+
+        missile = idioms["harvest-missile-add-kill-count-out-of-line"]
+        missile_notes = {item["function"]: item["note"] for item in missile.evidence}
+        self.assertEqual(missile.status, "hypothesis")
+        self.assertIn("0x435fb0", missile.symptom)
+        for fact in ("100.0", "99.70588", "cmp rax, rbx", "cmp rbx, rax"):
+            self.assertIn(fact, missile_notes["Dependent CEntityManager constructor"])
+
+        priorities = idioms["harvest-alien-priorities-out-of-line"]
+        priority_notes = {item["function"]: item["note"] for item in priorities.evidence}
+        self.assertEqual(priorities.status, "hypothesis")
+        self.assertIn("C1", priority_notes["Exact candidate extents"])
+        self.assertIn("C2", priority_notes["Exact candidate extents"])
+        self.assertIn("D2", priority_notes["Exact candidate extents"])
+        for fact in ("90.13893", "90.123665", "T.358"):
+            self.assertIn(fact, priority_notes["Dependent units"])
+
+        image = idioms["cimage-copy-constructor-target-extents"]
+        image_notes = {item["function"]: item["note"] for item in image.evidence}
+        self.assertEqual(image.status, "hypothesis")
+        for fact in ("392", "382", "0x4deb30", "0x4de9b0"):
+            self.assertIn(fact, image_notes["Current ABI copies"])
+
+
 if __name__ == "__main__":
     unittest.main()

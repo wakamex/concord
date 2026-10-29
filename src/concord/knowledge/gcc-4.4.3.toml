@@ -1143,3 +1143,38 @@ evidence = [
   { function = "Existing CSystemConfig initializer", note = "The compiled base object contains one 59-byte _GLOBAL__I__ZN7harvest8settings15gp_systemConfigE at 0x491d10, exact against the target. Its relocations place the 4096.0f world-grid offset and SColor(255, 224, 152, 76) stores after the iostream initializer." },
   { function = "Second initializer overlay", note = "A candidate adding a file-scope std::ios_base::Init at the end of CSystemConfig.cpp is rejected by concord author with accepted=false and no gains. The Harvest source remains unchanged." },
 ]
+
+[[idiom]]
+id = "harvest-missile-add-kill-count-out-of-line"
+cause = "inlining"
+status = "hypothesis"
+symptom = "The target has a standalone 4-byte CMissileTurretEntity::addKillCount(int) at 0x435fb0, while Harvest defines the body in the class header."
+fix = "Move the helper body to CMissileTurretEntity.cpp only when the whole author overlay preserves every dependent function score. Keep checking that its callers still inline."
+limits = "At Harvest f285209, declaring addKillCount(int) in CMissileTurretEntity.h and defining it immediately before getCurrentDisplaySprite in CMissileTurretEntity.cpp produces an exact 4-byte helper. The candidate object has no call relocation to the helper, and the target binary has no direct calls to 0x435fb0. The overlay is rejected because CEntityManager::CEntityManager() falls from 100 to 99.70588; its only instruction difference is cmp rax, rbx at offset +0xbb versus cmp rbx, rax. CEntityManager.cpp does not call addKillCount, so repairing this dependent score requires evidence for a source change outside the authorized files."
+evidence = [
+  { function = "Dependent CEntityManager constructor", note = "The declaration-only header candidate emits addKillCount at 100.0 with exact bytes and no oracle run. The author overlay rejects the candidate because CEntityManager::CEntityManager() falls from 100 to 99.70588. diff_code isolates one operand-order difference at +0xbb: target cmp rax, rbx, candidate cmp rbx, rax. CEntityManager.cpp constructs CMissileTurretEntity but does not call addKillCount." },
+  { function = "Caller inlining", note = "The candidate CMissileTurretEntity object contains the standalone addKillCount symbol but no relocation or call to it. The target executable has no direct calls to 0x435fb0, consistent with the same-unit callers being inlined." },
+]
+
+[[idiom]]
+id = "harvest-alien-priorities-out-of-line"
+cause = "inlining"
+status = "hypothesis"
+symptom = "The target emits both 44-byte CAlienPriorities constructor ABI copies at 0x48a420 and 0x48a450 and an 8-byte D2 destructor at 0x48a480; Harvest keeps the constructor inline and the destructor definition inline."
+fix = "Move the constructor and destructor definitions out of line only when all dependent unit scores hold under concord author and the whole-build gate."
+limits = "At Harvest f285209, moving the constructor after g_attackPriorities and removing inline from the destructor produces exact C2, C1 and D2 extents. The author overlay rejects the header change because CMissileEntity::updateLogic falls from 90.13893 to 90.123665 and the exact synthetic function T.358 disappears from CPriorityScreen.cpp. CAlienPriorities.cpp itself gains all three exact functions and retains every prior exact function; the other two dependent units preserve their scores. The earlier constructor-before-global ordering also renames the global initializer and loses its exact match."
+evidence = [
+  { function = "Exact candidate extents", note = "The accepted-by-function candidate emits _ZN7harvest8settings16CAlienPrioritiesC2Ev and C1Ev as exact 44-byte functions and _ZN7harvest8settings16CAlienPrioritiesD2Ev as an exact 8-byte function. These exact candidates need no oracle check." },
+  { function = "Dependent units", note = "The author overlay rejects the header change because CMissileEntity::updateLogic falls from 90.13893 to 90.123665 and CPriorityScreen.cpp loses exact synthetic function T.358, previously 100.0. CAlienPriorities.cpp gains three exact functions with no existing exact-function loss, and CPlayState.cpp preserves its scores." },
+]
+
+[[idiom]]
+id = "cimage-copy-constructor-target-extents"
+cause = "placement"
+status = "hypothesis"
+symptom = "The target has 382-byte CImage copy-constructor extents at 0x4de9b0 and 0x4deb30, while the current out-of-line source emits 392-byte C1 and C2 copies."
+fix = "Do not record the C2 address from a matching name alone. Require place-extent to prove the candidate body against the target FDE before adding a symbol row."
+limits = "CImage's copy constructor is already defined out of line. Its current C1 candidate scores 87.37037 and its C2 candidate at 0x4decb0 scores 14.092784. place-extent rejects C1 at 0x4deb30 and C2 at 0x4de9b0 because neither 392-byte candidate matches the 382-byte target extent. The body and placement need a source-backed explanation before this missing target address can be named."
+evidence = [
+  { function = "Current ABI copies", note = "The compiled C1 and C2 copy-constructor symbols are each 392 bytes. Target FDEs at 0x4deb30 and 0x4de9b0 are each 382 bytes. place-extent rejects C1 at 0x4deb30 and C2 at 0x4de9b0; the current fuzzy scores are 87.37037 for C1 and 14.092784 for C2 at its placed address 0x4decb0." },
+]
