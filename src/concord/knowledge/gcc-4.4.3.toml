@@ -1130,3 +1130,15 @@ evidence = [
   { function = "CWorld::update rejected source forms", note = "The direct Y-then-X assignment candidate lowers the author score from 85.892746 to 85.51262. The explicit randomY, upperY, height and x temporaries improve the author score from 87.54417 to 89.14984, and its oracle agrees on 5,000 of 5,000 cases. Its whole-build gate exits 1 and reports exactly: 2 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -11. The source is restored to the previously passing named-temporary form." },
   { function = "Passing whole-build gate", note = "With both accepted source changes, concord scores --harvest /code/harvest-terra --base a3b9f79 exits 0 and reports exactly: 2 functions changed: 0 newly matched, 0 worse; data bytes matched: +0 -0. CWorld::update improves from 85.89 to 87.54 and CHarvestProfile::getAchievementSpriteName improves from 90.85 to 91.25; neither function becomes exact." },
 ]
+
+[[idiom]]
+id = "c-system-config-extra-static-initializer"
+cause = "placement"
+status = "hypothesis"
+symptom = "The target has a second 59-byte initializer at 0x495d70, but no compiled base object contains _GLOBAL__I__ZN7harvest8settings13CSystemConfigC2EPN2ox2io11IFileSystemEPKc."
+fix = "Keep the exact 0x491d10 helper emitted by CSystemConfig.cpp. Identify the source owner of the second helper before changing the allowed source; its body repeats the iostream setup and the two header-static stores."
+limits = "CSystemConfig.cpp already includes iostream, CWorld.h and CAlienEntity.h. Its base object emits one exact 59-byte _GLOBAL__I__ZN7harvest8settings15gp_systemConfigE helper at 0x491d10. That helper initializes std::ios_base::Init, WORLD_GRID_OFFSET from CWorld.h to 4096.0f, and ENERGY_PROGRESS_COLOR from CHarvestEntity.h with (255, 224, 152, 76). Target 0x495d70 repeats the same instructions into distinct data slots. An authored candidate with a second file-scope std::ios_base::Init produces no exact known symbol and no overlay gain. Further source edits require identifying the duplicate's owner; the target label alone does not establish it."
+evidence = [
+  { function = "Existing CSystemConfig initializer", note = "The compiled base object contains one 59-byte _GLOBAL__I__ZN7harvest8settings15gp_systemConfigE at 0x491d10, exact against the target. Its relocations place the 4096.0f world-grid offset and SColor(255, 224, 152, 76) stores after the iostream initializer." },
+  { function = "Second initializer overlay", note = "A candidate adding a file-scope std::ios_base::Init at the end of CSystemConfig.cpp is rejected by concord author with accepted=false and no gains. The Harvest source remains unchanged." },
+]

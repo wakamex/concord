@@ -69,7 +69,12 @@ class AuthorOverlay(unittest.TestCase):
             path = root / 'src/H.h'
             path.parent.mkdir()
             path.write_bytes(b'old')
-            harvest = Mock(root=root)
+            config = root / 'config/1.18-linux-amd64'
+            config.mkdir(parents=True)
+            (config / 'symbols.tsv').write_text('address\tsize\tsymbol\tprovenance\n')
+            reports = root / 'build/match/1.18-linux-amd64'
+            reports.mkdir(parents=True)
+            harvest = Mock(root=root, build='1.18-linux-amd64', reports=reports)
             harvest.dependents.return_value = ['a.cpp', 'b.cpp']
             before = Evaluation('before', 'a', fuzzy={'f': 99}, sections=[{'functions': [{'symbol': 'f', 'exact': False}]}])
             exact = Evaluation('after', 'a', fuzzy={'f': 100}, sections=[{'functions': [{'symbol': 'f', 'exact': True}]}])

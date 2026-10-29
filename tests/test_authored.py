@@ -36,12 +36,14 @@ def reordered_functions(source: bytes) -> bytes:
             + source[second.end_byte:])
 
 
-def evaluation(exact: dict[str, bool], fuzzy: dict[str, float] | None = None, error: str = "") -> Evaluation:
+def evaluation(exact: dict[str, bool], fuzzy: dict[str, float] | None = None, error: str = "",
+               addresses: dict[str, str] | None = None) -> Evaluation:
     return Evaluation(
         "c",
         "u",
         error=error,
-        sections=[{"functions": [{"symbol": s, "exact": e} for s, e in exact.items()]}],
+        sections=[{"functions": [{"symbol": s, "exact": e, "address": (addresses or {}).get(s, "0x1000")}
+                                   for s, e in exact.items()]}],
         fuzzy=fuzzy or {},
     )
 
@@ -617,6 +619,24 @@ const char* example = "CG_PROGRAM = 4125";
         self.assertFalse(authored.keep_improvement(before, evaluation({SYMBOL: False, "other": False}, {SYMBOL: 91.0, "other": 100.0}), SYMBOL))
         self.assertFalse(authored.keep_improvement(before, evaluation({SYMBOL: False}, {SYMBOL: 91.0}), SYMBOL))
         self.assertFalse(authored.keep_improvement(before, evaluation({SYMBOL: False, "other": True}, {SYMBOL: 91.0, "other": 100.0}, error="boom"), SYMBOL))
+
+    def test_new_known_function_must_be_exact_and_preserve_existing_scores(self):
+        before = evaluation({"existing": True}, {"existing": 100.0})
+        exact = evaluation({"existing": True, "new": True}, {"existing": 100.0, "new": 100.0})
+        inexact = evaluation({"existing": True, "new": False}, {"existing": 100.0, "new": 99.0})
+        worse = evaluation({"existing": True, "new": True}, {"existing": 99.0, "new": 100.0})
+        self.assertTrue(authored.keep_improvement(before, exact, "new", known=True))
+        self.assertFalse(authored.keep_improvement(before, exact, "new"))
+        self.assertFalse(authored.keep_improvement(before, inexact, "new", known=True))
+        self.assertFalse(authored.keep_improvement(before, worse, "new", known=True))
+
+    def test_new_exact_function_can_replace_a_copy_preserved_in_another_unit(self):
+        before = evaluation({"duplicate": True}, {"duplicate": 100.0}, addresses={"duplicate": "0x4e4e00"})
+        after = evaluation({"new": True}, {"new": 100.0}, addresses={"new": "0x4f3d60"})
+        self.assertTrue(authored.keep_improvement(
+            before, after, "new", known=True, other_exact_addresses={"0x4e4e00"}
+        ))
+        self.assertFalse(authored.keep_improvement(before, after, "new", known=True))
 
     def test_header_write_requires_all_dependent_units_to_preserve_scores(self):
         unit, dependent = "d/a.cpp", "d/b.cpp"

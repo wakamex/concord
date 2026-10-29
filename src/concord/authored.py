@@ -17,6 +17,8 @@ oracle when the named function remains inexact.
 
 from __future__ import annotations
 
+import csv
+import json
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -25,7 +27,7 @@ from pathlib import Path
 from tree_sitter import Parser
 
 from concord import oracle
-from concord.harvest import Evaluation, Harvest
+from concord.harvest import Evaluation, Harvest, function_key
 from concord.search import net_gain, other_scores, worse_elsewhere
 from concord.statics import data_layout_improves
 from concord.transforms import CPP, _descendants, find_function
@@ -713,13 +715,36 @@ def _preserves(before: Evaluation, after: Evaluation) -> bool:
             and all(name in after.fuzzy and after.fuzzy[name] >= score for name, score in before.fuzzy.items()))
 
 
-def keep_improvement(before: Evaluation, after: Evaluation, symbol: str) -> bool:
-    """Accept a measured gain when no function in the unit becomes worse."""
+def _preserves_with_exact_copies(before: Evaluation, after: Evaluation, other_exact_addresses: set[str]) -> bool:
+    """Allow a unit to drop an exact duplicate already emitted by another unchanged unit."""
+    if after.error:
+        return False
+    after_exact = after.exact_functions()
+    for key in before.exact_functions() - after_exact:
+        duplicate = next((row for section in before.sections for row in section.get("functions", [])
+                          if row["exact"] and function_key(row) == key), None)
+        if duplicate is None or duplicate.get("address") not in other_exact_addresses:
+            return False
+    for name, score in before.fuzzy.items():
+        if name in after.fuzzy and after.fuzzy[name] >= score:
+            continue
+        original = before.verdict(name)
+        if original is None or original.row.get("address") not in other_exact_addresses:
+            return False
+    return True
+
+
+def keep_improvement(before: Evaluation, after: Evaluation, symbol: str, *, known: bool = False,
+                     other_exact_addresses: set[str] | None = None) -> bool:
+    """Accept an improved function or a new exact known symbol without unit losses."""
     old, new = before.verdict(symbol), after.verdict(symbol)
     old_score, new_score = before.fuzzy.get(symbol), after.fuzzy.get(symbol)
+    preserves = _preserves_with_exact_copies(before, after, other_exact_addresses or set())
+    if old is None:
+        return bool(known and new and new.row["exact"] and preserves)
     return bool(old and new and old_score is not None and new_score is not None
                 and (new_score > old_score or (new.row["exact"] and not old.row["exact"]))
-                and _preserves(before, after))
+                and preserves)
 
 
 def apply_header(harvest: Harvest, unit: str, symbol: str, edit: ConstantEdit, write: bool) -> dict:
@@ -966,9 +991,10 @@ symbols.save(sys.argv[1],rows)
 
 
 def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> dict:
-    """Measure an authored layout or declaration correction in all its consumers.
+    """Measure authored source changes in every consumer.
 
     Every emitted score must be preserved and at least one function must improve.
+    A new function counts as a gain only when it is exact and named in symbols.tsv.
     Each improved inexact function requires oracle evidence, including when its
     body is unchanged and a header correction changes its generated code.
     """
@@ -983,6 +1009,21 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
         if path.suffix == '.cpp':
             units.add(name)
     units = sorted(units)
+    known_symbols = set()
+    other_exact_addresses = set()
+    if units:
+        with (harvest.root / "config" / harvest.build / "symbols.tsv").open() as stream:
+            known_symbols = {row["symbol"] for row in csv.DictReader(stream, delimiter="\t")}
+        for report_path in harvest.reports.glob("*.json"):
+            report = json.loads(report_path.read_text())
+            if report.get("unit") in units:
+                continue
+            other_exact_addresses.update(
+                row["address"]
+                for section in report.get("sections", [])
+                for row in section.get("functions", [])
+                if row["exact"]
+            )
     items = {}
     for n, unit in enumerate(units):
         items[f'before-{n}'] = (unit, {})
@@ -992,9 +1033,10 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
     gains = []
     for n, unit in enumerate(units):
         before, after = measured[f'before-{n}'], measured[f'after-{n}']
-        accepted = accepted and _preserves(before, after) and not before.error
+        accepted = accepted and _preserves_with_exact_copies(before, after, other_exact_addresses) and not before.error
         for symbol in after.fuzzy:
-            if keep_improvement(before, after, symbol):
+            if keep_improvement(before, after, symbol, known=symbol in known_symbols,
+                                other_exact_addresses=other_exact_addresses):
                 verdict = after.verdict(symbol)
                 evidence = None
                 kept = True
