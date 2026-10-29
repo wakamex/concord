@@ -333,6 +333,18 @@ class HighscoreUnitResidualTests(unittest.TestCase):
         self.assertIn("does not correct the emitted data or instructions", evidence["Definition-order overlay"])
         self.assertIn("saves 5,240 functions and 1,631 matched data runs", evidence["Clean source gate"])
 
+    def test_literal_type_keys_on_after_encore_seed_record_the_negative_unit_net(self):
+        path = Path(__file__).parents[1] / "src/concord/knowledge/gcc-4.4.3.toml"
+        data = tomllib.loads(path.read_text())
+        idiom = next(item for item in data["idiom"] if item["id"] == "shared-tail-call-count")
+        note = next(
+            item["note"] for item in idiom["evidence"]
+            if item["function"] == "Literal type keys on after-encore seed"
+        )
+
+        self.assertIn("size-weighted score falls by 57.281 target-byte units", note)
+        self.assertIn("Matched data bytes remain 4,928", note)
+
 
 class DaisyGuiCallDistributionTests(unittest.TestCase):
     def test_residual_calls_scores_and_rejected_overlays_are_recorded(self):
