@@ -679,7 +679,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
         print("Differing instruction rows by kind:")
         for kind, counts in summary["kinds"].items():
             print(f"  {kind}: {counts['functions']} functions, {counts['rows']} rows, {counts['bytes']:,} target bytes")
-        symbols = {row["symbol"] for row in report["top_source_pointing"]}
+        symbols = {row["symbol"] for row in report["top_source_pointing"] + report["value_leads"]}
         names = dict(zip(sorted(symbols), _short_names(symbols), strict=True)) if symbols else {}
         print("Twenty largest source-pointing functions:")
         for row in report["top_source_pointing"]:
@@ -690,6 +690,10 @@ def _dispatch(argv: list[str] | None = None) -> int:
                 f"  {row['units'][0]}:{names[row['symbol']]} size {row['size']} bytes, "
                 f"score {score}; {kinds}{signals}"
             )
+        print("Functions with a constant that differs in value at the same site, largest first:")
+        for row in report["value_leads"]:
+            score = f"{row['score']:.2f}%" if row["score"] is not None else "unknown"
+            print(f"  {row['units'][0]}:{names[row['symbol']]} size {row['size']} bytes, score {score}")
         return 0
     if args.command == "match":
         return _match(args)

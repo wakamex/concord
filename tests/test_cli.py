@@ -319,6 +319,7 @@ class CliTest(unittest.TestCase):
                 "kinds": {},
             },
             "top_source_pointing": [],
+            "value_leads": [],
         }
         with tempfile.TemporaryDirectory() as directory:
             save = Path(directory) / "residual.json"
@@ -348,6 +349,7 @@ class CliTest(unittest.TestCase):
                 "kinds": {},
             },
             "top_source_pointing": [],
+            "value_leads": [],
             "progress_reconciliation": {
                 "summary": {
                     "progress_matched_functions": 1,

@@ -133,6 +133,8 @@ def _pattern_signals(
         pattern_counts[key].update(counts)
         if source_pointing:
             signals[key].add("calls-constants")
+        if value_differences(function["differences"]):
+            signals[key].add("value-difference")
 
     for (unit, symbol), (target, candidate) in functions.items():
         if target.code == candidate.code and target.relocations == candidate.relocations:
@@ -166,6 +168,24 @@ def _cleanup_only(difference: dict) -> bool:
         value = difference.get(side)
         callees.extend(value if isinstance(value, list) else [value] if value else [])
     return bool(callees) and all(_cleanup(callee) for callee in callees)
+
+
+def value_differences(differences: list[dict]) -> list[str]:
+    """The constants that differ in value at the same site, other than stack pointer
+    adjustments and -1, 0 or 1. These have led to source causes (CBspTree::splitPoly's
+    division multiplier, CWinsockNetworkDevice::notifyReceive's per-status event types)
+    where counts of shared constants and references follow inlining."""
+    found = []
+    for difference in differences:
+        if difference["kind"] != "constant" or difference["classification"] != "different-constants":
+            continue
+        ours, target = difference.get("ours") or {}, difference.get("target") or {}
+        if "rsp" in (ours.get("site"), target.get("site")):
+            continue
+        if {ours.get("value"), target.get("value")} <= {-1, 0, 1}:
+            continue
+        found.append(f"`{ours.get('instruction')}` where the target has `{target.get('instruction')}`")
+    return found
 
 
 def _pattern_counts(differences: list[dict]) -> tuple[Counter, bool]:
@@ -750,5 +770,6 @@ def report(harvest: Harvest) -> dict:
         "summary": summary,
         "functions": functions,
         "top_source_pointing": source_pointing[:20],
+        "value_leads": [row for row in source_pointing if "value-difference" in row["source_signals"]],
         "progress_reconciliation": progress_reconciliation,
     }

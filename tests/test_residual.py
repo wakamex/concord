@@ -66,6 +66,24 @@ class Groups(unittest.TestCase):
         self.assertEqual(_group({"register-choice", "padding"}, set()), "no-source-change")
 
 
+class ValueDifferences(unittest.TestCase):
+    def test_a_constant_with_another_value_at_the_same_site_is_a_lead(self):
+        from concord.residual import value_differences
+
+        def constant(ours, target, site="eax", instruction="imul"):
+            return {"kind": "constant", "classification": "different-constants",
+                    "ours": {"value": ours, "site": site, "instruction": f"{instruction} {ours}"},
+                    "target": {"value": target, "site": site, "instruction": f"{instruction} {target}"}}
+
+        multiplier = constant(0xAAAAAAAB, 0x38E38E39)
+        event_type = constant(2, 3, site="dword ptr [rsp + 0x78]", instruction="mov")
+        frame = constant(0x1A8, 0x208, site="rsp", instruction="sub rsp,")
+        flag = constant(0, 1)
+        count = {"kind": "data", "classification": "reference-count-difference", "ours": {}, "target": {}}
+        self.assertEqual(len(value_differences([multiplier, event_type, frame, flag, count])), 2)
+        self.assertEqual(value_differences([frame, flag, count]), [])
+
+
 class ProgressReconciliation(unittest.TestCase):
     def test_reconciliation_removes_exact_overlap_and_adds_missing_and_unclaimed_bytes(self):
         from concord.residual import _reconcile_progress
