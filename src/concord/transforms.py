@@ -818,14 +818,25 @@ def address_arithmetic(source: bytes, scope: Node) -> Iterator[Rewrite]:
 
 
 def _written(node: Node) -> bool:
-    """Whether the expression is assigned, incremented or has its address taken,
-    where a named copy would change what is written."""
-    parent = node.parent
-    if parent.type == "assignment_expression" and parent.child_by_field_name("left") == node:
+    """Whether a named copy of the expression could change what is written: it is
+    assigned, incremented or has its address taken, directly or as the object of a
+    member or element that is (`r.corner.x = 1` writes `r.corner`), it is the
+    object of a method call, which may modify it, or it is an lvalue passed as an
+    argument, which may bind to a non-const reference."""
+    top = node
+    while top.parent.type in ("field_expression", "subscript_expression") and top.parent.child_by_field_name("argument") == top:
+        top = top.parent
+    parent = top.parent
+    if parent.type == "assignment_expression" and parent.child_by_field_name("left") == top:
         return True
     if parent.type == "update_expression":
         return True
-    return parent.type == "pointer_expression" and parent.child_by_field_name("operator").type == "&"
+    if parent.type == "pointer_expression" and parent.child_by_field_name("operator").type == "&":
+        return True
+    if top is not node and parent.type == "call_expression" and parent.child_by_field_name("function") == top:
+        return True  # node.member(...) may modify node
+    lvalue = node.type in ("field_expression", "subscript_expression", "pointer_expression", "identifier")
+    return lvalue and node.parent.type == "argument_list"
 
 
 def _subexpressions(statement: Node) -> list[Node]:

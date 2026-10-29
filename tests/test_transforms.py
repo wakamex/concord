@@ -296,6 +296,23 @@ class FlipNanSense(unittest.TestCase):
         self.assertIn(b"    int out = sum * 2;\n    out++;", rewrites["line 7: twice inlined into its one use"])
         self.assertIn(b"        return 0;\n    return g(a);\n}", rewrites["line 13: last inlined into its one use"])
 
+    def test_naming_never_copies_what_is_written(self):
+        # CGUIButton::draw: naming RelativeRect.LowerRightCorner made the store go to a copy.
+        source = (b"void f()\n{\n"
+                  b"    rect.corner.x = rect.origin.x + size.w;\n"
+                  b"    bundle.images.push_back(image);\n"
+                  b"    swap(pair.first, other);\n"
+                  b"    use(box.width + 1);\n"
+                  b"}\n")
+        scope = Parser(CPP).parse(source).root_node
+        named = {r.description.split(": ", 1)[1] for r in name_temporaries(source, scope)}
+        self.assertNotIn("rect.corner named", named)
+        self.assertNotIn("bundle.images named", named)
+        self.assertNotIn("pair.first named", named)
+        self.assertIn("rect.origin.x + size.w named", named)
+        self.assertIn("box.width + 1 named", named)
+        self.assertIn("box.width named", named)
+
     def test_inlining_undoes_naming(self):
         source = b"void f(int a, int b)\n{\n    use(a + b);\n}\n"
         scope = Parser(CPP).parse(source).root_node
