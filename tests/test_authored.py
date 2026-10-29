@@ -46,6 +46,20 @@ def evaluation(exact: dict[str, bool], fuzzy: dict[str, float] | None = None, er
     )
 
 
+class NetKeep(unittest.TestCase):
+    def test_keep_accepts_a_unit_that_gains_overall_and_keeps_its_exact_functions(self):
+        def measured(target, other, exact_other=False):
+            rows = [{"symbol": SYMBOL, "exact": False, "size": 4473},
+                    {"symbol": "other", "exact": exact_other, "size": 410},
+                    {"symbol": "kept", "exact": True, "size": 50}]
+            return Evaluation("c", "u", sections=[{"functions": rows}],
+                              fuzzy={SYMBOL: target, "other": other, "kept": 100.0})
+
+        self.assertTrue(keep(measured(34.04, 51.02), measured(71.45, 37.01), SYMBOL))
+        self.assertFalse(keep(measured(34.04, 51.02), measured(34.10, 37.01), SYMBOL))
+        self.assertFalse(keep(measured(34.04, 100.0, exact_other=True), measured(71.45, 99.0), SYMBOL))
+
+
 @unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
 class Candidates(unittest.TestCase):
     def test_dropship_gun_sine_precedes_the_start_vector(self):

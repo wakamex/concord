@@ -105,6 +105,13 @@ def worse_elsewhere(before: dict[str, float], evaluation: Evaluation, symbol: st
     return any(after.get(name, 0.0) < score for name, score in before.items())
 
 
+def net_gain(before: Evaluation, after: Evaluation) -> float:
+    """The unit's size-weighted change in objdiff score, in target bytes, between two
+    compiles: the measure Goal 2's net rule weighs a lower score against a gain by."""
+    sizes = {row["symbol"]: row.get("size", 0) for section in before.sections for row in section.get("functions", [])}
+    return sum(sizes.get(name, 0) * (after.fuzzy.get(name, 0.0) - score) / 100 for name, score in before.fuzzy.items())
+
+
 def _diff(harvest: Harvest, evaluation: Evaluation, symbol: str) -> DiffResult:
     verdict = evaluation.verdict(symbol)
     if verdict is None:

@@ -26,7 +26,7 @@ from tree_sitter import Parser
 
 from concord import oracle
 from concord.harvest import Evaluation, Harvest
-from concord.search import other_scores, worse_elsewhere
+from concord.search import net_gain, other_scores, worse_elsewhere
 from concord.statics import data_layout_improves
 from concord.transforms import CPP, _descendants, find_function
 
@@ -661,14 +661,17 @@ def _source_candidate(source: bytes, candidate: bytes) -> bool:
 def keep(before: Evaluation, after: Evaluation, symbol: str) -> bool:
     """Whether the authored candidate may replace the unit's source: it compiles,
     the named function is exact or scores higher than before, every previously
-    exact function stays exact, and no other function of the unit scores lower.
+    exact function stays exact, and no other function of the unit scores lower or
+    the unit gains overall, by size-weighted score (Goal 2's net rule).
     An inexact candidate also needs the oracle's agreement; apply() runs it."""
     if after.error:
         return False
     verdict = after.verdict(symbol)
     if verdict is None or (not verdict.row["exact"] and (after.fuzzy.get(symbol) or 0.0) <= (before.fuzzy.get(symbol) or 0.0)):
         return False
-    return before.exact_functions() <= after.exact_functions() and not worse_elsewhere(other_scores(before, symbol), after, symbol)
+    if not before.exact_functions() <= after.exact_functions():
+        return False
+    return not worse_elsewhere(other_scores(before, symbol), after, symbol) or net_gain(before, after) > 0
 
 
 # Sections whose bytes and relocations are the compiled program; debug sections,

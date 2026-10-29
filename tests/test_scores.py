@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from concord.scores import compare, normalized, snapshot
+from concord.scores import compare, net_rejections, normalized, snapshot
 
 
 def function(name, address, size, fuzzy, matched):
@@ -67,6 +67,46 @@ class Compare(unittest.TestCase):
         current = snapshot({"units": [], "concord_matched_data": []})
         with self.assertRaisesRegex(ValueError, "recapture"):
             compare({"functions": {}, "data": []}, current)
+
+
+class NetRule(unittest.TestCase):
+    def changes(self, rows):
+        def report(side):
+            units = []
+            for name, address, size, unit, before, after in rows:
+                fuzzy = before if side == 0 else after
+                item = function(name, address, size, fuzzy, fuzzy == 100)
+                item["metadata"] = {"source_path": unit}
+                units.append(item)
+            return snapshot({"units": units, "concord_matched_data": []})
+
+        changes, _, _ = compare(report(0), report(1))
+        return changes
+
+    def test_a_unit_that_gains_overall_and_keeps_its_exact_functions_is_accepted(self):
+        # breakText: 34.04 to 71.45 on 4,473 bytes against the destructor's 51.02 to 37.01 on 410.
+        changes = self.changes([
+            ("breakText", 0x1000, 4473, "gui/CGUIEnvironment.cpp", 34.04, 71.45),
+            ("~CGUIEnvironment", 0x2000, 410, "gui/CGUIEnvironment.cpp", 51.02, 37.01),
+        ])
+        self.assertEqual(net_rejections(changes), [])
+
+    def test_a_net_loss_or_a_lost_exact_function_is_rejected(self):
+        net_loss = self.changes([
+            ("gain", 0x1000, 100, "a.cpp", 90.0, 91.0),
+            ("loss", 0x2000, 410, "a.cpp", 51.0, 37.0),
+        ])
+        self.assertEqual(len(net_rejections(net_loss)), 1)
+        lost_exact = self.changes([
+            ("parseHighscoreString", 0x1000, 3895, "gui/CHighscoreScreen.cpp", 83.59, 99.81),
+            ("loadHighscores", 0x2000, 1000, "gui/CHighscoreScreen.cpp", 100, 98.25),
+        ])
+        self.assertIn("loadHighscores no longer exact", net_rejections(lost_exact)[0])
+        elsewhere = self.changes([
+            ("gain", 0x1000, 4473, "a.cpp", 34.0, 71.0),
+            ("loss", 0x2000, 410, "b.cpp", 51.0, 37.0),
+        ])
+        self.assertEqual(len(net_rejections(elsewhere)), 1)
 
 
 class Normalized(unittest.TestCase):

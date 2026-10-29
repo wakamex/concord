@@ -1647,7 +1647,12 @@ def _scores(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         newly = sum(1 for change in changes if change.after and change.after["matched"] and not (change.before and change.before["matched"]))
         summary = f"{len(changes)} functions changed: {newly} newly matched, {worse} worse; data bytes matched: +{gained} -{lost}"
         print(f"{label}: {summary}" if label else summary)
-        return worse, lost
+        rejections = scores.net_rejections(changes) if worse else []
+        for reason in rejections:
+            print(f"{label + ' ' if label else ''}rejected under Goal 2's net rule: {reason}")
+        if worse and not rejections:
+            print(f"{label + ' ' if label else ''}accepted under Goal 2's net rule: each unit with a lower score gains overall and keeps its exact functions")
+        return len(rejections), lost
 
     source_worse, source_lost = summarize(before, current)
     if configuration_baseline is not None:

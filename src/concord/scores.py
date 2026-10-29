@@ -62,6 +62,8 @@ def snapshot(progress: dict) -> dict:
                 "name": function["metadata"].get("demangled_name", function["name"]),
                 "fuzzy": function.get("fuzzy_match_percent", 0.0),
                 "matched": measures["matched_code"] == measures["total_code"],
+                "size": int(function["size"]) if "size" in function else None,
+                "unit": item.get("metadata", {}).get("source_path", item.get("name")),
             }
     return {"functions": functions, "data": progress["concord_matched_data"], "data_format": DATA_FORMAT}
 
@@ -93,6 +95,34 @@ def compare(before: dict, after: dict) -> tuple[list[Change], int, int]:
             changes.append(Change(address, (b or a)["name"], a, b))
     old, new = _bytes(before["data"]), _bytes(after["data"])
     return changes, len(old - new), len(new - old)
+
+
+def net_rejections(changes: list[Change]) -> list[str]:
+    """Goal 2's net rule: a lower score is accepted when, in its unit, no function
+    loses an exact match and the size-weighted score change is a gain. Returns why
+    each unit with a lower score fails, empty when every one passes."""
+    units: dict[str, list[Change]] = {}
+    for change in changes:
+        unit = (change.after or change.before).get("unit")
+        units.setdefault(unit, []).append(change)
+    reasons = []
+    for unit, members in units.items():
+        if not any(change.worse for change in members):
+            continue
+        if unit is None or any((change.after or change.before).get("size") is None for change in members):
+            reasons.append(f"{unit}: the snapshot has no unit sizes; recapture it")
+            continue
+        lost = [change.name for change in members
+                if change.before and change.before["matched"] and not (change.after and change.after["matched"])]
+        if lost:
+            reasons.append(f"{unit}: {', '.join(lost)} no longer exact")
+            continue
+        net = sum((change.after or change.before)["size"]
+                  * ((change.after or {}).get("fuzzy", 0.0) - (change.before or {}).get("fuzzy", 0.0)) / 100
+                  for change in members)
+        if net <= 0:
+            reasons.append(f"{unit}: size-weighted score change {net:+.1f} bytes")
+    return reasons
 
 
 def _bytes(runs: list) -> set[int]:
