@@ -1,0 +1,89 @@
+# concord's executor delegation, read by the delegate helper (/code/delegate). See its WORKFLOW.md and FORMAT.md.
+project = "concord"
+ledger = "docs/delegate.jsonl"
+lease_minutes = 30
+wait_deadline_minutes = 240
+
+[lead]
+pool = "claude/7c26d8836517d626"
+grain = "task"
+
+[resources]
+checkout = ["concord"]   # executors run on aop's host profile in this checkout
+
+[pools.codex]
+dollars_per_point = 2.32
+
+[executors.sol]
+agent = "codex"
+model = "gpt-6.1-sol"
+pool = "codex"
+
+[executors.luna]
+agent = "codex"
+model = "gpt-6-luna"
+effort = "max"
+pool = "codex"
+
+[executors.terra-max]
+agent = "codex"
+model = "gpt-6.1-terra"
+effort = "max"
+pool = "codex"
+
+[executors.terra-default]
+agent = "codex"
+model = "gpt-6.1-terra"
+pool = "codex"
+
+[executors.devin]
+agent = "devin"
+model = "swe-2-high"
+pool = "devin"
+
+[executors.cursor]
+agent = "cursor"
+model = "composer-2.5"
+pool = "cursor"
+
+[executors.haiku]
+agent = "claude"
+model = "claude-haiku-5-5"
+pool = "claude/7c26d8836517d626"
+
+[executors.muse]
+agent = "muse"
+model = "muse-wonder-full-1.0"
+pool = "muse-code"
+
+# Kinds from docs/EXECUTORS.md. The whole-build gate (concord scores --base) compares every function and matched
+# byte with the original, so capability, search and rule tasks are gated; search and rule count newly exact functions.
+[kinds.capability]
+check = "gated"
+state = "on"
+measure = "pass-fail"
+classes = ["any"]
+resources = ["checkout"]
+
+[kinds.search]
+check = "gated"
+state = "on"
+measure = "yield"
+classes = ["any"]
+resources = ["checkout"]
+
+[kinds.rule]
+check = "gated"
+state = "on"
+measure = "yield"
+classes = ["any"]
+resources = ["checkout"]
+
+# One bounded question with a stop limit, where a measured negative result is a complete answer.
+[kinds.diagnosis]
+check = "reviewed"
+state = "on"
+measure = "pass-fail"
+classes = ["any"]
+investigation = true
+resources = []

@@ -1,5 +1,7 @@
 # Executor scorecard
 
+This scorecard ends on 2026-10-30. Its 151 rows were imported into `docs/delegate.jsonl`, the ledger the `delegate` helper chooses executors from, and tasks since are recorded there; `delegate scorecard` prints each executor's record.
+
 Implementation work goes to implementer sessions, each task a fresh run through [aop](https://github.com/wakamex/agent-orchestration-process). Until 2026-10-27 Sol ran in one long-lived native Codex session, and its earlier rows come from that session. This file records every finished task so that each new task goes to the cheapest executor whose record on that kind of task is clean. The master session appends one row per finished task to the log and keeps the scorecard current. Finished work is the evidence; tasks are not rerun only to compare executors, and an executor is judged on all its rows of one kind together, since two runs of one task can differ as much as two executors.
 
 Kinds of task:
