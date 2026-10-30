@@ -88,7 +88,7 @@ classes = ["any"]
 investigation = true
 resources = []
 
-# Model families worth trying, for `delegate candidates`: those on or within about 0.05 of the score-against-cost
+# Model families worth trying, for `delegate candidates`: those within 0.2 of the score-against-cost
 # frontier of Cognition's FrontierCode 2.0 leaderboard (retrieved 2026-10-27), plus the SWE (Devin) and Composer
 # (Cursor) lines, which are cheap on their subscriptions. Only the latest version of each line: GPT-6 Sol is left out for
 # GPT-6.1 Sol. Obsidian 3, also on the frontier, is not offered by aop.
@@ -101,6 +101,11 @@ families = [
   "^(.*/)?claude-sonnet-5-5",
   "^(.*/)?claude-haiku-5-5",
   "^(.*/)?deepseek-v4[.-]1-flash",
+  "^(.*/)?claude-fable-5-1",
+  "^muse-wonder",
+  "^(.*/)?gemini-4-argon",
+  "^(.*/)?glm-5[.-]3-flash",
+  "^(.*/)?grok-4[.-]7",
   "^swe-[2-9]",
   "^composer-",
 ]
