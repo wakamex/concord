@@ -100,7 +100,7 @@ families = [
   "^(.*/)?claude-opus-5-5",
   "^(.*/)?claude-sonnet-5-5",
   "^(.*/)?claude-haiku-5-5",
-  "^(.*/)?deepseek-v4[.-]1-flash",
+  "^(.*/)?deepseek-v4[.-]?1-flash",
   "^(.*/)?claude-fable-5-1",
   "^muse-wonder",
   "^(.*/)?gemini-4-argon",
