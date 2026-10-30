@@ -51,6 +51,11 @@ agent = "claude"
 model = "claude-haiku-5-5"
 pool = "claude/7c26d8836517d626"
 
+[executors.argon]
+agent = "agy"
+model = "gemini-4-argon-high"
+pool = "agy:Gemini"
+
 [executors.muse]
 agent = "muse"
 model = "muse-wonder-full-1.0"
