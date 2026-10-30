@@ -305,3 +305,5 @@
 {"actor": "sol", "at": "2026-10-30T23:00:00+00:00", "event": "resume", "kind": "diagnosis", "reason": "admitted on the legacy scorecard: 2 diagnoses held", "schema": "delegate-event-1"}
 {"actor": "terra-default", "at": "2026-10-30T23:00:00+00:00", "event": "resume", "kind": "diagnosis", "reason": "admitted on the legacy scorecard: 2 diagnoses held", "schema": "delegate-event-1"}
 {"actor": "terra-max", "at": "2026-10-30T23:00:00+00:00", "event": "resume", "kind": "diagnosis", "reason": "admitted on the legacy scorecard: 8 diagnoses held", "schema": "delegate-event-1"}
+{"actor": "argon", "at": "2026-10-30T22:03:04.096798+00:00", "class": "any", "event": "open", "expected": {"actor_cost": null, "lead_cost": 0, "pool_points": null}, "kind": "search", "reason": "catch-up", "resources": {"harvest": "swe2"}, "schema": "delegate-event-1", "task": "search-0007", "token_cap": null}
+{"at": "2026-10-30T22:03:13.851456+00:00", "event": "started", "schema": "delegate-event-1", "task": "search-0007", "units": ["search-0007"]}

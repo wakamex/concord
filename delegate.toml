@@ -9,7 +9,9 @@ pool = "claude/7c26d8836517d626"
 grain = "task"
 
 [resources]
-checkout = ["concord"]   # executors run on aop's host profile in this checkout
+checkout = ["concord"]   # concord's own checkout, for capability tasks
+# Harvest checkouts beside it (/code/harvest-NAME), one task each; search and rule tasks work in one.
+harvest = ["swe2", "swe2c", "cursor", "sol", "terra"]
 
 [pools.codex]
 dollars_per_point = 2.32
@@ -75,14 +77,14 @@ check = "gated"
 state = "on"
 measure = "yield"
 classes = ["any"]
-resources = ["checkout"]
+resources = ["harvest"]
 
 [kinds.rule]
 check = "gated"
 state = "on"
 measure = "yield"
 classes = ["any"]
-resources = ["checkout"]
+resources = ["harvest"]
 
 # One bounded question with a stop limit, where a measured negative result is a complete answer.
 [kinds.diagnosis]
