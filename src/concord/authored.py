@@ -604,7 +604,185 @@ HEADER_FUNCTION_AUTHORED.update({
 
 # Several spellings of one header operation can be screened with causal-trial.
 # author requires an explicit name before measuring and writing a family member.
-HEADER_FUNCTION_VARIANTS: dict[tuple[str, str], list[HeaderFunctionEdit]] = {}
+_RIVER_LAYOUT = HeaderFunctionEdit(
+    "river-layout-recovery",
+    "ox/gui/IGUILayoutInline.h",
+    (
+        Replacement(
+            b"""    std::vector<TArray<IGUIElement*> > rows;
+    std::vector<int> horizontal;
+    std::vector<int> vertical;
+    int horizontalAlign = 0;
+    int verticalAlign = 0;""",
+            b"""    int horizontalAlign = 0;
+    int verticalAlign = 0;
+    std::vector<TArray<IGUIElement*> > rows;
+    std::vector<int> horizontal;
+    std::vector<int> vertical;""",
+            1,
+        ),
+        Replacement(
+            b"""    int row = 0;
+    int tabs = 0;
+    int maxTabs = 0;""",
+            b"""    int tabs = 0;
+    int row = 0;
+    int maxTabs = 0;""",
+            1,
+        ),
+        Replacement(
+            b"""        if (hints.findNext("top", 0) >= 0)
+            vertical[row] = verticalAlign = 0;
+        else if (hints.findNext("middle", 0) >= 0)
+            vertical[row] = verticalAlign = 1;
+        else if (hints.findNext("bottom", 0) >= 0)
+            vertical[row] = verticalAlign = 2;
+
+        if (hints.findNext("left", 0) >= 0)
+            horizontal[row] = horizontalAlign = 0;
+        else if (hints.findNext("center", 0) >= 0)
+            horizontal[row] = horizontalAlign = 1;
+        else if (hints.findNext("right", 0) >= 0)
+            horizontal[row] = horizontalAlign = 2;""",
+            b"""        if (hints.findNext("top", 0) >= 0)
+        {
+            verticalAlign = 0;
+            vertical[row] = 0;
+        }
+        else if (hints.findNext("middle", 0) >= 0)
+        {
+            verticalAlign = 1;
+            vertical[row] = 1;
+        }
+        else if (hints.findNext("bottom", 0) >= 0)
+        {
+            verticalAlign = 2;
+            vertical[row] = 2;
+        }
+
+        if (hints.findNext("left", 0) >= 0)
+        {
+            horizontalAlign = 0;
+            horizontal[row] = 0;
+        }
+        else if (hints.findNext("center", 0) >= 0)
+        {
+            horizontalAlign = 1;
+            horizontal[row] = 1;
+        }
+        else if (hints.findNext("right", 0) >= 0)
+        {
+            horizontalAlign = 2;
+            horizontal[row] = 2;
+        }""",
+            1,
+        ),
+        Replacement(
+            b"""            rows[i][j]->setRelativePosition(core::CRect<int>(x, y, size.Width + x, size.Height + y));
+            if (rowHeight < size.Height)
+                rowHeight = size.Height;""",
+            b"""            if (rowHeight < size.Height)
+                rowHeight = size.Height;
+            rows[i][j]->setRelativePosition(core::CRect<int>(core::CPosition2d<int>(x, y), size));""",
+            1,
+        ),
+        Replacement(b"if (tab == index)", b"if (index == tab)", 2),
+        Replacement(b"for (; j < rows[i].size(); ++j)", b"for (; rows[i].size() > j; ++j)", 1),
+        Replacement(
+            b"""    if (resize)
+    {
+        int right = spacingX;
+        int bottom = spacingY;
+        for (unsigned int i = 0; i < rows.size(); ++i)
+        {
+            for (unsigned int j = 0; j < rows[i].size(); ++j)
+            {
+                core::CRect<int> rect = rows[i][j]->getRelativePosition();
+                if (right < rect.LowerRightCorner.X)
+                    right = rect.LowerRightCorner.X;
+                if (bottom < rect.LowerRightCorner.Y)
+                    bottom = rect.LowerRightCorner.Y;
+            }
+        }
+
+        core::CRect<int> area = getContentArea();
+        RelativeRect.LowerRightCorner.X += right + spacingX - area.getWidth();
+        RelativeRect.LowerRightCorner.Y += bottom + spacingY - area.getHeight();
+        setRelativePosition(RelativeRect);
+    }
+
+    core::CRect<int> area = getContentArea();""",
+            b"""    core::CRect<int> area;
+    if (resize)
+    {
+        int bottom = spacingY;
+        int right = spacingX;
+        for (unsigned int i = 0; i < rows.size(); ++i)
+        {
+            for (unsigned int j = 0; j < rows[i].size(); ++j)
+            {
+                core::CRect<int> rect = rows[i][j]->getRelativePosition();
+                if (right < rect.LowerRightCorner.X)
+                    right = rect.LowerRightCorner.X;
+                if (bottom < rect.LowerRightCorner.Y)
+                    bottom = rect.LowerRightCorner.Y;
+            }
+        }
+
+        area = getContentArea();
+        int height = area.getHeight();
+        RelativeRect.LowerRightCorner.X += right + spacingX - area.getWidth();
+        RelativeRect.LowerRightCorner.Y += bottom + (spacingY - height);
+        setRelativePosition(RelativeRect);
+    }
+
+    area = getContentArea();""",
+            1,
+        ),
+        Replacement(
+            b"        int offset = (width - right - spacingX) / (horizontal[i] == 1 ? 2 : 1);",
+            b"""        int offset = width - right - spacingX;
+        if (horizontal[i] == 1)
+            offset /= 2;""",
+            1,
+        ),
+        Replacement(
+            b"""        if (vertical[i] == 0)
+            continue;
+
+        int rowHeight = 0;
+        for (unsigned int j = 0; j < rows[i].size(); ++j)
+            if (rowHeight < rows[i][j]->getRelativePosition().getHeight())
+                rowHeight = rows[i][j]->getRelativePosition().getHeight();
+
+        for (unsigned int j = 0; j < rows[i].size(); ++j)
+        {
+            core::CRect<int> rect = rows[i][j]->getRelativePosition();
+            int offset = (rowHeight - rect.getHeight()) / (vertical[i] == 1 ? 2 : 1);""",
+            b"""        int align = vertical[i];
+        if (align == 0)
+            continue;
+
+        int rowHeight = 0;
+        for (unsigned int j = 0; j < rows[i].size(); ++j)
+            if (rowHeight < rows[i][j]->getRelativePosition().getHeight())
+                rowHeight = rows[i][j]->getRelativePosition().getHeight();
+
+        for (unsigned int j = 0; j < rows[i].size(); ++j)
+        {
+            core::CRect<int> rect = rows[i][j]->getRelativePosition();
+            int offset = rowHeight - rect.getHeight();
+            if (align == 1)
+                offset /= 2;""",
+            1,
+        ),
+    ),
+)
+
+HEADER_FUNCTION_VARIANTS: dict[tuple[str, str], list[HeaderFunctionEdit]] = {
+    (f"daisy/gui/{name}.cpp", "_ZN2ox3gui10IGUILayout9sortRiverEbiib"): [_RIVER_LAYOUT]
+    for name in ("CGUIClickArea", "CGUIEnvironment", "CGUIModalScreen", "CGUITabControl", "CGUIWindow")
+}
 
 SIGNATURE_AUTHORED: dict[tuple[str, str], SignatureEdit] = {
     # The target's CVideoSoftware::setRenderTarget(ITexture*) at vtable slot 115

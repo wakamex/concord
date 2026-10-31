@@ -861,6 +861,94 @@ void other() { int growX = maxWidth - area.getWidth(); }
             self.assertIn(b'void other() { int growX = maxWidth - area.getWidth(); }', result)
             self.assertIsNone(authored.header_function_candidate(result, symbol, edits[0]))
 
+    def test_river_layout_recovery_is_registered_for_every_layout_unit(self):
+        symbol = "_ZN2ox3gui10IGUILayout9sortRiverEbiib"
+        source = b"""inline void IGUILayout::sortRiver(bool resize, int spacingX, int spacingY, bool sortHidden)
+{
+    std::vector<TArray<IGUIElement*> > rows;
+    std::vector<int> horizontal;
+    std::vector<int> vertical;
+    int horizontalAlign = 0;
+    int verticalAlign = 0;
+    int row = 0;
+    int tabs = 0;
+    int maxTabs = 0;
+        if (hints.findNext("top", 0) >= 0)
+            vertical[row] = verticalAlign = 0;
+        else if (hints.findNext("middle", 0) >= 0)
+            vertical[row] = verticalAlign = 1;
+        else if (hints.findNext("bottom", 0) >= 0)
+            vertical[row] = verticalAlign = 2;
+
+        if (hints.findNext("left", 0) >= 0)
+            horizontal[row] = horizontalAlign = 0;
+        else if (hints.findNext("center", 0) >= 0)
+            horizontal[row] = horizontalAlign = 1;
+        else if (hints.findNext("right", 0) >= 0)
+            horizontal[row] = horizontalAlign = 2;
+            rows[i][j]->setRelativePosition(core::CRect<int>(x, y, size.Width + x, size.Height + y));
+            if (rowHeight < size.Height)
+                rowHeight = size.Height;
+                    if (tab == index)
+                        break;
+                    if (tab == index)
+                    {
+                            for (; j < rows[i].size(); ++j)
+                                rows[i][j]->setRelativePosition(rect);
+                    }
+    if (resize)
+    {
+        int right = spacingX;
+        int bottom = spacingY;
+        for (unsigned int i = 0; i < rows.size(); ++i)
+        {
+            for (unsigned int j = 0; j < rows[i].size(); ++j)
+            {
+                core::CRect<int> rect = rows[i][j]->getRelativePosition();
+                if (right < rect.LowerRightCorner.X)
+                    right = rect.LowerRightCorner.X;
+                if (bottom < rect.LowerRightCorner.Y)
+                    bottom = rect.LowerRightCorner.Y;
+            }
+        }
+
+        core::CRect<int> area = getContentArea();
+        RelativeRect.LowerRightCorner.X += right + spacingX - area.getWidth();
+        RelativeRect.LowerRightCorner.Y += bottom + spacingY - area.getHeight();
+        setRelativePosition(RelativeRect);
+    }
+
+    core::CRect<int> area = getContentArea();
+        int offset = (width - right - spacingX) / (horizontal[i] == 1 ? 2 : 1);
+        if (vertical[i] == 0)
+            continue;
+
+        int rowHeight = 0;
+        for (unsigned int j = 0; j < rows[i].size(); ++j)
+            if (rowHeight < rows[i][j]->getRelativePosition().getHeight())
+                rowHeight = rows[i][j]->getRelativePosition().getHeight();
+
+        for (unsigned int j = 0; j < rows[i].size(); ++j)
+        {
+            core::CRect<int> rect = rows[i][j]->getRelativePosition();
+            int offset = (rowHeight - rect.getHeight()) / (vertical[i] == 1 ? 2 : 1);
+        }
+}
+void other() { if (tab == index) return; }
+"""
+        for name in ("CGUIClickArea", "CGUIEnvironment", "CGUIModalScreen", "CGUITabControl", "CGUIWindow"):
+            edits = authored.header_edits(f"daisy/gui/{name}.cpp", symbol, "river-layout-recovery")
+            self.assertEqual(len(edits), 1)
+            result = authored.header_function_candidate(source, symbol, edits[0])
+            self.assertIsNotNone(result)
+            self.assertLess(result.index(b"int horizontalAlign = 0;"), result.index(b"std::vector<TArray<IGUIElement*> > rows;"))
+            self.assertLess(result.index(b"int tabs = 0;"), result.index(b"int row = 0;"))
+            self.assertIn(b"rows[i][j]->setRelativePosition(core::CRect<int>(core::CPosition2d<int>(x, y), size));", result)
+            self.assertIn(b"for (; rows[i].size() > j; ++j)", result)
+            self.assertIn(b"RelativeRect.LowerRightCorner.Y += bottom + (spacingY - height);", result)
+            self.assertIn(b"void other() { if (tab == index) return; }", result)
+            self.assertIsNone(authored.header_function_candidate(result, symbol, edits[0]))
+
     def test_header_spelling_edits_an_inline_overload_and_scores_its_caller(self):
         source = b'int Board::pick(int a) { return a; }\nint Board::skip() { return 0; }\n'
         edit = authored.HeaderFunctionEdit(
