@@ -434,6 +434,42 @@ AUTHORED: dict[tuple[str, str], list[Edit | BodyEdit]] = {
             b"\t\t}",
         ),
     ],
+    # Extending Irrlicht 0.7's RGB16(color >> 16, color >> 8, color) with a
+    # fourth bool alpha parameter keeps the bitwise-OR chain signed and outer-
+    # shifted so GCC 4.4 folds 0x7c00 and 0x3e0 in 32-bit SImode rather than
+    # narrowing them to 16-bit HImode, making beginScene and draw2DLine exact.
+    (
+        "daisy/video/Software/CVideoSoftware.cpp",
+        "_ZN5daisy5video14CVideoSoftware10beginSceneEbbN2ox5video6SColorE",
+    ): [
+        Edit(
+            "a1r5g5b5-rgba16-bool",
+            b"\tif (backBuffer)\n"
+            b"\t\tBackBuffer->fill(ox::video::toA1R5G5B5(color.color));",
+            b"\tif (backBuffer)\n"
+            b"\t{\n"
+            b"\t\tint r = color.color >> 16;\n"
+            b"\t\tint g = color.color >> 8;\n"
+            b"\t\tint b = color.color;\n"
+            b"\t\tbool alpha = (color.color & 0xff000000) != 0;\n"
+            b"\t\tBackBuffer->fill((alpha << 15) | (((r >> 3) & 0x1f) << 10) | (((g >> 3) & 0x1f) << 5) | ((b >> 3) & 0x1f));\n"
+            b"\t}",
+        ),
+    ],
+    (
+        "daisy/video/Software/CVideoSoftware.cpp",
+        "_ZN5daisy5video14CVideoSoftware10draw2DLineERKN2ox4core11CPosition2dIiEES7_NS2_5video6SColorE",
+    ): [
+        Edit(
+            "a1r5g5b5-rgba16-bool",
+            b"\t((CImage*)BackBuffer)->drawLine(start, end, ox::video::toA1R5G5B5(color.color));",
+            b"\tint r = color.color >> 16;\n"
+            b"\tint g = color.color >> 8;\n"
+            b"\tint b = color.color;\n"
+            b"\tbool alpha = (color.color & 0xff000000) != 0;\n"
+            b"\t((CImage*)BackBuffer)->drawLine(start, end, (alpha << 15) | (((r >> 3) & 0x1f) << 10) | (((g >> 3) & 0x1f) << 5) | ((b >> 3) & 0x1f));",
+        ),
+    ],
 }
 
 # Daisy's quad batch is absent from Irrlicht 0.7. The target loads the batch

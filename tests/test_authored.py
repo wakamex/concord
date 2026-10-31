@@ -514,6 +514,57 @@ void f(E mode)
         self.assertNotIn(b"toA1R5G5B5", candidate)
         self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
 
+    def test_software_begin_scene_packs_a1r5g5b5_with_rgba16_bool_alpha(self):
+        unit = "daisy/video/Software/CVideoSoftware.cpp"
+        symbol = "_ZN5daisy5video14CVideoSoftware10beginSceneEbbN2ox5video6SColorE"
+        key = (unit, symbol)
+        source = (
+            b"bool CVideoSoftware::beginScene(bool backBuffer, bool zBuffer, SColor color)\n"
+            b"{\n"
+            b"\tCVideoNull::beginScene(backBuffer, zBuffer, color);\n\n"
+            b"\tif (backBuffer)\n"
+            b"\t\tBackBuffer->fill(ox::video::toA1R5G5B5(color.color));\n\n"
+            b"\tif (ZBuffer)\n"
+            b"\t\tZBuffer->clear();\n\n"
+            b"\treturn true;\n"
+            b"}\n"
+        )
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertEqual(set(forms), {"a1r5g5b5-rgba16-bool"})
+        candidate = forms["a1r5g5b5-rgba16-bool"]
+        self.assertIn(b"\t\tint r = color.color >> 16;\n", candidate)
+        self.assertIn(b"\t\tbool alpha = (color.color & 0xff000000) != 0;\n", candidate)
+        self.assertIn(
+            b"\t\tBackBuffer->fill((alpha << 15) | (((r >> 3) & 0x1f) << 10) | (((g >> 3) & 0x1f) << 5) | ((b >> 3) & 0x1f));\n",
+            candidate,
+        )
+        self.assertNotIn(b"toA1R5G5B5", candidate)
+        self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
+
+    def test_software_draw_2d_line_packs_a1r5g5b5_with_rgba16_bool_alpha(self):
+        unit = "daisy/video/Software/CVideoSoftware.cpp"
+        symbol = "_ZN5daisy5video14CVideoSoftware10draw2DLineERKN2ox4core11CPosition2dIiEES7_NS2_5video6SColorE"
+        key = (unit, symbol)
+        source = (
+            b"void CVideoSoftware::draw2DLine(const ox::core::CPosition2d<int>& start,\n"
+            b"\t\t\t\t\t\t\t\tconst ox::core::CPosition2d<int>& end,\n"
+            b"\t\t\t\t\t\t\t\tSColor color)\n"
+            b"{\n"
+            b"\t((CImage*)BackBuffer)->drawLine(start, end, ox::video::toA1R5G5B5(color.color));\n"
+            b"}\n"
+        )
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertEqual(set(forms), {"a1r5g5b5-rgba16-bool"})
+        candidate = forms["a1r5g5b5-rgba16-bool"]
+        self.assertIn(b"\tint r = color.color >> 16;\n", candidate)
+        self.assertIn(b"\tbool alpha = (color.color & 0xff000000) != 0;\n", candidate)
+        self.assertIn(
+            b"((CImage*)BackBuffer)->drawLine(start, end, (alpha << 15) | (((r >> 3) & 0x1f) << 10) | (((g >> 3) & 0x1f) << 5) | ((b >> 3) & 0x1f));",
+            candidate,
+        )
+        self.assertNotIn(b"toA1R5G5B5", candidate)
+        self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
+
 
 class Keep(unittest.TestCase):
     def test_external_candidate_is_confined_to_one_body_and_uses_the_oracle(self):
