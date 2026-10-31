@@ -6,7 +6,6 @@ wait_deadline_minutes = 240
 
 [lead]
 pool = "claude/7c26d8836517d626"
-grain = "task"
 
 [resources]
 checkout = ["concord"]   # concord's own checkout, for capability tasks
