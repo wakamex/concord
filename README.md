@@ -287,7 +287,7 @@ Upstream
 - Rebase and recapture evidence when the target's master moves; a conflicting pull request gets no CI at all.
 
 The machine
-- Cap parallel work: `CONCORD_JOBS` workers (8 by default, 2 when memory is short) and only start long jobs with at least 4 GB free. Sizing pools by processor count once took 22 GB and the kernel killed other services.
+- Cap parallel work: `CONCORD_JOBS` workers (8 by default, 2 when memory is short). Sizing pools by processor count once took 22 GB and the kernel killed other services; the cap is what prevents that. Do not wait for free memory before a job: the host keeps large swap and other services hold its memory, so free memory stays near 2 GB and a wait only stalls the job, while an executor run with `CONCORD_JOBS=2` uses well under a gigabyte between compiles.
 - Run long jobs as their own systemd units, one at a time, and remove old work files with `concord clean`.
 
 Speed
