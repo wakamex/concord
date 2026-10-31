@@ -373,6 +373,67 @@ AUTHORED: dict[tuple[str, str], list[Edit | BodyEdit]] = {
             b"        if (it->Time <= 4.0f)\n        {\n            ox::core::CRect<int> box(position.X - 3, position.Y - 3, position.X + 4, position.Y + 4);\n            // Clip the square to the minimap and skip the edges that were cut.\n            bool left = true;\n            if (box.UpperLeftCorner.X < area.UpperLeftCorner.X)\n            {\n                box.UpperLeftCorner.X = area.UpperLeftCorner.X;\n                left = false;\n            }\n            bool top = true;\n            if (box.UpperLeftCorner.Y < area.UpperLeftCorner.Y)\n            {\n                box.UpperLeftCorner.Y = area.UpperLeftCorner.Y;\n                top = false;\n            }\n            bool right = true;\n            if (box.LowerRightCorner.X >= area.LowerRightCorner.X)\n            {\n                box.LowerRightCorner.X = area.LowerRightCorner.X - 1;\n                right = false;\n            }\n            bool bottom = true;\n            if (box.LowerRightCorner.Y >= area.LowerRightCorner.Y)\n            {\n                box.LowerRightCorner.Y = area.LowerRightCorner.Y - 1;\n                bottom = false;\n            }\n            if (top)\n                Driver->draw2DLine(box.UpperLeftCorner,\n                    ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n            if (left)\n                Driver->draw2DLine(box.UpperLeftCorner,\n                    ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);\n            if (right)\n                Driver->draw2DLine(box.LowerRightCorner,\n                    ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n            if (bottom)\n                Driver->draw2DLine(box.LowerRightCorner,\n                    ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);\n        }\n        else\n        {\n            int size = (int)((it->Time - 4.0f) * 100.0f) + 6;\n            ox::core::CRect<int> box;\n            box.UpperLeftCorner = position - ox::core::CPosition2d<int>(size / 2, size / 2);\n            box.LowerRightCorner = box.UpperLeftCorner + ox::core::CPosition2d<int>(size, size);\n            // Clip the square to the minimap and skip the edges that were cut.\n            bool left = true;\n            if (box.UpperLeftCorner.X < area.UpperLeftCorner.X)\n            {\n                box.UpperLeftCorner.X = area.UpperLeftCorner.X;\n                left = false;\n            }\n            bool top = true;\n            if (box.UpperLeftCorner.Y < area.UpperLeftCorner.Y)\n            {\n                box.UpperLeftCorner.Y = area.UpperLeftCorner.Y;\n                top = false;\n            }\n            bool right = true;\n            if (box.LowerRightCorner.X >= area.LowerRightCorner.X)\n            {\n                box.LowerRightCorner.X = area.LowerRightCorner.X - 1;\n                right = false;\n            }\n            bool bottom = true;\n            if (box.LowerRightCorner.Y >= area.LowerRightCorner.Y)\n            {\n                box.LowerRightCorner.Y = area.LowerRightCorner.Y - 1;\n                bottom = false;\n            }\n            if (top)\n                Driver->draw2DLine(box.UpperLeftCorner,\n                    ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n            if (left)\n                Driver->draw2DLine(box.UpperLeftCorner,\n                    ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);\n            if (right)\n                Driver->draw2DLine(box.LowerRightCorner,\n                    ox::core::CPosition2d<int>(box.LowerRightCorner.X, box.UpperLeftCorner.Y), MINIMAP_MARKER_COLOR);\n            if (bottom)\n                Driver->draw2DLine(box.LowerRightCorner,\n                    ox::core::CPosition2d<int>(box.UpperLeftCorner.X, box.LowerRightCorner.Y), MINIMAP_MARKER_COLOR);\n        }",
         ),
     ],
+    # The target's raw-data CImage constructor omits Irrlicht 0.7's Data(0)
+    # member initializer and 0xbadf00d sentinel store: it initializes Format,
+    # assigns Data = data, copies Size, and calls initData() without reassigning
+    # Data afterward.
+    (
+        "daisy/video/Null/CImage.cpp",
+        "_ZN5daisy5video6CImageC1EN2ox5video13ECOLOR_FORMATERKNS2_4core12CDimension2dIiEEPv",
+    ): [
+        Edit(
+            "direct-data-before-init",
+            b": Format(format), Size(size), Data(0)\n{\n\tData = (void*)0xbadf00d;\n\n\tinitData();\n\tData = data;\n}",
+            b": Format(format), Size(size)\n{\n\tData = data;\n\tinitData();\n}",
+        ),
+    ],
+    # The target's PCX loader never reads header.YMin or header.YMax: it uses
+    # header.XMax - header.XMin + 1 for height as well as width, reusing one
+    # register for both dimensions.
+    (
+        "daisy/video/Null/CImageLoaderPCX.cpp",
+        "_ZN5daisy5video15CImageLoaderPCX9loadImageEPN2ox2io9IReadFileE",
+    ): [
+        Edit(
+            "pcx-height-from-x-span",
+            b"height = header.YMax - header.YMin + 1;",
+            b"height = header.XMax - header.XMin + 1;",
+        ),
+    ],
+    # Irrlicht 0.7's SColor::toA1R5G5B5 omits the alpha bit altogether. Harvest
+    # packs nonzero alpha through an unsigned 0/1 flag shifted left 15 and masks
+    # the packed short afterward in makeColorKeyTexture, whereas our translated
+    # conditional 0x8000 constant-folds away under ~(0x1 << 15) and emits sbb in
+    # CVideoSoftware::draw2DImage.
+    (
+        "daisy/video/Null/CVideoNull.cpp",
+        "_ZN5daisy5video10CVideoNull19makeColorKeyTextureEPN2ox5video8ITextureENS3_6SColorE",
+    ): [
+        Edit(
+            "a1r5g5b5-alpha-unsigned",
+            b"        short ref = (0x0 << 15) | (~(0x1 << 15) & toA1R5G5B5(color));",
+            b"        unsigned int c = color.color;\n"
+            b"        unsigned int alpha = (c & 0xff000000) != 0;\n"
+            b"        short packed = (alpha << 15) | ((c >> 9) & 0x7c00) | ((c >> 6) & 0x3e0) | (((int)c >> 3) & 0x1f);\n"
+            b"        short ref = (0x0 << 15) | (~(0x1 << 15) & packed);",
+        ),
+    ],
+    (
+        "daisy/video/Software/CVideoSoftware.cpp",
+        "_ZN5daisy5video14CVideoSoftware11draw2DImageEPN2ox5video8ITextureERKNS2_4core11CPosition2dIiEERKNS6_5CRectIiEEPSD_NS3_6SColorEb",
+    ): [
+        Edit(
+            "a1r5g5b5-alpha-unsigned",
+            b"\t\tif (useAlphaChannelOfTexture)\n"
+            b"\t\t\t((CSoftwareTexture*)texture)->getImage()->copyToWithAlpha(BackBuffer, destPos, sourceRect, ox::video::toA1R5G5B5(color.color), clipRect);",
+            b"\t\tif (useAlphaChannelOfTexture)\n"
+            b"\t\t{\n"
+            b"\t\t\tunsigned int c = color.color;\n"
+            b"\t\t\tunsigned int alpha = (c & 0xff000000) != 0;\n"
+            b"\t\t\t((CSoftwareTexture*)texture)->getImage()->copyToWithAlpha(BackBuffer, destPos, sourceRect, (alpha << 15) | ((c >> 9) & 0x7c00) | ((c >> 6) & 0x3e0) | (((int)c >> 3) & 0x1f), clipRect);\n"
+            b"\t\t}",
+        ),
+    ],
 }
 
 # Daisy's quad batch is absent from Irrlicht 0.7. The target loads the batch

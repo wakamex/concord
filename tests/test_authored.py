@@ -419,6 +419,101 @@ void f(E mode)
         self.assertNotIn(b"ActionPanel, -1, 0);", forms[combined])
         self.assertEqual(forms["info-text-style"].count(b'ActionPanel, -1, L"");'), 1)
 
+    def test_cimage_raw_data_constructor_assigns_data_before_init(self):
+        unit = "daisy/video/Null/CImage.cpp"
+        symbol = "_ZN5daisy5video6CImageC1EN2ox5video13ECOLOR_FORMATERKNS2_4core12CDimension2dIiEEPv"
+        key = (unit, symbol)
+        source = (
+            b"CImage::CImage(ECOLOR_FORMAT format, const ox::core::CDimension2d<int>& size)\n"
+            b": Format(format), Size(size), Data(0)\n"
+            b"{\n"
+            b"\tinitData();\n"
+            b"}\n"
+            b"CImage::CImage(ECOLOR_FORMAT format, const ox::core::CDimension2d<int>& size, void* data)\n"
+            b": Format(format), Size(size), Data(0)\n"
+            b"{\n"
+            b"\tData = (void*)0xbadf00d;\n\n"
+            b"\tinitData();\n"
+            b"\tData = data;\n"
+            b"}\n"
+        )
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertEqual(set(forms), {"direct-data-before-init"})
+        candidate = forms["direct-data-before-init"]
+        self.assertIn(
+            b": Format(format), Size(size)\n{\n\tData = data;\n\tinitData();\n}\n",
+            candidate,
+        )
+        self.assertNotIn(b"0xbadf00d", candidate)
+        self.assertEqual(candidate.count(b"Data(0)"), 1)
+        self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
+
+    def test_pcx_loader_computes_height_from_x_bounds(self):
+        unit = "daisy/video/Null/CImageLoaderPCX.cpp"
+        symbol = "_ZN5daisy5video15CImageLoaderPCX9loadImageEPN2ox2io9IReadFileE"
+        key = (unit, symbol)
+        source = (
+            b"IImage* CImageLoaderPCX::loadImage(ox::io::IReadFile* file)\n"
+            b"{\n"
+            b"\tint width, height, imagebytes;\n"
+            b"\twidth = header.XMax - header.XMin + 1;\n"
+            b"\theight = header.YMax - header.YMin + 1;\n"
+            b"\treturn 0;\n"
+            b"}\n"
+        )
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertEqual(set(forms), {"pcx-height-from-x-span"})
+        candidate = forms["pcx-height-from-x-span"]
+        self.assertIn(b"\twidth = header.XMax - header.XMin + 1;\n\theight = header.XMax - header.XMin + 1;\n", candidate)
+        self.assertNotIn(b"YMax", candidate)
+        self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
+
+    def test_make_color_key_texture_packs_a1r5g5b5_with_unsigned_alpha_flag(self):
+        unit = "daisy/video/Null/CVideoNull.cpp"
+        symbol = "_ZN5daisy5video10CVideoNull19makeColorKeyTextureEPN2ox5video8ITextureENS3_6SColorE"
+        key = (unit, symbol)
+        source = (
+            b"void CVideoNull::makeColorKeyTexture(ox::video::ITexture* texture, ox::video::SColor color)\n"
+            b"{\n"
+            b"        short ref = (0x0 << 15) | (~(0x1 << 15) & toA1R5G5B5(color));\n"
+            b"}\n"
+        )
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertEqual(set(forms), {"a1r5g5b5-alpha-unsigned"})
+        candidate = forms["a1r5g5b5-alpha-unsigned"]
+        self.assertIn(b"unsigned int alpha = (c & 0xff000000) != 0;", candidate)
+        self.assertIn(b"short packed = (alpha << 15) | ((c >> 9) & 0x7c00) | ((c >> 6) & 0x3e0) | (((int)c >> 3) & 0x1f);", candidate)
+        self.assertIn(b"short ref = (0x0 << 15) | (~(0x1 << 15) & packed);", candidate)
+        self.assertNotIn(b"toA1R5G5B5", candidate)
+        self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
+
+    def test_software_draw_2d_image_packs_a1r5g5b5_with_unsigned_alpha_flag(self):
+        unit = "daisy/video/Software/CVideoSoftware.cpp"
+        symbol = "_ZN5daisy5video14CVideoSoftware11draw2DImageEPN2ox5video8ITextureERKNS2_4core11CPosition2dIiEERKNS6_5CRectIiEEPSD_NS3_6SColorEb"
+        key = (unit, symbol)
+        source = (
+            b"void CVideoSoftware::draw2DImage(ox::video::ITexture* texture, const ox::core::CPosition2d<int>& destPos,\n"
+            b"\t\t\t\t\t\t\t\t const ox::core::CRect<int>& sourceRect,\n"
+            b"\t\t\t\t\t\t\t\t const ox::core::CRect<int>* clipRect, SColor color,\n"
+            b"\t\t\t\t\t\t\t\t bool useAlphaChannelOfTexture)\n"
+            b"{\n"
+            b"\tif (texture)\n"
+            b"\t{\n"
+            b"\t\tif (useAlphaChannelOfTexture)\n"
+            b"\t\t\t((CSoftwareTexture*)texture)->getImage()->copyToWithAlpha(BackBuffer, destPos, sourceRect, ox::video::toA1R5G5B5(color.color), clipRect);\n"
+            b"\t\telse\n"
+            b"\t\t\t((CSoftwareTexture*)texture)->getImage()->copyTo(BackBuffer, destPos, sourceRect, clipRect);\n"
+            b"\t}\n"
+            b"}\n"
+        )
+        forms = candidates(source, symbol, authored.AUTHORED.get(key, []))
+        self.assertEqual(set(forms), {"a1r5g5b5-alpha-unsigned"})
+        candidate = forms["a1r5g5b5-alpha-unsigned"]
+        self.assertIn(b"\t\t\tunsigned int alpha = (c & 0xff000000) != 0;\n", candidate)
+        self.assertIn(b"(alpha << 15) | ((c >> 9) & 0x7c00) | ((c >> 6) & 0x3e0) | (((int)c >> 3) & 0x1f), clipRect);", candidate)
+        self.assertNotIn(b"toA1R5G5B5", candidate)
+        self.assertEqual(candidates(candidate, symbol, authored.AUTHORED[key]), {})
+
 
 class Keep(unittest.TestCase):
     def test_external_candidate_is_confined_to_one_body_and_uses_the_oracle(self):
