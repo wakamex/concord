@@ -459,5 +459,23 @@ class HarvestOutOfLineExtentTests(unittest.TestCase):
             self.assertIn(fact, image_notes["Current ABI copies"])
 
 
+class ValueDifferenceBatchKnowledgeTests(unittest.TestCase):
+    def test_value_difference_batch_records_kept_and_rejected_interventions(self):
+        idiom = next(item for item in knowledge.load("gcc-4.4.3") if item.id == "value-difference-batch-07297f2")
+        notes = {item["function"]: item["note"] for item in idiom.evidence}
+
+        for function, facts in {
+            "daisy::gui::CGUITabButtonRow::setAnimations": ("92.07 to 94.62", "5,000 cases", "0 newly matched"),
+            "daisy::other::CIrrDeviceLinux::postMouseEvent": ("99.860466 to 75.379845", "MouseMoved (10)"),
+            "daisy::video::CVideoOpenGL::setRenderStates3DMode": ("84.09314 to 82.18627", "Rejected twice"),
+            "daisy::gui::CGUIDetachableFrame::OnEvent": ("0 bases differ", "0xc8", "0x231"),
+            "harvest::states::CPlayState::renderMinimap": ("0 bases differ", "0x3d0"),
+        }.items():
+            with self.subTest(function=function):
+                for fact in facts:
+                    self.assertIn(fact, notes[function])
+        self.assertIn("clang puts Dragging at 0xd0", notes["clang record layouts"])
+
+
 if __name__ == "__main__":
     unittest.main()
