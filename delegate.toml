@@ -13,8 +13,13 @@ checkout = ["concord"]   # concord's own checkout, for capability tasks
 # Harvest checkouts beside it (/code/harvest-NAME), one task each; search and rule tasks work in one.
 harvest = ["swe2", "swe2c", "cursor", "sol", "terra"]
 
-[pools.codex]
-dollars_per_point = 2.32
+# Points of each window a run takes, for pools usage-burn has no measured price for: a Devin run used 43 points of
+# its week in w3sim, and one Cursor run moved the billing month by about 0.4 points on 2026-10-31.
+[pools.devin]
+need = 40
+
+[pools.cursor]
+need = 1
 
 [executors.sol]
 agent = "codex"
