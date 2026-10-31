@@ -116,8 +116,6 @@ Use a Harvest checkout at `0d482f0` after `hv match`. Set `HARVEST` to that chec
 
 ```sh
 export CONCORD_JOBS=2
-free -g
-while [ $(awk '/MemAvailable/{print int($2/1048576)}' /proc/meminfo) -lt 4 ]; do sleep 60; done
 env -u XDG_DATA_HOME uv --no-config run --locked concord causal --harvest "$HARVEST" --unit ox/core/CStringFunctions.cpp _ZN2ox4core16CStringFunctions18millisecondsToWideEfb --search --budget 64 --save milliseconds.json
 env -u XDG_DATA_HOME uv --no-config run --locked concord scores --harvest "$HARVEST" --base 0d482f0 --save gate.json
 ```
