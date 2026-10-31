@@ -84,6 +84,17 @@ class HeaderFunctionEdit:
     declarator: bytes | None = None
 
 
+@dataclass(frozen=True)
+class SignatureEdit:
+    """An authored signature correction pairing a header declaration with its definition."""
+
+    name: str
+    header: str
+    declaration_old: bytes
+    declaration_new: bytes
+    replacements: tuple[Replacement, ...]
+
+
 AUTHORED: dict[tuple[str, str], list[Edit | BodyEdit]] = {
     (
         "HarvestFull/harvest/entity/CDropshipEntity.cpp",
@@ -595,6 +606,34 @@ HEADER_FUNCTION_AUTHORED.update({
 # author requires an explicit name before measuring and writing a family member.
 HEADER_FUNCTION_VARIANTS: dict[tuple[str, str], list[HeaderFunctionEdit]] = {}
 
+SIGNATURE_AUTHORED: dict[tuple[str, str], SignatureEdit] = {
+    # The target's CVideoSoftware::setRenderTarget(ITexture*) at vtable slot 115
+    # returns false after logging a driver-mismatch error and true after setting
+    # the render target, rather than Irrlicht 0.7's void signature.
+    (
+        "daisy/video/Software/CVideoSoftware.cpp",
+        "_ZN5daisy5video14CVideoSoftware15setRenderTargetEPN2ox5video8ITextureE",
+    ): SignatureEdit(
+        "bool-return",
+        "daisy/video/Software/CVideoSoftware.h",
+        b"virtual void setRenderTarget(ox::video::ITexture* texture);",
+        b"virtual bool setRenderTarget(ox::video::ITexture* texture);",
+        (
+            Replacement(
+                b"void CVideoSoftware::setRenderTarget(ox::video::ITexture* texture)",
+                b"bool CVideoSoftware::setRenderTarget(ox::video::ITexture* texture)",
+                1,
+            ),
+            Replacement(b"\t\treturn;\n", b"\t\treturn false;\n", 1),
+            Replacement(
+                b"\telse\n\t\tsetRenderTarget((video::CImage*)0);\n}",
+                b"\telse\n\t\tsetRenderTarget((video::CImage*)0);\n\n\treturn true;\n}",
+                1,
+            ),
+        ),
+    ),
+}
+
 
 def header_edits(unit: str, symbol: str, variant: str | None = None) -> list[HeaderFunctionEdit]:
     from concord.cstring_spellings import registered
@@ -634,6 +673,28 @@ def header_function_candidate(source: bytes, symbol: str, edit: HeaderFunctionEd
             return None
         body = body.replace(replacement.old, replacement.new)
     return source[:scope.start_byte] + body + source[scope.end_byte:]
+
+
+def signature_candidate(
+    header_source: bytes, unit_source: bytes, symbol: str, edit: SignatureEdit
+) -> tuple[bytes, bytes] | None:
+    """Replace one header declaration and apply every replacement inside its definition."""
+    root = Parser(CPP).parse(header_source).root_node
+    matches = [
+        node
+        for node in (*_descendants(root, "field_declaration"), *_descendants(root, "declaration"))
+        if node.text == edit.declaration_old
+    ]
+    if len(matches) != 1:
+        return None
+    header = header_source[:matches[0].start_byte] + edit.declaration_new + header_source[matches[0].end_byte:]
+    scope = find_function(unit_source, symbol)
+    body = unit_source[scope.start_byte:scope.end_byte]
+    for replacement in edit.replacements:
+        if body.count(replacement.old) != replacement.count:
+            return None
+        body = body.replace(replacement.old, replacement.new)
+    return header, unit_source[:scope.start_byte] + body + unit_source[scope.end_byte:]
 
 
 def _body_candidate(body: bytes, edit: Edit | BodyEdit) -> bytes | None:
@@ -941,6 +1002,67 @@ def apply_header_function(harvest: Harvest, unit: str, symbol: str, edit: Header
     }
 
 
+def apply_signature(harvest: Harvest, unit: str, symbol: str, edit: SignatureEdit, write: bool) -> dict:
+    """Measure a paired header declaration and unit definition across every dependent unit."""
+    header_path = harvest.root / "src" / edit.header
+    unit_path = harvest.root / "src" / unit
+    header_source = header_path.read_bytes()
+    unit_source = unit_path.read_bytes()
+    candidate = signature_candidate(header_source, unit_source, symbol, edit)
+    if candidate is None:
+        raise ValueError(f"no authored signature candidate applies to {symbol} in {edit.header} and {unit}")
+    header_candidate, unit_candidate = candidate
+    units = sorted(set(harvest.dependents(f"src/{edit.header}")) | {unit})
+    overlays = {f"src/{edit.header}": header_candidate, f"src/{unit}": unit_candidate}
+    items = {}
+    for n, dependent in enumerate(units):
+        items[f"before-{n}"] = (dependent, {})
+        items[f"after-{n}"] = (dependent, overlays)
+    evaluations = harvest.evaluate_overlays(items)
+    pairs = {dependent: (evaluations[f"before-{n}"], evaluations[f"after-{n}"]) for n, dependent in enumerate(units)}
+    for dependent, (before, _) in pairs.items():
+        if before.error:
+            raise RuntimeError(f"the unit {dependent} does not compile:\n{before.error}")
+    before, after = pairs[unit]
+    verdict = after.verdict(symbol)
+    accepted = keep_improvement(before, after, symbol) and all(_preserves(*pair) for pair in pairs.values())
+    evidence = None
+    if accepted and not verdict.row["exact"]:
+        if before.object is None or after.object is None:
+            accepted = False
+        else:
+            accepted, evidence = oracle.gate_objects(harvest, unit, symbol, before.object, after.object)
+            accepted = accepted and evidence is not None
+    if accepted and write:
+        if header_path.read_bytes() != header_source:
+            raise ValueError(f"{edit.header} changed while candidates compiled")
+        if unit_path.read_bytes() != unit_source:
+            raise ValueError(f"{unit} changed while candidates compiled")
+        header_path.write_bytes(header_candidate)
+        unit_path.write_bytes(unit_candidate)
+    return {
+        "unit": unit,
+        "path": unit,
+        "header": edit.header,
+        "symbol": symbol,
+        "dependents": units,
+        "candidates": {
+            edit.name: {
+                "error": after.error or None,
+                "exact": bool(verdict and verdict.row["exact"]),
+                "before": before.fuzzy.get(symbol),
+                "score": after.fuzzy.get(symbol),
+                "kept": accepted,
+                "oracle": evidence,
+            }
+        },
+        "chosen": edit.name if accepted else None,
+        "applied": bool(accepted and write),
+        "original": unit_source,
+        "source": unit_candidate if accepted else None,
+    }
+
+
 def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | None = None,
           candidate: bytes | None = None, source_candidate: bytes | None = None) -> dict:
     """Measure authored candidates and optionally write an accepted one. A
@@ -957,6 +1079,8 @@ def apply(harvest: Harvest, unit: str, symbol: str, write: bool, variant: str | 
         raise ValueError(f"no authored header variant {variant} for {unit} {symbol}")
     if candidate is None and source_candidate is None and (edit := HEADER_AUTHORED.get((unit, symbol))):
         return apply_header(harvest, unit, symbol, edit, write)
+    if candidate is None and source_candidate is None and (edit := SIGNATURE_AUTHORED.get((unit, symbol))):
+        return apply_signature(harvest, unit, symbol, edit, write)
     path = harvest.root / "src" / unit
     source = path.read_bytes()
     if source_candidate is not None:

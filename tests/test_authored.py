@@ -967,5 +967,127 @@ void Board::skip()
                 self.assertEqual(gate.call_count, 1)
 
 
+@unittest.skipUnless(shutil.which("c++filt"), "needs c++filt")
+class Signature(unittest.TestCase):
+    def test_software_set_render_target_signature_and_body_are_registered(self):
+        unit = "daisy/video/Software/CVideoSoftware.cpp"
+        symbol = "_ZN5daisy5video14CVideoSoftware15setRenderTargetEPN2ox5video8ITextureE"
+        edit = authored.SIGNATURE_AUTHORED[(unit, symbol)]
+        header = (
+            b"class CVideoSoftware : public CVideoNull\n"
+            b"{\n"
+            b"public:\n"
+            b"\tvirtual void setRenderTarget(ox::video::ITexture* texture);\n"
+            b"protected:\n"
+            b"\tvoid setRenderTarget(video::CImage* image);\n"
+            b"};\n"
+        )
+        source = (
+            b"void CVideoSoftware::setRenderTarget(ox::video::ITexture* texture)\n"
+            b"{\n"
+            b"\tif (texture->getDriverType() != EDT_SOFTWARE)\n"
+            b"\t{\n"
+            b'\t\tos::Printer::log("Fatal Error: Tried to set a texture not owned by this driver.", ox::event::ELL_ERROR);\n'
+            b"\t\treturn;\n"
+            b"\t}\n\n"
+            b"\tif (RenderTargetTexture)\n"
+            b"\t\tRenderTargetTexture->drop();\n\n"
+            b"\tRenderTargetTexture = texture;\n\n"
+            b"\tif (RenderTargetTexture)\n"
+            b"\t{\n"
+            b"\t\tRenderTargetTexture->grab();\n"
+            b"\t\tsetRenderTarget(((CSoftwareTexture*)RenderTargetTexture)->getTexture());\n"
+            b"\t}\n"
+            b"\telse\n"
+            b"\t\tsetRenderTarget((video::CImage*)0);\n"
+            b"}\n"
+            b"void CVideoSoftware::setRenderTarget(video::CImage* image)\n"
+            b"{\n"
+            b"\tif (!image)\n"
+            b"\t\treturn;\n"
+            b"}\n"
+        )
+        pair = authored.signature_candidate(header, source, symbol, edit)
+        self.assertIsNotNone(pair)
+        new_header, new_source = pair
+        self.assertIn(b"\tvirtual bool setRenderTarget(ox::video::ITexture* texture);\n", new_header)
+        self.assertIn(b"\tvoid setRenderTarget(video::CImage* image);\n", new_header)
+        self.assertIn(b"bool CVideoSoftware::setRenderTarget(ox::video::ITexture* texture)\n", new_source)
+        self.assertIn(b"\t\treturn false;\n", new_source)
+        self.assertIn(b"\treturn true;\n}\n", new_source)
+        self.assertIn(b"void CVideoSoftware::setRenderTarget(video::CImage* image)\n{\n\tif (!image)\n\t\treturn;\n}\n", new_source)
+        self.assertIsNone(authored.signature_candidate(new_header, new_source, symbol, edit))
+        self.assertIsNone(authored.signature_candidate(header + header, source, symbol, edit))
+
+    def test_signature_edit_requires_dependent_scores_and_writes_both_files(self):
+        unit, dependent = "d/Board.cpp", "d/Other.cpp"
+        edit = authored.SignatureEdit(
+            "bool-return",
+            "d/Board.h",
+            b"virtual void pick(int a);",
+            b"virtual bool pick(int a);",
+            (
+                authored.Replacement(b"void Board::pick(int a)", b"bool Board::pick(int a)", 1),
+                authored.Replacement(b"return;", b"return true;", 1),
+            ),
+        )
+
+        class Checkout:
+            def __init__(self, root):
+                self.root = root
+                self.regress = False
+
+            def source(self, path):
+                return path
+
+            def dependents(self, path):
+                if path != "src/d/Board.h":
+                    raise AssertionError(path)
+                return [unit, dependent]
+
+            def evaluate_overlays(self, items):
+                result = {}
+                expected_overlay = {"src/d/Board.h", f"src/{unit}"}
+                for name, (source_unit, overlays) in items.items():
+                    if source_unit not in (unit, dependent) or set(overlays) not in (set(), expected_overlay):
+                        raise AssertionError((source_unit, overlays))
+                    exact = bool(overlays) and source_unit == unit
+                    scores = {SYMBOL: 100.0 if exact else 60.0, "other": 100.0}
+                    if source_unit == dependent and overlays and self.regress:
+                        scores["other"] = 99.0
+                    result[name] = evaluation({SYMBOL: exact, "other": True}, scores)
+                return result
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            header_path = root / "src/d/Board.h"
+            unit_path = root / "src/d/Board.cpp"
+            header_path.parent.mkdir(parents=True)
+            header_source = b"class Board { public: virtual void pick(int a); };\n"
+            unit_source = b"void Board::pick(int a) { return; }\n"
+            header_path.write_bytes(header_source)
+            unit_path.write_bytes(unit_source)
+            checkout = Checkout(root)
+            with patch.dict(authored.SIGNATURE_AUTHORED, {(unit, SYMBOL): edit}):
+                checkout.regress = True
+                report = authored.apply(checkout, unit, SYMBOL, write=True)
+                self.assertIsNone(report["chosen"])
+                self.assertFalse(report["applied"])
+                self.assertEqual(header_path.read_bytes(), header_source)
+                self.assertEqual(unit_path.read_bytes(), unit_source)
+
+                checkout.regress = False
+                report = authored.apply(checkout, unit, SYMBOL, write=False)
+                self.assertEqual(report["chosen"], "bool-return")
+                self.assertFalse(report["applied"])
+                self.assertEqual(header_path.read_bytes(), header_source)
+                self.assertEqual(unit_path.read_bytes(), unit_source)
+
+                report = authored.apply(checkout, unit, SYMBOL, write=True)
+                self.assertTrue(report["applied"])
+                self.assertEqual(header_path.read_bytes(), b"class Board { public: virtual bool pick(int a); };\n")
+                self.assertEqual(unit_path.read_bytes(), b"bool Board::pick(int a) { return true; }\n")
+
+
 if __name__ == "__main__":
     unittest.main()

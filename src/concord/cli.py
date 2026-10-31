@@ -998,7 +998,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
             score = f"{row['before']} -> {row['score']}" if "before" in row else str(row["score"])
             print(f"  {name}: {flags or 'rejected'} (score {score})")
         if "dependents" in report:
-            print(f"  header {report['path']}: checked {len(report['dependents'])} dependent units")
+            print(f"  header {report.get('header', report['path'])}: checked {len(report['dependents'])} dependent units")
         print(f"author {unit} {args.function}: {report['chosen'] or 'no candidate accepted'}{' (applied)' if report['applied'] else ''}")
         return 0 if report["chosen"] else 1
     if args.command == "enum-switch":
