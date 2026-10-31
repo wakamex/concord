@@ -1047,8 +1047,10 @@ def same_code(before: Evaluation, after: Evaluation) -> bool:
 
 
 def _preserves(before: Evaluation, after: Evaluation) -> bool:
+    after_scores = after.fuzzy_by_key()
     return (not after.error and before.exact_functions() <= after.exact_functions()
-            and all(name in after.fuzzy and after.fuzzy[name] >= score for name, score in before.fuzzy.items()))
+            and all(key in after_scores and after_scores[key] >= score
+                    for key, score in before.fuzzy_by_key().items()))
 
 
 def _matched_data(evaluation: Evaluation) -> set[int]:
@@ -1072,10 +1074,11 @@ def _preserves_with_exact_copies(before: Evaluation, after: Evaluation, other_ex
                           if row["exact"] and function_key(row) == key), None)
         if duplicate is None or duplicate.get("address") not in other_exact_addresses:
             return False
-    for name, score in before.fuzzy.items():
-        if name in after.fuzzy and after.fuzzy[name] >= score:
+    after_scores = after.fuzzy_by_key()
+    for key, score in before.fuzzy_by_key().items():
+        if key in after_scores and after_scores[key] >= score:
             continue
-        original = before.verdict(name)
+        original = before.verdict_by_key(key)
         if original is None or original.row.get("address") not in other_exact_addresses:
             return False
     return True
@@ -1449,31 +1452,33 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
         if before.error or after.error:
             accepted = False
             continue
+        before_scores, after_scores = before.fuzzy_by_key(), after.fuzzy_by_key()
         if not _preserves_with_exact_copies(before, after, other_exact_addresses):
-            lowered = [name for name, score in before.fuzzy.items()
-                       if after.fuzzy.get(name, 0.0) < score
-                       and (before.verdict(name) is None
-                            or before.verdict(name).row.get("address") not in other_exact_addresses)]
-            lost_exact = any(not (before.verdict(name) and before.verdict(name).row.get("address") in other_exact_addresses)
-                             for name in {row["symbol"] for section in before.sections
-                                          for row in section.get("functions", [])
-                                          if row["exact"] and function_key(row) not in after.exact_functions()})
+            lowered = [key for key, score in before_scores.items()
+                       if after_scores.get(key, 0.0) < score
+                       and (before.verdict_by_key(key) is None
+                            or before.verdict_by_key(key).row.get("address") not in other_exact_addresses)]
+            lost_exact = any(row.get("address") not in other_exact_addresses
+                             for section in before.sections
+                             for row in section.get("functions", [])
+                             if row["exact"] and function_key(row) not in after.exact_functions())
             if lost_exact or not lowered or net_gain(before, after) <= 0:
                 accepted = False
                 continue
         if not _matched_data(before) <= _matched_data(after):
             accepted = False
             continue
-        for symbol in after.fuzzy:
-            old_score = before.fuzzy.get(symbol)
-            verdict = after.verdict(symbol)
-            old_verdict = before.verdict(symbol)
+        for key, new_score in after_scores.items():
+            old_score = before_scores.get(key)
+            verdict = after.verdict_by_key(key)
+            old_verdict = before.verdict_by_key(key)
             if verdict is None:
                 continue
+            symbol = verdict.symbol
             if old_score is None:
                 improved = bool(verdict.row['exact'] and symbol in known_symbols)
             else:
-                improved = (after.fuzzy[symbol] > old_score
+                improved = (new_score > old_score
                             or bool(verdict.row['exact'] and old_verdict and not old_verdict.row['exact']))
             if not improved:
                 continue
@@ -1488,7 +1493,7 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
             accepted = accepted and kept
             if kept:
                 gain = {'unit': unit, 'symbol': symbol, 'before': old_score,
-                        'score': after.fuzzy[symbol], 'exact': verdict.row['exact']}
+                        'score': new_score, 'exact': verdict.row['exact']}
                 gain.update({'unchanged_source': unchanged} if unchanged is not None else {'oracle': evidence})
                 gains.append(gain)
     accepted = bool(accepted and gains)

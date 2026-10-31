@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from concord.diff import read_function
-from concord.harvest import Evaluation, Harvest
+from concord.harvest import Evaluation, Harvest, function_key
 from concord.lines import inline_chains
 from concord.model import DiffResult
 from concord.transforms import TRANSFORMS, Rewrite, find_function
@@ -96,7 +96,9 @@ def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4, source: by
 
 def other_scores(evaluation: Evaluation, symbol: str) -> dict[str, float]:
     """objdiff scores of the unit's functions other than the one searched."""
-    return {name: score for name, score in evaluation.fuzzy.items() if name != symbol}
+    verdict = evaluation.verdict(symbol)
+    excluded = function_key(verdict.row) if verdict is not None else symbol
+    return {key: score for key, score in evaluation.fuzzy_by_key().items() if key != excluded}
 
 
 def worse_elsewhere(before: dict[str, float], evaluation: Evaluation, symbol: str) -> bool:
@@ -108,8 +110,9 @@ def worse_elsewhere(before: dict[str, float], evaluation: Evaluation, symbol: st
 def net_gain(before: Evaluation, after: Evaluation) -> float:
     """The unit's size-weighted change in objdiff score, in target bytes, between two
     compiles: the measure Goal 2's net rule weighs a lower score against a gain by."""
-    sizes = {row["symbol"]: row.get("size", 0) for section in before.sections for row in section.get("functions", [])}
-    return sum(sizes.get(name, 0) * (after.fuzzy.get(name, 0.0) - score) / 100 for name, score in before.fuzzy.items())
+    sizes = {function_key(row): row.get("size", 0) for section in before.sections for row in section.get("functions", [])}
+    after_scores = after.fuzzy_by_key()
+    return sum(sizes.get(key, 0) * (after_scores.get(key, 0.0) - score) / 100 for key, score in before.fuzzy_by_key().items())
 
 
 def _diff(harvest: Harvest, evaluation: Evaluation, symbol: str) -> DiffResult:

@@ -66,6 +66,22 @@ class Evaluation:
                     return FunctionVerdict(self.unit, symbol, row, section)
         return None
 
+    def verdict_by_key(self, key: str) -> FunctionVerdict | None:
+        for section in self.sections:
+            for row in section.get("functions", []):
+                if function_key(row) == key:
+                    return FunctionVerdict(self.unit, row["symbol"], row, section)
+        return None
+
+    def fuzzy_by_key(self) -> dict[str, float]:
+        rows = [row for section in self.sections for row in section.get("functions", [])]
+        seen = {row["symbol"] for row in rows}
+        scores = {function_key(row): self.fuzzy[row["symbol"]] for row in rows if row["symbol"] in self.fuzzy}
+        for name, score in self.fuzzy.items():
+            if name not in seen:
+                scores[name] = score
+        return scores
+
     def exact_functions(self) -> set[str]:
         return {function_key(row) for s in self.sections for row in s.get("functions", []) if row["exact"]}
 

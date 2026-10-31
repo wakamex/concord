@@ -167,3 +167,59 @@ class AuthorOverlay(unittest.TestCase):
             self.assertFalse(report['applied'])
             self.assertEqual(path.read_bytes(), b'old')
             gate.assert_not_called()
+
+    def test_header_candidate_preserves_renamed_synthetic_clones_by_address(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / 'src/H.h'
+            path.parent.mkdir()
+            path.write_bytes(b'old')
+            config = root / 'config/1.18-linux-amd64'
+            config.mkdir(parents=True)
+            (config / 'symbols.tsv').write_text('address\tsize\tsymbol\tprovenance\n')
+            reports = root / 'build/match/1.18-linux-amd64'
+            reports.mkdir(parents=True)
+            harvest = Mock(root=root, build='1.18-linux-amd64', reports=reports)
+            harvest.dependents.return_value = ['caller.cpp', 'witness.cpp']
+            caller_before = Evaluation(
+                'before-0', 'caller',
+                sections=[{'functions': [{'symbol': 'ctor', 'address': '0x510dc0', 'exact': False, 'size': 1540}]}],
+                fuzzy={'ctor': 84.804344},
+            )
+            caller_after = Evaluation(
+                'after-0', 'caller',
+                sections=[{'functions': [{'symbol': 'ctor', 'address': '0x510dc0', 'exact': True, 'size': 1540}]}],
+                fuzzy={'ctor': 100.0},
+            )
+            clone_before = Evaluation(
+                'before-1', 'witness',
+                sections=[{'functions': [{'symbol': 'T.358', 'address': '0x476900', 'exact': True, 'size': 64}]}],
+                fuzzy={'T.358': 100.0},
+            )
+            clone_after = Evaluation(
+                'after-1', 'witness',
+                sections=[{'functions': [{'symbol': 'T.361', 'address': '0x476900', 'exact': True, 'size': 64}]}],
+                fuzzy={'T.361': 100.0},
+            )
+            harvest.evaluate_overlays.return_value = {
+                'before-0': caller_before,
+                'after-0': caller_after,
+                'before-1': clone_before,
+                'after-1': clone_after,
+            }
+            report = authored.overlay(harvest, {'H.h': b'new'}, write=True)
+            self.assertTrue(report['accepted'])
+            self.assertTrue(report['applied'])
+            self.assertEqual([gain['symbol'] for gain in report['gains']], ['ctor'])
+            self.assertEqual(path.read_bytes(), b'new')
+
+            path.write_bytes(b'old')
+            harvest.evaluate_overlays.return_value['after-1'] = Evaluation(
+                'after-1', 'witness',
+                sections=[{'functions': [{'symbol': 'T.361', 'address': '0x476900', 'exact': False, 'size': 64}]}],
+                fuzzy={'T.361': 98.0},
+            )
+            report = authored.overlay(harvest, {'H.h': b'new'}, write=True)
+            self.assertFalse(report['accepted'])
+            self.assertFalse(report['applied'])
+            self.assertEqual(path.read_bytes(), b'old')
