@@ -1218,3 +1218,15 @@ evidence = [
   { function = "std::__insertion_sort<DefaultNodeEntry> at 0x4c6fe0", note = "The candidate is 208 bytes and matches the target at 0x4c6fe0 except for the outer loop's i != last compare at three sites, candidate cmp %r9,%rsi against target cmp %rsi,%r9. The same libstdc++ template for TransparentNodeEntry at 0x4c8180 is exact. Padding the unit with 0 to 30 declarations is exact at no count. Reversing the operand order inside DefaultNodeEntry::operator< does not make the function exact." },
   { function = "std::__adjust_heap<DefaultNodeEntry> at 0x4c70b0", note = "At 0x4c70b0 the target is 385 bytes and the candidate 380 with the pointer key. The 64-bit compare and cmov now match the target; the remaining differences are in how the element copies address the array, from a base the target computes once." },
 ]
+
+[[idiom]]
+id = "cstring-copy-assign-not-inlined"
+cause = "inlining"
+status = "hypothesis"
+symptom = "The original calls ox::core::CString<char>::operator=(const CString&) out of line from the element copies of daisy's CXFileReader, such as the SXAnimation and SXMaterial vector helpers and the SXFrame and SXSkinWeight copies. Our build inlines it at every site and emits no standalone copy in that unit. The standalone copy compiled from our header is 110 bytes and matches the original's copy at 0x450320 exactly when it is emitted."
+fix = "Not found. Two header changes and one unit-level flag were measured and rejected; see limits. The next hypothesis has to explain why the original inlines some sites and not others, which a whole-function inline budget does not do."
+limits = "Measured on daisy/scene/CXFileReader.cpp with overlays of src/ox/core/CString.h: moving the copy assignment's body out of the class lost 10 exact functions and gained 2 (62 out-of-line calls); marking it noinline lost 11 and gained 2 (62 out-of-line calls); lowering inline-unit-growth to 10 lost 23 exact functions and gained 3 (38 out-of-line calls), and disabling -finline-small-functions lost 11 and gained 2. The element struct layouts agree with the original: SXAnimation is 48 bytes with the CString at offset 0, SXAnimationKey 24 bytes, and SXMaterial 72 bytes with its CString at 56, and concord layout --struct-layout finds no differing base in any inexact function of the unit. The seven unplaced target copies at 0x594340 to 0x597380 call the out-of-line copy in every instance."
+evidence = [
+  { note = "The Mac debug map credits ox::core::CString<char>::operator= to ox/io/CHelpIO.cpp (101 bytes). The Linux target copy at 0x450320 is 110 bytes; the same body compiled here is 110 bytes when emitted out of line." },
+  { note = "wakamex/harvest seed/after-encore at b43aa72: inlines on daisy/scene/CXFileReader.cpp list the CString copy assignment as a call in the original and an inlined body in ours at SXMesh, SXFrame, SXSkinWeight and the seven unplaced copies." },
+]

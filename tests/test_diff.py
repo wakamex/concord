@@ -196,6 +196,23 @@ class KnowledgeBase(unittest.TestCase):
                 self.assertTrue(i.fix and i.symptom)
                 self.assertTrue(all("commit" in e or "note" in e for e in i.evidence), i.id)
 
+    def test_cstring_copy_assign_inlining_is_recorded_as_open(self):
+        from concord import knowledge
+
+        entry = next(i for i in knowledge.load("gcc-4.4.3") if i.id == "cstring-copy-assign-not-inlined")
+        self.assertEqual(entry.status, "hypothesis")
+        self.assertEqual(entry.cause.value, "inlining")
+        record = " ".join([entry.symptom, entry.fix, entry.limits] + [e.get("note", "") for e in entry.evidence])
+        for fact in (
+            "0x450320",
+            "110 bytes",
+            "lost 10 exact functions and gained 2",
+            "lost 11 and gained 2",
+            "lost 23 exact functions and gained 3",
+            "SXAnimation is 48 bytes",
+        ):
+            self.assertIn(fact, record)
+
     def test_new_game_random_sum_diagnosis_is_recorded(self):
         from concord import knowledge
 
