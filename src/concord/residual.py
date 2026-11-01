@@ -20,6 +20,7 @@ from concord.enumswitch import (
 )
 from concord.harvest import FunctionVerdict, Harvest
 from concord.model import Cause, DiffResult
+from concord.scores import report as progress_report_of
 from concord.signedness import _function_pairs as signedness_pairs
 
 NO_SOURCE_KINDS = {
@@ -550,11 +551,17 @@ def _placed_function_index(verdicts: list[FunctionVerdict], harvest: Harvest) ->
     return placed
 
 
-def _progress_reconciliation(harvest: Harvest, verdicts: list[FunctionVerdict], functions: list[dict]) -> dict | None:
-    path = harvest.root / "build" / "progress" / "report.json"
-    if not path.is_file():
-        return None
-    progress_report = json.loads(path.read_text())
+def _progress_reconciliation(
+    harvest: Harvest, verdicts: list[FunctionVerdict], functions: list[dict]
+) -> tuple[dict | None, str | None]:
+    """The reconciliation with Harvest's progress report, exported now from its committed evidence, or None and
+    why: hv.progress refuses evidence older than the sources or units, and a census reconciled against an older
+    report counts functions matched since then as missing."""
+    try:
+        progress_report = progress_report_of(harvest.root)
+    except RuntimeError as exc:
+        lines = [line for line in str(exc).splitlines() if line.strip()]
+        return None, lines[-1] if lines else str(exc)
     inexact, _, _, _, _ = _progress_inventory(progress_report)
     candidate_functions = _candidate_function_index(harvest, {row["symbol"] for row in inexact.values()})
     return _reconcile_progress(
@@ -562,7 +569,7 @@ def _progress_reconciliation(harvest: Harvest, verdicts: list[FunctionVerdict], 
         functions,
         candidate_functions,
         _placed_function_index(verdicts, harvest),
-    )
+    ), None
 
 
 def _occurrence(
@@ -697,7 +704,7 @@ def report(harvest: Harvest) -> dict:
         functions.append(row)
     functions.sort(key=lambda row: (-row["size"], row["address"] or "", row["symbol"]))
 
-    progress_reconciliation = _progress_reconciliation(harvest, all_verdicts, functions)
+    progress_reconciliation, progress_unavailable = _progress_reconciliation(harvest, all_verdicts, functions)
     if progress_reconciliation is not None:
         exact_addresses = {row["address"] for row in progress_reconciliation["exact_overlaps"]}
         functions = [row for row in functions if row["address"] not in exact_addresses]
@@ -772,4 +779,5 @@ def report(harvest: Harvest) -> dict:
         "top_source_pointing": source_pointing[:20],
         "value_leads": [row for row in source_pointing if "value-difference" in row["source_signals"]],
         "progress_reconciliation": progress_reconciliation,
+        "progress_unavailable": progress_unavailable,
     }

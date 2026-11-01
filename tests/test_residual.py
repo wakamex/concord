@@ -167,6 +167,24 @@ class ProgressReconciliation(unittest.TestCase):
                 self.assertEqual(result["cause"], expected)
 
 
+class StaleProgress(unittest.TestCase):
+    def test_a_report_hv_progress_refuses_is_not_reconciled_against(self):
+        # A report.json left in build/progress by an older capture would count functions matched since as missing.
+        from unittest import mock
+
+        from concord import residual
+
+        stale = RuntimeError(
+            "hv.progress report failed in /h:\nprogress: stale measurement inputs: units.toml; run progress capture"
+        )
+        harvest = mock.Mock(root=Path("/h"))
+        with mock.patch.object(residual, "progress_report_of", side_effect=stale) as exported:
+            reconciliation, why = residual._progress_reconciliation(harvest, [], [])
+        exported.assert_called_once_with(Path("/h"))
+        self.assertIsNone(reconciliation)
+        self.assertEqual(why, "progress: stale measurement inputs: units.toml; run progress capture")
+
+
 # The census covers the whole build, so these checks require an explicitly named checkout.
 @unittest.skipUnless(
     os.environ.get("CONCORD_HARVEST") and (HARVEST / "build" / "match" / BUILD).is_dir(),

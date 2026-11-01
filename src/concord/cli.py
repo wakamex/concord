@@ -601,6 +601,8 @@ def _dispatch(argv: list[str] | None = None) -> int:
             args.save.write_text(json.dumps(report, indent=2) + "\n")
         summary = report["summary"]
         reconciliation = report.get("progress_reconciliation")
+        if report.get("progress_unavailable"):
+            print(f"No progress reconciliation: {report['progress_unavailable']}")
         if reconciliation is None:
             print(
                 f"{summary['functions']} distinct target functions in {summary['unit_occurrences']} inexact unit reports, "
