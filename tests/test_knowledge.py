@@ -477,5 +477,58 @@ class ValueDifferenceBatchKnowledgeTests(unittest.TestCase):
         self.assertIn("clang puts Dragging at 0xd0", notes["clang record layouts"])
 
 
+class CStringCopyAssignInliningKnowledgeTests(unittest.TestCase):
+    def test_per_site_inlining_mechanisms_and_falsifiers_are_recorded(self):
+        idiom = next(
+            item for item in knowledge.load("gcc-4.4.3")
+            if item.id == "cstring-copy-assign-not-inlined"
+        )
+        notes = {item["function"]: item["note"] for item in idiom.evidence if item.get("function")}
+
+        self.assertEqual(idiom.status, "hypothesis")
+        for fact in (
+            "18 out-of-line and 36 inlined across 54 target sites",
+            "fibheap_replace_key",
+            "duplicate = false",
+            "inline-unit-growth=30",
+        ):
+            self.assertIn(fact, idiom.fix)
+
+        for function, facts in {
+            "ox/net/CHTTPConnectionHandler.cpp, ox/io/CHelpIO.cpp and ox/game/CConfiguration.cpp": (
+                "cgraph_maybe_hot_edge_p",
+                "freq < 0.10",
+                "lines 157, 204 and 217",
+                "20 hot post-IPA",
+                "0 out-of-line calls on Linux amd64",
+            ),
+            "daisy/scene/CXFileReader.cpp call-count and header falsifiers at 6d77829": (
+                "18 of 18 out-of-line sites",
+                "0x595140",
+                "893 bytes",
+                "other.size() + 1",
+                "17 of 18",
+                "0x58f140",
+                "0x594340",
+                "0x594510",
+                "0x5946e0",
+                "0x594ae0",
+                "peep2_find_free_register",
+                "182 to 179",
+                "0x4528e0",
+            ),
+            "daisy/scene/CXFileReader.cpp ruled-out header and parameter forms at 6d77829": (
+                "(other.used - 1) + 1",
+                "out-of-class inline",
+                "initializer-list order",
+                "inline-unit-growth 29 to 25",
+            ),
+        }.items():
+            with self.subTest(function=function):
+                self.assertIn(function, notes)
+                for fact in facts:
+                    self.assertIn(fact, notes[function])
+
+
 if __name__ == "__main__":
     unittest.main()
