@@ -215,6 +215,23 @@ class KnowledgeBase(unittest.TestCase):
         ):
             self.assertIn(fact, record)
 
+    def test_pointer_sort_key_is_recorded(self):
+        from concord import knowledge
+
+        entry = next(i for i in knowledge.load("gcc-4.4.3") if i.id == "sort-key-pointer-type")
+        self.assertEqual(entry.status, "confirmed")
+        self.assertEqual(entry.cause.value, "struct-layout")
+        record = " ".join([entry.symptom, entry.fix, entry.limits] + [e.get("note", "") for e in entry.evidence])
+        for fact in (
+            "ox::video::ITexture*",
+            "0x4c8240",
+            "0x4c7b80",
+            "0x4c6fe0",
+            "0x4c70b0",
+            "4 functions changed: 2 newly matched, 0 worse; data bytes matched: +0 -0",
+        ):
+            self.assertIn(fact, record)
+
     def test_operand_order_noop_trials_are_recorded(self):
         from concord import knowledge
 
