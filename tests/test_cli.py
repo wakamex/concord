@@ -26,6 +26,38 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(main(['author', '--harvest', directory, '--overlay-manifest', str(manifest)]), 0)
             self.assertIn("unchanged_source={'inlined': ['helper']}", output.getvalue())
 
+    def test_author_overlay_manifest_forwards_units_and_claims(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'a.cpp').write_text('int f() { return 0; }\n')
+            manifest = root / 'overlay.json'
+            manifest.write_text(json.dumps({
+                'files': {'s/A.cpp': 'a.cpp'},
+                'units': {'s/A.cpp': {'.text': '0x48a420', '.bss': 8829664}},
+                'claims': [{'symbol': '_ZN1AC2Ev', 'address': '0x48a420', 'size': 44}],
+            }))
+            report = {'accepted': True, 'applied': True, 'gains': [
+                {'symbol': '_ZN1AC2Ev', 'before': None, 'score': 100.0, 'oracle': None}]}
+            with (mock.patch('concord.cli.Harvest') as harvest,
+                  mock.patch('concord.cli.authored.overlay', return_value=report) as overlay,
+                  contextlib.redirect_stdout(io.StringIO())):
+                self.assertEqual(
+                    main(['author', '--harvest', directory, '--overlay-manifest', str(manifest), '--apply']),
+                    0,
+                )
+            overlay.assert_called_once_with(
+                harvest.return_value,
+                {'s/A.cpp': b'int f() { return 0; }\n'},
+                write=True,
+                units={'s/A.cpp': {'.text': 0x48a420, '.bss': 0x86bae0}},
+                claims=[{'symbol': '_ZN1AC2Ev', 'address': 0x48a420, 'size': 44}],
+            )
+
     def test_scores_base_uses_normalized_snapshots(self):
         from pathlib import Path
         from unittest import mock

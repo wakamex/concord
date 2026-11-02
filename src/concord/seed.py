@@ -1424,9 +1424,29 @@ def _headers(root: Path, source: Path, text: str, seen: set[str]) -> list[str]:
 def _register(root: Path, unit: str, placements: dict[str, int]) -> None:
     path = root / "config" / BUILD / "units.toml"
     text = path.read_text()
-    block = f'["{unit}"]\n' + "".join(f'"{name}" = {address:#x}\n' for name, address in placements.items())
     pattern = re.compile(r'^\["' + re.escape(unit) + r'"\]\n(?:"[^"\n]+" = 0x[0-9a-f]+\n|#[^\n]*\n)*', re.MULTILINE)
-    text = pattern.sub(block, text) if pattern.search(text) else text.rstrip("\n") + "\n\n" + block
+    found = pattern.search(text)
+    comments: dict[str, list[str]] = {}
+    order: list[str] = []
+    trailing: list[str] = []
+    if found:
+        pending: list[str] = []
+        for line in found.group(0).splitlines()[1:]:
+            if line.startswith("#"):
+                pending.append(line)
+            elif match := re.match(r'^"([^"\n]+)" = 0x[0-9a-f]+$', line):
+                order.append(match[1])
+                comments[match[1]] = pending
+                pending = []
+        trailing = pending
+    names = [name for name in order if name in placements] + [name for name in placements if name not in order]
+    lines = [f'["{unit}"]']
+    for name in names:
+        lines.extend(comments.get(name, []))
+        lines.append(f'"{name}" = {placements[name]:#x}')
+    lines.extend(trailing)
+    block = "\n".join(lines) + "\n"
+    text = text[:found.start()] + block + text[found.end():] if found else text.rstrip("\n") + "\n\n" + block
     path.write_text(text)
 
 

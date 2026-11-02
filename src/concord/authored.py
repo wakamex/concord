@@ -1403,35 +1403,86 @@ symbols.save(sys.argv[1],rows)
                             for name, row in measured.items()}}
 
 
-def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> dict:
+def _int_value(value: int | str) -> int:
+    return int(value, 0) if isinstance(value, str) else int(value)
+
+
+def overlay(
+    harvest: Harvest,
+    files: dict[str, bytes],
+    write: bool = False,
+    units: dict[str, dict[str, int]] | None = None,
+    claims: list[dict] | None = None,
+) -> dict:
     """Measure authored source in every dependent unit under Goal 2.
 
     Each unit keeps its exact functions, except a copy another unchanged unit
     still emits exactly, and its matched data. A lower function score is allowed
     when that function is exact elsewhere or the unit's size-weighted score rises.
-    A new function counts as a gain only when it is exact and named in symbols.tsv.
+    A new function counts as a gain only when it is exact and named in symbols.tsv
+    or verified against a target extent claim in `claims`. Optional `units`
+    updates section placements for existing units.
     Improved inexact functions require oracle evidence, or unchanged source for
     their own body and all transitive inlines in both compiles, before writing.
     """
     originals = {}
-    units = set()
+    affected = set()
     for name in files:
         path = Path(name)
         if path.is_absolute() or '..' in path.parts or path.suffix not in {'.cpp', '.h'}:
             raise ValueError(f'invalid authored source path: {name}')
         originals[name] = (harvest.root / 'src' / name).read_bytes()
-        units.update(harvest.dependents('src/' + name))
+        affected.update(harvest.dependents('src/' + name))
         if path.suffix == '.cpp':
-            units.add(name)
-    units = sorted(units)
+            affected.add(name)
+    placements = {
+        unit: {section: _int_value(address) for section, address in sections.items()}
+        for unit, sections in (units or {}).items()
+    }
+    for unit in placements:
+        path = Path(unit)
+        if path.is_absolute() or '..' in path.parts or path.suffix != '.cpp' or not (harvest.root / 'src' / unit).is_file():
+            raise ValueError(f'invalid existing unit placement path: {unit}')
+        affected.add(unit)
+    affected = sorted(affected)
+    normalized_claims = [
+        {**claim, 'address': _int_value(claim['address']), 'size': _int_value(claim['size'])}
+        for claim in (claims or [])
+    ]
     known_symbols = set()
+    existing_by_symbol: dict[str, tuple[int, int]] = {}
+    existing_by_address: dict[int, str] = {}
     other_exact_addresses = set()
-    if units:
-        with (harvest.root / "config" / harvest.build / "symbols.tsv").open() as stream:
-            known_symbols = {row["symbol"] for row in csv.DictReader(stream, delimiter="\t")}
+    symbols_path = harvest.root / "config" / harvest.build / "symbols.tsv"
+    units_path = harvest.root / "config" / harvest.build / "units.toml"
+    symbols_before = symbols_path.read_bytes() if symbols_path.exists() else None
+    units_before = units_path.read_bytes() if units_path.exists() else None
+    if affected or normalized_claims:
+        with symbols_path.open() as stream:
+            for row in csv.DictReader(stream, delimiter="\t"):
+                known_symbols.add(row["symbol"])
+                if "address" in row and "size" in row:
+                    addr = int(row["address"], 16)
+                    existing_by_symbol[row["symbol"]] = (addr, int(row["size"]))
+                    existing_by_address[addr] = row["symbol"]
+    seen_claim_symbols: dict[str, tuple[int, int]] = {}
+    seen_claim_addresses: dict[int, str] = {}
+    for claim in normalized_claims:
+        sym, addr, size = claim["symbol"], claim["address"], claim["size"]
+        if sym in existing_by_symbol and existing_by_symbol[sym] != (addr, size):
+            raise ValueError(f"{sym}: conflicting symbol table entry at {existing_by_symbol[sym][0]:#x}")
+        if addr in existing_by_address and existing_by_address[addr] != sym:
+            raise ValueError(f"{addr:#x}: already assigned to {existing_by_address[addr]}")
+        if sym in seen_claim_symbols and seen_claim_symbols[sym] != (addr, size):
+            raise ValueError(f"{sym}: conflicting duplicate claim")
+        if addr in seen_claim_addresses and seen_claim_addresses[addr] != sym:
+            raise ValueError(f"{addr:#x}: conflicting duplicate claim")
+        seen_claim_symbols[sym] = (addr, size)
+        seen_claim_addresses[addr] = sym
+    if affected:
         for report_path in harvest.reports.glob("*.json"):
             report = json.loads(report_path.read_text())
-            if report.get("unit") in units:
+            if report.get("unit") in affected:
                 continue
             other_exact_addresses.update(
                 row["address"]
@@ -1439,15 +1490,55 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
                 for row in section.get("functions", [])
                 if row["exact"]
             )
-    items = {}
-    for n, unit in enumerate(units):
-        items[f'before-{n}'] = (unit, {})
-        items[f'after-{n}'] = (unit, {'src/' + name: body for name, body in files.items()})
     changed = unchanged_source.changed_functions(originals, files)
-    measured = harvest.evaluate_overlays(items, inline_decisions=changed is not None)
-    accepted = bool(units)
+    overlay_files = {'src/' + name: body for name, body in files.items()}
+    if placements or normalized_claims:
+        before_items = {f'before-{n}': (unit, {}) for n, unit in enumerate(affected)}
+        after_items = {f'after-{n}': (unit, overlay_files) for n, unit in enumerate(affected)}
+        measured = {
+            **harvest.evaluate_overlays(before_items, inline_decisions=changed is not None),
+            **harvest.evaluate_overlays(
+                after_items,
+                units=placements,
+                claims=normalized_claims,
+                inline_decisions=changed is not None,
+            ),
+        }
+    else:
+        items = {}
+        for n, unit in enumerate(affected):
+            items[f'before-{n}'] = (unit, {})
+            items[f'after-{n}'] = (unit, overlay_files)
+        measured = harvest.evaluate_overlays(items, inline_decisions=changed is not None)
+    verified_claims: dict[str, dict] = {}
+    target_image = harvest.root / "orig" / harvest.build / "Harvest"
+    for claim in normalized_claims:
+        sym, addr, size = claim["symbol"], claim["address"], claim["size"]
+        claim_owners = []
+        for n, unit in enumerate(affected):
+            after = measured[f'after-{n}']
+            if after.error:
+                continue
+            verdict = after.verdict(sym)
+            if (verdict is not None and verdict.row.get("exact")
+                    and verdict.row.get("address") is not None
+                    and int(verdict.row["address"], 16) == addr
+                    and verdict.row.get("size") == size):
+                if after.object is not None and target_image.is_file():
+                    from concord.place import extent_match
+
+                    if extent_match(after.object, target_image, sym, addr) is None:
+                        continue
+                claim_owners.append(unit)
+        if claim_owners:
+            verified_claims[sym] = {
+                **claim,
+                "evidence": claim.get("evidence") or f"match:{claim_owners[0]}",
+            }
+    accepted = bool(affected) and len(verified_claims) == len(normalized_claims)
+    allowed_symbols = known_symbols | set(verified_claims)
     gains = []
-    for n, unit in enumerate(units):
+    for n, unit in enumerate(affected):
         before, after = measured[f'before-{n}'], measured[f'after-{n}']
         if before.error or after.error:
             accepted = False
@@ -1476,7 +1567,7 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
                 continue
             symbol = verdict.symbol
             if old_score is None:
-                improved = bool(verdict.row['exact'] and symbol in known_symbols)
+                improved = bool(verdict.row['exact'] and symbol in allowed_symbols)
             else:
                 improved = (new_score > old_score
                             or bool(verdict.row['exact'] and old_verdict and not old_verdict.row['exact']))
@@ -1498,10 +1589,48 @@ def overlay(harvest: Harvest, files: dict[str, bytes], write: bool = False) -> d
                 gains.append(gain)
     accepted = bool(accepted and gains)
     if accepted and write:
+        from concord.seed import _match, _register
+
         for name, original in originals.items():
             if (harvest.root / 'src' / name).read_bytes() != original:
                 raise ValueError(f'{name} changed during measurement')
+        if symbols_before is not None and symbols_path.read_bytes() != symbols_before:
+            raise ValueError('symbols.tsv changed during measurement')
+        if placements and units_before is not None and units_path.read_bytes() != units_before:
+            raise ValueError('units.toml changed during measurement')
         for name, body in files.items():
             (harvest.root / 'src' / name).write_bytes(body)
-    return {'accepted': accepted, 'applied': bool(accepted and write), 'gains': gains, 'units': units,
+        for unit, sections in placements.items():
+            _register(harvest.root, unit, sections)
+        touched_units = sorted({name for name in files if name.endswith('.cpp')} | set(placements))
+        if placements or verified_claims:
+            for unit in touched_units:
+                _match(harvest.root, unit, learn=True)
+        if verified_claims:
+            with symbols_path.open() as stream:
+                present = {row["symbol"] for row in csv.DictReader(stream, delimiter="\t")}
+            missing_claims = [claim for sym, claim in verified_claims.items() if sym not in present]
+            if missing_claims:
+                import subprocess
+
+                script = """import json,sys
+from hv import symbols
+rows=symbols.load(sys.argv[1])
+known=symbols.by_name(rows)
+for claim in json.load(sys.stdin):
+    if claim['symbol'] not in known:
+        rows.append(symbols.Symbol(claim['address'],claim['size'],claim['symbol'],claim['evidence']))
+symbols.save(sys.argv[1],rows)
+"""
+                subprocess.run(
+                    ["uv", "--no-config", "run", "--locked", "python", "-c", script, harvest.build],
+                    cwd=harvest.root,
+                    input=json.dumps(missing_claims),
+                    text=True,
+                    check=True,
+                    capture_output=True,
+                )
+                for unit in touched_units:
+                    _match(harvest.root, unit, learn=True)
+    return {'accepted': accepted, 'applied': bool(accepted and write), 'gains': gains, 'units': affected,
             'errors': {name: row.error for name, row in measured.items() if row.error}}

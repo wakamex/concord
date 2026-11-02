@@ -315,7 +315,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_author.add_argument("--unit", help="Harvest unit, as a source path or report slug")
     p_author.add_argument("--apply", action="store_true", help="write an accepted candidate to its source file")
     p_author.add_argument("--seed-manifest", type=Path, help="JSON with files, units and optional extent claims for absent authored units")
-    p_author.add_argument("--overlay-manifest", type=Path, help="JSON files mapping for an authored header/layout correction")
+    p_author.add_argument("--overlay-manifest", type=Path, help="JSON with files and optional units and extent claims for an authored header/layout correction")
     p_author.add_argument("--save", type=Path, help="save authored seed measurements")
     p_author.add_argument("--variant", help="select a registered authored header spelling")
     p_author.add_argument("--candidate", type=Path, help="authored unit source changing only this function body")
@@ -959,7 +959,22 @@ def _dispatch(argv: list[str] | None = None) -> int:
             manifest = json.loads(manifest_path.read_text())
             files = {name: (manifest_path.parent / path).read_bytes() for name, path in manifest["files"].items()}
             if args.overlay_manifest:
-                report = authored.overlay(harvest, files, write=args.apply)
+                extra = {}
+                if "units" in manifest:
+                    extra["units"] = {
+                        unit: {sec: int(addr, 0) if isinstance(addr, str) else int(addr) for sec, addr in secs.items()}
+                        for unit, secs in manifest["units"].items()
+                    }
+                if "claims" in manifest:
+                    extra["claims"] = [
+                        {
+                            **claim,
+                            "address": int(claim["address"], 0) if isinstance(claim["address"], str) else int(claim["address"]),
+                            "size": int(claim["size"], 0) if isinstance(claim["size"], str) else int(claim["size"]),
+                        }
+                        for claim in manifest["claims"]
+                    ]
+                report = authored.overlay(harvest, files, write=args.apply, **extra)
             else:
                 report = authored.seed(harvest, files, manifest["units"], write=args.apply, claims=manifest.get("claims"))
             if args.save:

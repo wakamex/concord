@@ -223,3 +223,104 @@ class AuthorOverlay(unittest.TestCase):
             self.assertFalse(report['accepted'])
             self.assertFalse(report['applied'])
             self.assertEqual(path.read_bytes(), b'old')
+
+    def test_overlay_updates_existing_unit_placement_and_claims_exact_extents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            header = root / 'src/s/A.h'
+            source = root / 'src/s/A.cpp'
+            header.parent.mkdir(parents=True)
+            header.write_bytes(b'old-h')
+            source.write_bytes(b'old-cpp')
+            config = root / 'config/1.18-linux-amd64'
+            config.mkdir(parents=True)
+            (config / 'units.toml').write_text(
+                '["s/A.cpp"]\n'
+                '".text" = 0x1080\n'
+                '# static array and ios_base::Init\n'
+                '".bss" = 0x2000\n'
+            )
+            (config / 'symbols.tsv').write_text(
+                'address\tsize\tsymbol\tevidence\n'
+                '0x1080\t8\t_ZN1A3setEi\tmanual\n'
+            )
+            reports = root / 'build/match/1.18-linux-amd64'
+            reports.mkdir(parents=True)
+            harvest = Mock(root=root, build='1.18-linux-amd64', reports=reports)
+            harvest.dependents.side_effect = lambda p: ['s/A.cpp', 's/B.cpp'] if p == 'src/s/A.h' else []
+
+            a_before = Evaluation(
+                'before-0', 's__A',
+                sections=[{'functions': [{'symbol': '_ZN1A3setEi', 'address': '0x1080', 'exact': True, 'size': 8}],
+                           'data_ranges': [{'address': '0x2000', 'size': 16, 'kind': 'bss'}]}],
+                fuzzy={'_ZN1A3setEi': 100.0},
+            )
+            a_after_inexact = Evaluation(
+                'after-0', 's__A',
+                sections=[{'functions': [
+                    {'symbol': '_ZN1AC2Ev', 'address': '0x1000', 'exact': False, 'size': 44},
+                    {'symbol': '_ZN1A3setEi', 'address': '0x1080', 'exact': True, 'size': 8},
+                ], 'data_ranges': [{'address': '0x2000', 'size': 16, 'kind': 'bss'}]}],
+                fuzzy={'_ZN1AC2Ev': 95.0, '_ZN1A3setEi': 100.0},
+            )
+            a_after_exact = Evaluation(
+                'after-0', 's__A',
+                sections=[{'functions': [
+                    {'symbol': '_ZN1AC2Ev', 'address': '0x1000', 'exact': True, 'size': 44},
+                    {'symbol': '_ZN1A3setEi', 'address': '0x1080', 'exact': True, 'size': 8},
+                ], 'data_ranges': [{'address': '0x2000', 'size': 16, 'kind': 'bss'}]}],
+                fuzzy={'_ZN1AC2Ev': 100.0, '_ZN1A3setEi': 100.0},
+            )
+            b_same = Evaluation(
+                'b', 's__B',
+                sections=[{'functions': [{'symbol': '_ZN1B3useEv', 'address': '0x3000', 'exact': True, 'size': 20}]}],
+                fuzzy={'_ZN1B3useEv': 100.0},
+            )
+
+            files = {'s/A.h': b'new-h', 's/A.cpp': b'new-cpp'}
+            units = {'s/A.cpp': {'.text': 0x1000, '.bss': 0x2000}}
+            claims = [{'symbol': '_ZN1AC2Ev', 'address': 0x1000, 'size': 44, 'evidence': 'match:s/A.cpp'}]
+
+            harvest.evaluate_overlays.side_effect = [
+                {'before-0': a_before, 'before-1': b_same},
+                {'after-0': a_after_inexact, 'after-1': b_same},
+            ]
+            rejected = authored.overlay(harvest, files, write=True, units=units, claims=claims)
+            self.assertFalse(rejected['accepted'])
+            self.assertFalse(rejected['applied'])
+            self.assertEqual(header.read_bytes(), b'old-h')
+            self.assertIn('".text" = 0x1080', (config / 'units.toml').read_text())
+
+            with self.assertRaises(ValueError):
+                authored.overlay(harvest, files, units=units,
+                                 claims=[{'symbol': '_ZN1AC2Ev', 'address': 0x1080, 'size': 8}])
+
+            def fake_match(_root, _unit, learn=False):
+                if learn:
+                    (config / 'symbols.tsv').write_text(
+                        'address\tsize\tsymbol\tevidence\n'
+                        '0x1000\t44\t_ZN1AC2Ev\tmatch:s/A.cpp\n'
+                        '0x1080\t8\t_ZN1A3setEi\tmanual\n'
+                    )
+                return ''
+
+            harvest.evaluate_overlays.side_effect = [
+                {'before-0': a_before, 'before-1': b_same},
+                {'after-0': a_after_exact, 'after-1': b_same},
+            ]
+            with patch('concord.seed._match', side_effect=fake_match) as match_call:
+                accepted = authored.overlay(harvest, files, write=True, units=units, claims=claims)
+            self.assertTrue(accepted['accepted'])
+            self.assertTrue(accepted['applied'])
+            self.assertEqual([g['symbol'] for g in accepted['gains']], ['_ZN1AC2Ev'])
+            self.assertEqual(header.read_bytes(), b'new-h')
+            self.assertEqual(source.read_bytes(), b'new-cpp')
+            self.assertEqual(
+                (config / 'units.toml').read_text(),
+                '["s/A.cpp"]\n'
+                '".text" = 0x1000\n'
+                '# static array and ios_base::Init\n'
+                '".bss" = 0x2000\n',
+            )
+            self.assertIn('0x1000\t44\t_ZN1AC2Ev\tmatch:s/A.cpp', (config / 'symbols.tsv').read_text())
+            match_call.assert_called_once_with(root, 's/A.cpp', learn=True)
