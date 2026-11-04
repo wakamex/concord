@@ -47,6 +47,11 @@ agent = "devin"
 model = "swe-2-high"
 pool = "devin"
 
+[executors.devin-flash]
+agent = "devin"
+model = "swe-2-flash-high"
+pool = "devin"
+
 [executors.cursor]
 agent = "cursor"
 model = "composer-2.5"
