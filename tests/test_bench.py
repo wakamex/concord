@@ -105,7 +105,12 @@ class Cases(unittest.TestCase):
             root = Path(tmp)
             (root / "src").mkdir()
             (root / "src" / "a.cpp").write_bytes(SOURCE)
-            found = cases(FakeHarvest(root), [("a.cpp", TOTAL)])
+            tally = {}
+            found = cases(FakeHarvest(root), [("a.cpp", TOTAL)], tally=tally)
+            # the loop rewrite is the case; the commuted product stops `skip` too; the rest leave the bytes alone
+            self.assertEqual(tally["for loop as while loop"], {"does not compile": 0, "no effect": 0, "beyond the function": 0, "case": 1})
+            self.assertEqual(tally["swap commutative operands"]["beyond the function"], 1)
+            self.assertEqual(sum(row["no effect"] for row in tally.values()), len(tally) - 2)
         self.assertEqual([(c.mutation, c.symbol, c.score) for c in found], [("for loop as while loop", TOTAL, 91.5)])
 
     def test_each_kind_is_capped(self):

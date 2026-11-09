@@ -313,6 +313,30 @@ class FlipNanSense(unittest.TestCase):
         self.assertIn("box.width + 1 named", named)
         self.assertIn("box.width named", named)
 
+    def test_a_value_is_named_out_of_a_return_and_an_if_condition(self):
+        source = (b"int f(Surface* other)\n{\n"
+                  b"    if (other->Query(kind) == 0) {\n"
+                  b"        log(other->Name());\n"
+                  b"    } else if (other->Lost() != 0)\n"
+                  b"        return other->Restore() + 1;\n"
+                  b"    while (other->Busy() != 0)\n"
+                  b"        wait();\n"
+                  b"    return surface->Blt(other->surface) != 0;\n"
+                  b"}\n")
+        scope = Parser(CPP).parse(source).root_node
+        named = {r.description.split(": ", 1)[1]: r.source for r in name_temporaries(source, scope)}
+        self.assertIn(b"    __typeof__(other->Query(kind)) concordTmp0 = other->Query(kind);\n    if (concordTmp0 == 0) {\n",
+                      named["other->Query(kind) named"])
+        self.assertIn(b"    __typeof__(surface->Blt(other->surface)) concordTmp0 = surface->Blt(other->surface);\n    return concordTmp0 != 0;\n",
+                      named["surface->Blt(other->surface) named"])
+        # a return's whole value can be named, and an if's body is named inside the body
+        self.assertIn(b"    return concordTmp0;\n", named["surface->Blt(other->surface) != 0 named"])
+        self.assertIn(b" concordTmp0 = other->Name();\n        log(concordTmp0);\n", named["other->Name() named"])
+        # an else-if's condition and a loop's are evaluated only on their path, or every time round
+        self.assertNotIn("other->Lost() named", named)
+        self.assertNotIn("other->Busy() named", named)
+        self.assertNotIn("other->Restore() named", named)  # the else-if's braceless branch, left alone as before
+
     def test_inlining_undoes_naming(self):
         source = b"void f(int a, int b)\n{\n    use(a + b);\n}\n"
         scope = Parser(CPP).parse(source).root_node

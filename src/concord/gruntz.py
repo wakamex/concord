@@ -17,6 +17,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -34,7 +35,8 @@ from concord import coff
 from concord.diff import diff_code, read_functions
 from concord.harvest import Evaluation, FunctionVerdict
 from concord.model import Cause, DiffFinding, DiffResult
-from concord.transforms import ALL, CPP, name_temporaries
+from concord.temporaries import DECLARATION
+from concord.transforms import ALL, CPP, Rewrite, name_temporaries
 
 DRIVER = Path(__file__).with_name("gruntz_driver.py")
 REPORT = Path("build/objdiff/compare-new/report.json")
@@ -94,19 +96,28 @@ class Gruntz:
     compiler = "msvc-5.0"
     log = "gruntz.jsonl"
     oracle = False  # nothing checks an inexact rewrite's behavior, so only exact matches are written
-    # cl 5.0 has no __typeof__, which name_temporaries writes.
-    rewrites: ClassVar[list] = [transform for transform in ALL if transform is not name_temporaries]
+    # cl 5.0's code for one function shifts when another function of the unit changes, which the project
+    # calls a dip and does not count against the unchanged function. A search may therefore lower another
+    # function's score, as long as no function exact in the build stops being exact and the unit gains.
+    net_rule = True
+    # cl 5.0 has no __typeof__, which name_temporaries writes; name_typed_temporaries stands in for it.
+    untyped: ClassVar[list] = [transform for transform in ALL if transform is not name_temporaries]
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
+        self.rewrites = [*self.untyped, self.name_typed_temporaries]
+        # (unit, function address) -> expression text -> (type, whether narrower than int)
+        self.types: dict[tuple[str, int], dict[bytes, tuple[str, bool]]] = {}
         self.using: tuple[str, ...] = ()  # the driver's shortcuts that held for the last unit evaluated
         if not (self.root / REPORT).is_file():
             raise FileNotFoundError(f"{self.root / REPORT} is missing; run `gruntz build` in {root}")
         manifest = tomllib.loads((self.root / "config/units.toml").read_text())
         self.sources = {unit["unit"]: unit["source"] for unit in manifest["unit"]}
         with (self.root / "build/gen/bindings.tsv").open(newline="") as stream:
-            rows = csv.DictReader((line for line in stream if not line.startswith("#")), delimiter="\t")
-            self.addresses = {row["name"]: int(row["rva"], 0) for row in rows if row["space"] == "text" and row["name"]}
+            rows = [row for row in csv.DictReader((line for line in stream if not line.startswith("#")), delimiter="\t")
+                    if row["space"] == "text" and row["name"]]  # fmt: skip
+        self.addresses = {row["name"]: int(row["rva"], 0) for row in rows}
+        self.owners = {int(row["rva"], 0): row["unit"] for row in rows if row["unit"] in self.sources}
         self.best: dict[tuple[str, str], float] = {}  # (unit, symbol) -> the best score of its present source
         for line in (self.root / "config/match_baseline.tsv").read_text().splitlines():
             fields = line.split("\t")
@@ -178,6 +189,40 @@ class Gruntz:
         if not found:
             raise KeyError(f"no function definition follows the RVA label for {symbol}")
         return min(found, key=lambda node: node.start_byte)
+
+    def name_typed_temporaries(self, source: bytes, scope: Node) -> Iterator[Rewrite]:
+        """name_temporaries with each temporary declared by its type, `i32 tmp = E;`
+        for `__typeof__(E) tmp = E;`. The types of a function's expressions come
+        from one libclang parse per function and process, so an expression a rewrite
+        has since changed has none and is not named. A value narrower than int is
+        also offered as an int, the type such a result is most often kept in
+        (`i32 ok = surface->Blt(other);` for a call returning bool), which widens it
+        where it is named instead of where it is used."""
+        label = source.rfind(b"RVA(0x", 0, scope.start_byte)
+        address = int(source[label + 4 : source.index(b",", label)], 16) if label >= 0 else None
+        if address not in self.owners:
+            return
+        unit = self.owners[address]
+        if (unit, address) not in self.types:
+            out = self.root / "build" / "concord" / unit / uuid.uuid4().hex
+            out.mkdir(parents=True)
+            path = out / f"types{Path(self.sources[unit]).suffix}"
+            path.write_bytes(source)
+            request = {"unit": unit, "out": str(out), "types": str(path), "range": [scope.start_byte, scope.end_byte], "wibo": self._wibo()}
+            self.types[unit, address] = {text.encode(): (kind, narrow) for text, (kind, narrow) in self._driver(request).items()}
+        types = self.types[unit, address]
+        for rewrite in name_temporaries(source, scope):
+            declared = DECLARATION.search(rewrite.source)
+            if not declared or declared["expr"] not in types:
+                continue
+            kind, narrow = types[declared["expr"]]
+            # written as the checkout writes types: no elaborating keyword, the pointer with the type
+            kind = re.sub(r"\b(class|struct|enum|union) ", "", kind).replace(" *", "*").replace(" &", "&")
+            for spelling, note in [(kind, ""), *([("int", " as int")] if narrow else [])]:
+                typed = rewrite.source.replace(b"__typeof__(" + declared["expr"] + b")", spelling.encode(), 1)
+                yield Rewrite(rewrite.transform, rewrite.cause, rewrite.description + note, typed)
+
+    name_typed_temporaries.stands_for = name_temporaries  # the benchmark's mutation it replaces
 
     def _driver(self, request: dict) -> dict:
         """Send one request to the checkout's driver and return its result. The

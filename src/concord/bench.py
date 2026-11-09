@@ -96,6 +96,15 @@ class Case:
     score: float  # the function's objdiff score after the change
 
 
+def _own(harvest: Target, mutation):
+    """The target's form of a mutation, or None when its compiler accepts none:
+    the mutation itself where the target lists it, or the rewrite the target says
+    stands for it."""
+    if mutation is commute:
+        return mutation
+    return next((r for r in harvest.rewrites if r is mutation or getattr(r, "stands_for", None) is mutation), None)
+
+
 def functions(harvest: Target) -> list[tuple[str, str]]:
     """(unit source, symbol) of every exact function defined in its unit's own source."""
     found = set()
@@ -114,10 +123,19 @@ def functions(harvest: Target) -> list[tuple[str, str]]:
     return sorted(drop_twins(found))
 
 
-def cases(harvest: Target, sample: list[tuple[str, str]], seed: int = 0, per_kind: int | None = None) -> list[Case]:
+# What a mutation did to the bytes, in the order `concord bench` prints them.
+EFFECTS = ("does not compile", "no effect", "beyond the function", "case")
+
+
+def cases(
+    harvest: Target, sample: list[tuple[str, str]], seed: int = 0, per_kind: int | None = None, tally: dict | None = None
+) -> list[Case]:
     """One case per function and mutation that applies and stops only that
     function matching, at most `per_kind` of each mutation, chosen at random. The
-    rewrite used is chosen at random among those the mutation offers."""
+    rewrite used is chosen at random among those the mutation offers. `tally`
+    receives, per mutation, how many applied rewrites had each of EFFECTS, before
+    the cap: a rewrite the compiler turns into the same bytes is no case, and
+    says the rewrite cannot move this compiler's output either."""
     rng = random.Random(seed)
     found = []
     by_unit: dict[str, list[str]] = {}
@@ -129,9 +147,8 @@ def cases(harvest: Target, sample: list[tuple[str, str]], seed: int = 0, per_kin
         for symbol in symbols:
             scope = harvest.find_function(source, symbol)
             for name, (mutation, _) in MUTATIONS.items():
-                if mutation is not commute and mutation not in harvest.rewrites:
-                    continue  # a rewrite the target's compiler does not accept
-                rewrites = list(mutation(source, scope))
+                mutation = _own(harvest, mutation)
+                rewrites = list(mutation(source, scope)) if mutation else []
                 if rewrites:
                     candidates[f"c{len(candidates)}"] = (symbol, name, rng.choice(rewrites))
         if not candidates:
@@ -140,9 +157,14 @@ def cases(harvest: Target, sample: list[tuple[str, str]], seed: int = 0, per_kin
         exact = evaluations["base"].exact_functions()
         for name, (symbol, mutation, rewrite) in candidates.items():
             evaluation = evaluations[name]
-            if evaluation.error or symbol not in exact or exact - evaluation.exact_functions() != {symbol}:
-                continue  # no effect on the bytes, or an effect beyond the function
-            found.append(Case(unit, symbol, mutation, rewrite.description, rewrite.source, evaluation.fuzzy.get(symbol, 0.0)))
+            if symbol not in exact:
+                continue  # banked as exact, inexact in this build
+            lost = exact - evaluation.exact_functions()
+            effect = "does not compile" if evaluation.error else "no effect" if not lost else "case" if lost == {symbol} else "beyond the function"
+            if tally is not None:
+                tally.setdefault(mutation, dict.fromkeys(EFFECTS, 0))[effect] += 1
+            if effect == "case":
+                found.append(Case(unit, symbol, mutation, rewrite.description, rewrite.source, evaluation.fuzzy.get(symbol, 0.0)))
     if per_kind is None:
         return found
     kept = []
@@ -160,7 +182,7 @@ def pairs(harvest: Target, sample: list[tuple[str, str]], seed: int = 0, count: 
     kinds concord can undo, the second applied to the result of the first, kept
     when together they stop only that function matching. At most `count` cases."""
     rng = random.Random(seed)
-    known = [mutation for mutation, undoable in MUTATIONS.values() if undoable and (mutation is commute or mutation in harvest.rewrites)]
+    known = [own for mutation, undoable in MUTATIONS.values() if undoable and (own := _own(harvest, mutation))]
     found = []
     by_unit: dict[str, list[str]] = {}
     for unit, symbol in sample:

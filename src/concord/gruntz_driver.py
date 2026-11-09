@@ -16,7 +16,12 @@ below that held for the unit and a result is `{"object": PATH, "functions":
 [...]}` or `{"error": TEXT}`. A request with `"lines": SOURCE_PATH` in place of
 `candidates` compiles that one source with cl's /Zd, which adds line records
 and leaves the code as it was, and replies `{"ok": {"object": PATH}}` or
-`{"ok": {"error": TEXT}}` without scoring it. A function row has `symbol`, `address`, `size`, `fuzzy` (objdiff's score against
+`{"ok": {"error": TEXT}}` without scoring it. One with `"types": SOURCE_PATH`
+and `"range": [START, END]` replies `{"ok": {TEXT: [TYPE, NARROW]}}`: the type
+libclang gives each expression between those byte offsets whose type is a
+number, an enumeration or a pointer, and whether it is an integer narrower than
+int, for the rewrite that names a temporary, since cl 5.0 has nothing like
+`__typeof__`. A function row has `symbol`, `address`, `size`, `fuzzy` (objdiff's score against
 the retail object) and `exact` (the checkout's closure rule: an unrounded 100%,
 the retail size, and equal ordered relocation streams).
 
@@ -293,6 +298,45 @@ def line_object(unit: Unit, out: Path, path: Path) -> dict:
     return {"error": error.replace(sibling.name, unit.source.name)} if error else {"object": str(out / "lines.obj")}
 
 
+SCALARS = ("BOOL", "CHAR_U", "UCHAR", "USHORT", "UINT", "ULONG", "ULONGLONG", "CHAR_S", "SCHAR", "WCHAR", "SHORT", "INT", "LONG",
+           "LONGLONG", "FLOAT", "DOUBLE", "POINTER", "ENUM")  # fmt: skip
+
+
+NARROW = ("BOOL", "CHAR_U", "UCHAR", "USHORT", "CHAR_S", "SCHAR", "WCHAR", "SHORT")
+
+
+def expression_types(root: Path, unit: Unit, path: Path, start: int, end: int) -> dict[str, tuple[str, bool]]:
+    """The type of each expression text between two byte offsets of the source,
+    and whether it is an integer narrower than int, parsed by libclang with the
+    flags the checkout's own syntax-tree tools use. A text that has two types
+    there, or a type that cannot be written before a name, is left out."""
+    import clang.cindex as ci
+    from gruntz.permute.generate_ast_variants import clang_args, configure_libclang
+
+    configure_libclang()
+    text = path.read_bytes()
+    main = str(unit.source)
+    parsed = ci.Index.create().parse(main, args=clang_args(root, unit.source), unsaved_files=[(main, text.decode())])
+    scalars = {getattr(ci.TypeKind, name) for name in SCALARS}
+    narrow = {getattr(ci.TypeKind, name) for name in NARROW}
+    found: dict[str, set[tuple[str, bool]]] = {}
+    for top in parsed.cursor.get_children():
+        extent = top.extent
+        if top.location.file is None or top.location.file.name != main or extent.end.offset <= start or extent.start.offset >= end:
+            continue
+        for cursor in top.walk_preorder():
+            extent = cursor.extent
+            # an implicit conversion is an unexposed expression with its operand's extent and another type
+            if not cursor.kind.is_expression() or cursor.kind == ci.CursorKind.UNEXPOSED_EXPR:
+                continue
+            if extent.start.offset < start or extent.end.offset > end:
+                continue
+            kind = cursor.type.get_canonical().kind
+            if kind in scalars:
+                found.setdefault(text[extent.start.offset : extent.end.offset].decode(), set()).add((cursor.type.spelling, kind in narrow))
+    return {expression: next(iter(types)) for expression, types in found.items() if len(types) == 1 and "(" not in next(iter(types))[0]}
+
+
 def serve() -> None:
     root = Path.cwd()
     reader = build_reader()
@@ -305,6 +349,9 @@ def serve() -> None:
             unit = Unit(root, request["unit"], out, request.get("wibo"), reader)
             if "lines" in request:
                 print(json.dumps({"ok": line_object(unit, out, Path(request["lines"]))}), flush=True)
+                continue
+            if "types" in request:
+                print(json.dumps({"ok": expression_types(root, unit, Path(request["types"]), *request["range"])}), flush=True)
                 continue
             jobs = max(1, int(request.get("jobs", 1)))
             if jobs != workers:

@@ -16,7 +16,7 @@ import re
 from concord.diff import read_function
 from concord.harvest import Evaluation
 from concord.search import Target
-from concord.temporaries import rename, variable_types
+from concord.temporaries import rename, untyped, variable_types
 from concord.transforms import INVERSE, _descendants, find_function
 
 
@@ -67,11 +67,15 @@ def _same(evaluation: Evaluation, reference: Evaluation, symbol: str) -> bool:
 
 
 def _temporaries(target: Target, unit: str, symbol: str, source: bytes, reference: Evaluation) -> bytes | None:
+    scope = target.find_function(source, symbol).text
+    if b"__typeof__" not in source:  # each temporary was declared with its type
+        finished = rename(*untyped(source), False, scope)
+        evaluation = target.evaluate(unit, {"typed": finished})["typed"] if finished else None
+        return finished if evaluation and _same(evaluation, reference, symbol) else None
     obj = target.debug_objects([unit], {unit: source}).get(unit)
     if obj is None:
         return None
     types = variable_types(obj)
-    scope = target.find_function(source, symbol).text
     candidates = {}
     for direct in (True, False):  # direct initialization reads better; try it first
         finished = rename(source, types, direct, scope)

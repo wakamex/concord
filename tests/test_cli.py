@@ -278,7 +278,7 @@ class CliTest(unittest.TestCase):
             unit.write_bytes(b"while (d > 0) {}")
             found = SimpleNamespace(
                 baseline=diff(95.0), best=diff(95.8), source=b"while (!(d <= 0)) {}",
-                steps=["nan-sense line 1: d > 0 as !(d <= 0)"], reason="budget spent", tried=8,
+                steps=["nan-sense line 1: d > 0 as !(d <= 0)"], reason="budget spent", tried=8, lowered={},
             )
             with mock.patch("concord.cli.Harvest", return_value=fake_harvest(Path(tmp))), \
                     mock.patch("concord.cli.permute", return_value=found), \

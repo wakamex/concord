@@ -105,12 +105,37 @@ class CheckoutFiles(unittest.TestCase):
             self.gruntz.find_function(b"int unrelated;\n", SWITCH_UP)
 
     def test_rewrites_apply_inside_the_labelled_function(self):
+        self.gruntz.types["switch", 0x110570] = {}  # no types on record, so nothing asks the driver
         found = singles(SOURCE, SWITCH_DOWN, set(), self.gruntz.find_function, self.gruntz.rewrites)
         self.assertTrue(any(b"m_limit > tile" in text for text, _ in found))
         for text, _ in found:
             self.assertEqual(text[text.index(b"RVA(0x001106b0") :], SOURCE[SOURCE.index(b"RVA(0x001106b0") :])
             self.assertNotIn(b"__typeof__", text)  # a GCC extension cl 5.0 rejects
         self.assertNotIn(name_temporaries, self.gruntz.rewrites)
+
+    def test_a_temporary_is_declared_with_its_type(self):
+        source = (
+            b"RVA(0x00110570, 0x20)\ni32 CSwitch::SwitchDown() {\n    i32 tile = m_owner->m_tile + 1;\n"
+            b"    Lower(tile, m_owner->Find(tile), m_owner->m_limit);\n    return 0;\n}\n"
+        )
+        # as the driver's libclang gives them; m_owner->m_limit has no type on record
+        self.gruntz.types["switch", 0x110570] = {b"m_owner->m_tile": ("i32", False), b"m_owner->Find(tile)": ("class CSwitch *", False)}
+        scope = self.gruntz.find_function(source, SWITCH_DOWN)
+        named = {rewrite.description: rewrite.source for rewrite in self.gruntz.name_typed_temporaries(source, scope)}
+        self.assertEqual(set(named), {"line 3: m_owner->m_tile named", "line 4: m_owner->Find(tile) named"})
+        # a value narrower than int is offered as itself and as an int
+        self.gruntz.types["switch", 0x110570] = {b"m_owner->m_tile": ("bool", True)}
+        narrow = {rewrite.description: rewrite.source for rewrite in self.gruntz.name_typed_temporaries(source, scope)}
+        self.assertEqual(set(narrow), {"line 3: m_owner->m_tile named", "line 3: m_owner->m_tile named as int"})
+        self.assertIn(b"    int concordTmp0 = m_owner->m_tile;\n", narrow["line 3: m_owner->m_tile named as int"])
+        self.assertIn(b"    i32 concordTmp0 = m_owner->m_tile;\n    i32 tile = concordTmp0 + 1;\n", named["line 3: m_owner->m_tile named"])
+        # the pointer is written as the checkout writes it
+        self.assertIn(
+            b"    CSwitch* concordTmp0 = m_owner->Find(tile);\n    Lower(tile, concordTmp0, m_owner->m_limit);\n",
+            named["line 4: m_owner->Find(tile) named"],
+        )
+        # a function at an address no unit owns is left alone, without asking the driver
+        self.assertEqual(list(self.gruntz.name_typed_temporaries(source.replace(b"0x00110570", b"0x00999999"), scope)), [])
 
     def test_a_checkout_without_a_report_is_refused(self):
         (self.root / REPORT).unlink()
@@ -181,6 +206,19 @@ class BuiltCheckout(unittest.TestCase):
         self.assertTrue(lines)
         for line in lines:
             self.assertTrue(scope.start_point.row + 1 <= line <= scope.end_point.row + 1, line)
+
+    def test_expression_types_come_from_the_checkouts_libclang(self):
+        symbol = "?SwitchDown@CTileTriggerSwitchLogic@@UAEHXZ"
+        source = self.gruntz.source_path(self.UNIT).read_bytes()
+        named = list(self.gruntz.name_typed_temporaries(source, self.gruntz.find_function(source, symbol)))
+        types = self.gruntz.types[self.UNIT, self.gruntz.addresses[symbol]]
+        self.assertEqual(
+            (types[b"m_tileY"], types[b"reg"], types[b"layer->m_tileRowOffsets"]),
+            (("i32", False), ("CGruntzMgr *", False), ("i32 *", False)),
+        )
+        self.assertTrue(named)
+        evaluations = self.gruntz.evaluate(self.UNIT, {f"n{n}": rewrite.source for n, rewrite in enumerate(named[:6])})
+        self.assertTrue(all(not evaluation.error for evaluation in evaluations.values()), [e.error[-200:] for e in evaluations.values() if e.error])
 
     def test_a_source_that_does_not_compile_reports_the_compiler_error(self):
         broken = self.gruntz.source_path(self.UNIT).read_bytes() + b"\nthis is not C++;\n"

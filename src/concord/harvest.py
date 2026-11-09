@@ -105,6 +105,7 @@ class Harvest:
     compiler = "gcc-4.4.3"
     log = "harvest.jsonl"
     oracle = True  # harvest-oracle can compare two compiles' behavior, and a compile's with the original's
+    net_rule = False  # a search keeps every other function's score; `author` and `scores --base` weigh a lower one
     rewrites = transforms.ALL  # the rewrites a search may try
     find_function = staticmethod(transforms.find_function)  # a symbol's definition in a source text
 

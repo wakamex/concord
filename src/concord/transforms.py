@@ -530,13 +530,15 @@ HOISTABLE = {"binary_expression", "field_expression", "subscript_expression", "p
 
 
 def name_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
-    """One rewrite per subexpression of a declaration or expression statement:
-    `f(a.b + c);` becomes `__typeof__(a.b + c) tmp = a.b + c; f(tmp);`. A named
-    local changes the order GCC 4.4 creates values in and what stays in a register.
-    `__typeof__` (a GCC extension) keeps the rewrite type-correct without type
-    inference; it drops references, so a temporary of class type is a copy, which
-    the byte comparison then rejects."""
-    for statement in _descendants(scope, "expression_statement") + _descendants(scope, "declaration"):
+    """One rewrite per subexpression of a declaration, an expression statement, a
+    return or an if's condition: `f(a.b + c);` becomes `__typeof__(a.b + c) tmp =
+    a.b + c; f(tmp);`, and `return f(x) == 0;` becomes `__typeof__(f(x)) tmp =
+    f(x); return tmp == 0;`. A named local changes the order GCC 4.4 creates
+    values in and what stays in a register. `__typeof__` (a GCC extension) keeps
+    the rewrite type-correct without type inference; it drops references, so a
+    temporary of class type is a copy, which the byte comparison then rejects."""
+    kinds = ("expression_statement", "declaration", "return_statement", "if_statement")
+    for statement in [found for kind in kinds for found in _descendants(scope, kind)]:
         parent = statement.parent
         if parent is None:
             continue
@@ -551,8 +553,11 @@ def name_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
         parent_indent = source[_line_start(source, parent.start_byte):parent.start_byte]
         if branch and parent_indent.strip():
             continue
-        for node in _subexpressions(statement):
-            if node.type not in HOISTABLE or node.parent == statement or b"\n" in node.text or _written(node):
+        # an if's body runs only when the condition holds, so only the condition's values can move before it
+        region = statement.child_by_field_name("condition") if statement.type == "if_statement" else statement
+        for node in _subexpressions(region):
+            whole = statement.type == "expression_statement" and node.parent == statement  # naming it would leave `tmp;`
+            if node.type not in HOISTABLE or whole or b"\n" in node.text or _written(node):
                 continue
             if node.type == "binary_expression" and node.child_by_field_name("operator").type in ("&&", "||"):
                 continue  # naming the right operand would evaluate it unconditionally

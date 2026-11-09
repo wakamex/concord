@@ -12,8 +12,10 @@ in, so the rewrite that matches often only helps after another one that changes
 nothing on its own.
 
 In both stages a candidate that loses a function of the unit that was exact, or
-lowers the score of any other function of the unit, is rejected. The best source
-seen is kept apart from the walk.
+lowers the score of any other function of the unit, is rejected. On a target
+with the net rule the second holds only while the unit as a whole does not gain
+by size-weighted score, and the result names the functions it lowered. The best
+source seen is kept apart from the walk.
 """
 
 from __future__ import annotations
@@ -28,8 +30,9 @@ from concord.search import (
     _diff,
     _key,
     attributed_lines,
+    lowered,
+    net_gain,
     other_scores,
-    worse_elsewhere,
 )
 from concord.transforms import ALL, find_function
 
@@ -46,6 +49,7 @@ class PermuteResult:
     steps: list[str] = field(default_factory=list)  # rewrites from the unit's source to `source`
     tried: int = 0
     reason: str = ""
+    lowered: dict[str, tuple[float, float]] = field(default_factory=dict)  # other functions `source` scores lower, before and after
 
 
 def _line(description: str) -> int:
@@ -116,6 +120,10 @@ def permute(
     seen = {source}
     find, rewrites = target.find_function, target.rewrites
 
+    def kept(lower: dict, evaluation) -> bool:
+        """Whether a candidate that lowers these other functions may be moved to."""
+        return not lower or (target.net_rule and net_gain(baseline, evaluation) > 0)
+
     def consider(candidates: dict[str, tuple[bytes, list[str]]], ties: bool) -> bool:
         """Compile the candidates and move to the best one that scores better than
         the current source, or as well when `ties`; whether the search moved."""
@@ -133,12 +141,13 @@ def permute(
         for key in sorted({_key(d) for d, _, _, _ in scored if (_key(d) >= floor if ties else _key(d) > floor)}, reverse=True):
             tied = [s for s in scored if _key(s[0]) == key]
             rng.shuffle(tied)
-            choice = next((s for s in tied if not worse_elsewhere(others, s[3], symbol)), None)
+            choice = next((s for s in tied if kept(lowered(others, s[3], symbol), s[3])), None)
             if choice is not None:
-                d, text, steps, _ = choice
+                d, text, steps, e = choice
                 current = (text, d, steps)
                 if _key(d) > _key(result.best):
                     result.best, result.source, result.steps = d, text, steps
+                    result.lowered = lowered(others, e, symbol)
                 return True
         return False
 

@@ -1262,6 +1262,7 @@ def _permute_one(harvest: Harvest | Gruntz, source: str, symbol: str, args: argp
             "fuzzy_after": result.best.fuzzy,
             "exact": result.best.exact,
             "steps": result.steps,
+            "lowered": result.lowered,
             "repairs": repairs,
             "finished": finished is not None if improved else None,
             "oracle": verdict,
@@ -1275,6 +1276,8 @@ def _permute_one(harvest: Harvest | Gruntz, source: str, symbol: str, args: argp
     print(f"baseline score {result.baseline.score:.2f}")
     for step in result.steps:
         print(f"  {step}")
+    for name, (before, after) in result.lowered.items():
+        print(f"  scores lower: {name} {before:.2f} -> {after:.2f}")
     for step in repairs:
         if "error" in step:
             print(f"  repair {step['rewrite']}: rejected by oracle: {step['error']}")
@@ -1434,10 +1437,16 @@ def _bench(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     harvest = _target(parser, args)
     pool = bench.functions(harvest)
     sample = random.Random(args.seed).sample(pool, min(args.functions, len(pool)))
-    found = bench.cases(harvest, sample, args.seed, args.per_kind)
+    tally: dict = {}
+    found = bench.cases(harvest, sample, args.seed, args.per_kind, tally)
     if args.two_edits:
         found += bench.pairs(harvest, sample, args.seed, args.two_edits)
     print(f"{len(found)} cases from {len(sample)} of {len(pool)} exact functions", flush=True)
+    print(f"{'what each applied change did':27} " + " ".join(f"{effect:>19}" for effect in bench.EFFECTS))
+    for name in bench.MUTATIONS:
+        if name in tally:
+            print(f"{name:27} " + " ".join(f"{tally[name][effect]:19}" for effect in bench.EFFECTS))
+    print(flush=True)
     if args.locate:
         return _bench_locate(harvest, found, args)
     outcomes = []

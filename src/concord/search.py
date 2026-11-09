@@ -36,6 +36,7 @@ class Target(Protocol):
     compiler: str  # the knowledge base's name for the project's compiler
     log: str  # the file under results/ its searches are logged to
     oracle: bool  # whether an inexact rewrite's behavior can be checked against its previous form
+    net_rule: bool  # whether a search may lower another function's score while the unit gains (Goal 2's net rule)
     rewrites: list[Callable]  # the transforms its compiler accepts
 
     def source(self, unit: str) -> str: ...
@@ -127,10 +128,16 @@ def other_scores(evaluation: Evaluation, symbol: str) -> dict[str, float]:
     return {key: score for key, score in evaluation.fuzzy_by_key().items() if key != excluded}
 
 
+def lowered(before: dict[str, float], evaluation: Evaluation, symbol: str) -> dict[str, tuple[float, float]]:
+    """The other functions of the unit whose objdiff score a candidate lowers, each
+    with its score before and after."""
+    after = other_scores(evaluation, symbol)
+    return {name: (score, after.get(name, 0.0)) for name, score in before.items() if after.get(name, 0.0) < score}
+
+
 def worse_elsewhere(before: dict[str, float], evaluation: Evaluation, symbol: str) -> bool:
     """Whether a candidate lowers objdiff's score of any other function of the unit."""
-    after = other_scores(evaluation, symbol)
-    return any(after.get(name, 0.0) < score for name, score in before.items())
+    return bool(lowered(before, evaluation, symbol))
 
 
 def net_gain(before: Evaluation, after: Evaluation) -> float:

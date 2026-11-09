@@ -20,7 +20,21 @@ from tree_sitter import Node, Parser
 from concord.transforms import CPP
 
 DECLARATION = re.compile(rb"__typeof__\((?P<expr>.*?)\) (?P<name>concordTmp\d+) = (?P=expr);")
+TYPED = re.compile(rb"(?m)^(?P<indent>[ \t]*)(?P<type>[^;=\n]*?[\w*&]) ?(?P<name>concordTmp\d+) = (?P<expr>.*);$")
 KEYWORDS = {"default", "delete", "new", "this", "class", "operator", "template", "int", "char", "float"}
+
+
+def untyped(source: bytes) -> tuple[bytes, dict[str, str]]:
+    """The source with each `TYPE concordTmpN = E;` declaration, the search form
+    for a compiler without `__typeof__`, written in the `__typeof__` form, and the
+    types the declarations carried, for `rename`."""
+    types = {}
+
+    def convert(match: re.Match) -> bytes:
+        types[match["name"].decode()] = match["type"].decode()
+        return match["indent"] + b"__typeof__(" + match["expr"] + b") " + match["name"] + b" = " + match["expr"] + b";"
+
+    return TYPED.sub(convert, source), types
 
 
 def rename(source: bytes, types: dict[str, str], direct: bool = True, scope: bytes | None = None) -> bytes | None:
@@ -129,7 +143,7 @@ def _name_for(text: bytes) -> str:
         break
     template = "<" in word  # a template-id such as CRect<int> names its type
     word = re.sub(r"<.*|[^\w]", "", word)
-    word = re.sub(r"^(get|is)(?=[A-Z])", "", word)
+    word = re.sub(r"^(get|is)(?=[A-Z])|^(Get|Is)(?=[A-Z])|^[mg]_(?=\w)", "", word)  # an accessor's verb, a member's or global's prefix
     if template and re.match(r"[A-Z][A-Z][a-z]", word):
         word = word[1:]  # the class prefix, dropped as in a conversion's suffix
     return word[:1].lower() + word[1:] or "value"

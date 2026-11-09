@@ -2,8 +2,12 @@
 
 import random
 import unittest
+from pathlib import Path
 
-from concord.permute import _mutate, drop_twins, singles
+from concord.harvest import Evaluation
+from concord.model import DiffResult
+from concord.permute import _mutate, drop_twins, permute, singles
+from concord.transforms import ALL, find_function
 
 SOURCE = b"""int f(int a, int b)
 {
@@ -18,6 +22,42 @@ SOURCE = b"""int f(int a, int b)
 }
 """
 SYMBOL = "_Z1fii"
+
+
+class Neighbour:
+    """A target on which swapping the first comparison makes `f` exact and moves
+    its neighbour `g`, ten times its size, from 80 to 79.99."""
+
+    root = Path(".")
+    rewrites = ALL
+    find_function = staticmethod(find_function)
+
+    def __init__(self, net_rule):
+        self.net_rule = net_rule
+
+    def evaluate(self, unit, sources):
+        out = {}
+        for name, text in sources.items():
+            fixed = b"int low = b > a;" in text
+            rows = [{"symbol": SYMBOL, "exact": fixed, "size": 40}, {"symbol": "g", "exact": False, "size": 400}]
+            out[name] = Evaluation(name, unit, sections=[{"functions": rows}], fuzzy={SYMBOL: 100.0 if fixed else 90.0, "g": 79.99 if fixed else 80.0})
+        return out
+
+    def diff(self, verdict, candidate_object=None):
+        return DiffResult(100.0 if verdict.row["exact"] else 90.0, verdict.row["exact"])
+
+
+class NetRule(unittest.TestCase):
+    def test_a_lower_neighbour_rejects_the_candidate_without_the_net_rule(self):
+        result = permute(Neighbour(net_rule=False), "u.cpp", SYMBOL, budget=48, source=SOURCE)
+        self.assertFalse(result.best.exact)
+        self.assertEqual(result.lowered, {})
+
+    def test_the_net_rule_takes_it_while_the_unit_gains_and_names_the_neighbour(self):
+        result = permute(Neighbour(net_rule=True), "u.cpp", SYMBOL, budget=48, source=SOURCE)
+        self.assertTrue(result.best.exact)  # 40 bytes gain 10 points, 400 bytes lose 0.01
+        self.assertIn(b"int low = b > a;", result.source)
+        self.assertEqual(result.lowered, {"g": (80.0, 79.99)})
 
 
 class Twins(unittest.TestCase):
