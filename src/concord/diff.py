@@ -363,7 +363,9 @@ def diff_code(target: ObjectFunction, candidate: ObjectFunction) -> DiffResult:
                             if x != y and x is not None and y is not None:
                                 mapping[x] = y
                     if mapping:
-                        pairs = ", ".join(f"{x}->{y}" for x, y in sorted(mapping.items()))
+                        # families are named for the 64-bit register; 32-bit code has eax where that says rax
+                        wide = (lambda name: name) if target.bits == 64 else (lambda name: "e" + name[1:] if name[0] == "r" else name)
+                        pairs = ", ".join(f"{wide(x)}->{wide(y)}" for x, y in sorted(mapping.items()))
                         findings.append(
                             DiffFinding(
                                 Cause.REGISTER_ALLOCATION,

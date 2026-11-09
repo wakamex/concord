@@ -1,0 +1,41 @@
+# Codegen idiosyncrasies of Microsoft Visual C++ 5.0 Service Pack 3 (cl 11.00.7022)
+# at /O2 /MT, 32-bit x86.
+#
+# Each idiom pairs a symptom concord's diff reports (its cause) with a source
+# change that moves cl's output toward the target. "confirmed" idioms made a
+# function exact under the target project's own matcher; "hypothesis" idioms are
+# observed but not yet isolated. Evidence names functions of
+# github.com/sushi-shi/gruntz-decomp at b5b6262, where concord's searches ran;
+# results/gruntz.jsonl holds every search and its steps.
+
+compiler = "Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 11.00.7022 for 80x86"
+flags = ["/O2", "/MT"]
+
+[[idiom]]
+id = "statement-order"
+cause = "register-allocation"
+status = "confirmed"
+symptom = "two registers exchanged over a run of otherwise identical instructions, one load a few instructions earlier or later than in the target, or two x87 instructions (a load and an fxch) in the other order"
+fix = "Swap two adjacent statements that do not depend on each other, most often a local's initializing declaration and its neighbour. In the four functions of this idiom's evidence, the order of two independent initializations or stores decided which register each value took, or where its load stood."
+limits = "One swap made four of 182 searched functions exact, and statement swaps are 61 of the 80 steps in the 35 searches that improved a function without making it exact. In nine of those 35 the swaps are on consecutive lines, a statement moved two or three places or a run of member assignments reordered, as in the constructors of CToobSpikez (11 swaps among lines 42 to 44, 96.50 to 97.76) and CBattlezAiController (7 swaps, 96.03 to 97.68): the order of a constructor's member stores is searched one adjacent swap at a time, which a budget of 128 candidates does not finish. A swap of two calls is offered too, and only an exact match proves it kept the behavior."
+before = "i32 pieceIndex = m_warpStonePieceIndex;\ndouble radius = static_cast<float>(m_pieceOrbitRadius);"
+after = "double radius = static_cast<float>(m_pieceOrbitRadius);\ni32 pieceIndex = m_warpStonePieceIndex;"
+evidence = [
+  { function = "CMulti::DispatchRecvMsg", note = "99.974 to exact after 23 candidates. Before: edi and esi exchanged at two instructions. Change: `np1 = m_sampleCount + 1` declared before the running-average numerator that reads m_sampleCount." },
+  { function = "CBootyState::UpdateWarpStoneGlitterAnimation", note = "98.060 to exact after 21 candidates. Before: `fild dword ptr [edi*8]` and `fxch st(1)` in the other order. Change: the piece index declared after the orbit radius's conversion to floating point." },
+  { function = "CGameLevel::FreeMove", note = "96.680 to exact after 22 candidates. Before: the loads of two fields at +0x13c and +0x140 and a stack reload placed differently, with `lea edi, [ecx + esi + 1]` where the target has `lea edi, [esi + edi + 1]`. Change: `cur = bounds.left` declared after `hiY = bounds.bottom + 1`." },
+  { function = "RunCustomWorldDialog", note = "99.524 to exact after 8 candidates. Before: eax and edx exchanged at three instructions. Change: the store to g_customWorldParent after the store to g_customWorldSurfaceMgr, two independent globals." },
+]
+
+[[idiom]]
+id = "named-temporary"
+cause = "register-allocation"
+status = "confirmed"
+symptom = "two registers exchanged at the instructions around a call whose result the source names in a local used once"
+fix = "Write the call inside the one expression that uses its result instead of naming it in a local first."
+limits = "One function. The inverse, naming a subexpression, is not searched on this target: concord writes it with GCC's __typeof__, which cl 5.0 rejects."
+before = "u32 frameDelayMs = g_buteMgr.GetDword(\"StatusBar\", \"GruntOvenDelay\", 0xc8);\ni32 frameIndex = static_cast<i32>((static_cast<u32>(nonnegativeElapsedMs) / frameDelayMs)) + 1;"
+after = "i32 frameIndex = static_cast<i32>((static_cast<u32>(nonnegativeElapsedMs) / g_buteMgr.GetDword(\"StatusBar\", \"GruntOvenDelay\", 0xc8))) + 1;"
+evidence = [
+  { function = "CStatusBarMgr::UpdateGruntOvens", note = "99.789 to exact after 11 candidates. Before: ecx, edx and eax rotated at two instructions of the frame-index division." },
+]

@@ -73,16 +73,20 @@ class CheckoutFiles(unittest.TestCase):
                 {"name": SWITCH_DOWN, "size": "32", "fuzzy_match_percent": 97.5},
                 {"name": SWITCH_UP, "size": "16", "fuzzy_match_percent": 98.0},
                 {"name": "__ehreg$L1", "size": "8", "fuzzy_match_percent": 50.0},
+                {"name": "?Reset@CSwitch@@QAEXXZ", "size": "8", "fuzzy_match_percent": 100.0},
             ],
             f"switch\t{SWITCH_DOWN}\t97.5000\t97.5000\t3\tabc\t0x110570\t99.0000\t\n"
-            f"switch\t{SWITCH_UP}\t100.0000\t98.0000\t1\tdef\t0x1106b0\t100.0000\t\n",
+            f"switch\t{SWITCH_UP}\t100.0000\t98.0000\t1\tdef\t0x1106b0\t100.0000\t\n"
+            "switch\t?Reset@CSwitch@@QAEXXZ\t97.0000\t97.0000\t2\tfed\t0x110700\t97.0000\t\n",
         )
 
     def test_a_function_is_exact_when_its_present_source_has_scored_100(self):
         verdicts = {v.symbol: v.row for v in self.gruntz.verdicts()}
-        self.assertEqual(set(verdicts), {SWITCH_DOWN, SWITCH_UP})  # the exception-handling funclet is no target
+        reset = "?Reset@CSwitch@@QAEXXZ"
+        self.assertEqual(set(verdicts), {SWITCH_DOWN, SWITCH_UP, reset})  # the exception-handling funclet is no target
         self.assertFalse(verdicts[SWITCH_DOWN]["exact"])
         self.assertTrue(verdicts[SWITCH_UP]["exact"])  # scores 98 in this build, banked at 100
+        self.assertTrue(verdicts[reset]["exact"])  # scores 100 in this build, not banked yet
         self.assertEqual((verdicts[SWITCH_DOWN]["address"], verdicts[SWITCH_DOWN]["size"]), ("0x110570", 32))
 
     def test_a_unit_is_named_by_its_stem_or_its_source(self):

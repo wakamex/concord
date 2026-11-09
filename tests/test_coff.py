@@ -61,6 +61,7 @@ class CoffFunctions(unittest.TestCase):
         result = diff_code(read_function(target, "_f"), read_function(candidate, "_f"))
         self.assertFalse(result.exact)
         self.assertEqual({finding.cause for finding in result.findings}, {Cause.REGISTER_ALLOCATION})
+        self.assertEqual({finding.detail for finding in result.findings}, {"ecx->esi"})  # named as 32-bit registers
 
     def test_padding_alone_is_no_difference(self):
         target = assemble(self.directory, "target", {"_f": "xor eax, eax\nret"})

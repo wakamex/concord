@@ -131,7 +131,8 @@ class Gruntz:
 
     def verdicts(self, unit: str | None = None) -> Iterator[FunctionVerdict]:
         """Every function the last `gruntz build` scored. A function is exact when
-        the best score of its present source is 100, as the project counts it."""
+        the best score of its present source is 100, as the project counts it: its
+        banked best, or its score in this build where that is not banked yet."""
         wanted = self.slug(unit) if unit else None
         for entry in json.loads((self.root / REPORT).read_text()).get("units", []):
             name = entry["name"].split("/")[-1]
@@ -147,7 +148,7 @@ class Gruntz:
                 yield FunctionVerdict(
                     name,
                     symbol,
-                    {"symbol": symbol, "exact": best == 100.0, "fuzzy": fuzzy, "best": best, "size": int(row.get("size") or 0),
+                    {"symbol": symbol, "exact": 100.0 in (best, fuzzy), "fuzzy": fuzzy, "best": best, "size": int(row.get("size") or 0),
                      "address": f"{address:#x}" if address is not None else None},
                     {},
                 )  # fmt: skip
