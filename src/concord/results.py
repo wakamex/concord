@@ -30,15 +30,16 @@ def commit(root: Path) -> str:
     return head.stdout.strip() + ("-dirty" if changed.stdout.strip() else "")
 
 
-def save_patch(log: Path, unit: str, original: bytes, candidate: bytes) -> str:
-    """Write the candidate as a patch against the unit's source; return its path
-    relative to the log's directory."""
+def save_patch(log: Path, unit: str, original: bytes, candidate: bytes, prefix: str = "src/") -> str:
+    """Write the candidate as a patch against the unit's source, which is at
+    `prefix` + `unit` in the checkout; return the patch's path relative to the
+    log's directory."""
     diff = "".join(
         difflib.unified_diff(
             original.decode().splitlines(keepends=True),
             candidate.decode().splitlines(keepends=True),
-            f"a/src/{unit}",
-            f"b/src/{unit}",
+            f"a/{prefix}{unit}",
+            f"b/{prefix}{unit}",
         )
     )
     name = f"{unit.removesuffix('.cpp').replace('/', '__')}-{hashlib.sha256(candidate).hexdigest()[:12]}.patch"

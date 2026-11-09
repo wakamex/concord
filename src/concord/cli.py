@@ -44,6 +44,7 @@ from concord import (
 from concord.complete import TYPES, absent, complete, settle, state
 from concord.diff import diff_code, read_function
 from concord.finish import finish
+from concord.gruntz import Gruntz
 from concord.harvest import BUILD, Harvest
 from concord.irrlicht import helper_names, name_helpers
 from concord.lines import editable, inline_chains
@@ -107,7 +108,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_permute = sub.add_parser("permute", help="random multi-step rewrite search toward a byte match for one function")
     p_permute.add_argument("function", nargs="?", help="target function symbol (with --unit)")
-    p_permute.add_argument("--harvest", type=Path, required=True, help="Harvest checkout")
+    p_permute.add_argument("--harvest", type=Path, help="Harvest checkout")
+    p_permute.add_argument("--gruntz", type=Path, help="gruntz-decomp checkout (after gruntz build), in place of --harvest")
     p_permute.add_argument(
         "--skip-logged", action="store_true", help="skip functions the results log shows searched with these settings"
     )
@@ -124,10 +126,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_permute.add_argument(
         "--apply-improved", action="store_true", help="write any improvement over the unit's file, exact or partial"
     )
-    p_permute.add_argument("--results", type=Path, default=results.LOG, help="search log to append to")
+    p_permute.add_argument("--results", type=Path, help="search log to append to (default: results/TARGET.jsonl)")
 
     p_diff = sub.add_parser("diff", help="show the attributed diff for a function")
     p_diff.add_argument("function", help="target function symbol")
+    p_diff.add_argument("--gruntz", type=Path, help="gruntz-decomp checkout whose `gruntz build` outputs to read")
     p_diff.add_argument("--target", type=Path, help="relocatable object holding the target function")
     p_diff.add_argument("--candidate", type=Path, help="compiled object holding the candidate function")
     p_diff.add_argument("--harvest", type=Path, help="Harvest checkout whose `hv match` outputs to read")
@@ -257,7 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench = sub.add_parser(
         "bench", help="perturb functions that match and count how often the searches return them to exact"
     )
-    p_bench.add_argument("--harvest", type=Path, required=True, help="Harvest checkout (after hv match)")
+    p_bench.add_argument("--harvest", type=Path, help="Harvest checkout (after hv match)")
+    p_bench.add_argument("--gruntz", type=Path, help="gruntz-decomp checkout (after gruntz build), in place of --harvest")
     p_bench.add_argument("--functions", type=int, default=40, help="exact functions to sample")
     p_bench.add_argument("--per-kind", type=int, help="most cases to keep of each kind of change")
     p_bench.add_argument("--budget", type=int, default=128, help="candidate sources permute may compile per case")
@@ -1069,7 +1073,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
         print(f"{len(rows)} .bss placements learned from static initializer references")
         return 0
     if args.command == "bench":
-        return _bench(args)
+        return _bench(parser, args)
     if args.command == "header":
         for name in args.names:
             written = header(args.harvest.resolve(), name)
@@ -1090,7 +1094,7 @@ def _print_result(result: DiffResult, compiler: str | None) -> None:
     print(f"score {result.score:.2f}  exact {result.exact}")
     for f in result.findings:
         print(f"  {f.cause.value:22} +{f.offset:#06x}  {f.detail}")
-    if not compiler or not result.findings:
+    if compiler not in knowledge.compilers() or not result.findings:
         return
     idioms = knowledge.for_causes(knowledge.load(compiler), {f.cause for f in result.findings})
     if idioms:
@@ -1100,17 +1104,24 @@ def _print_result(result: DiffResult, compiler: str | None) -> None:
 
 
 def _diff(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    if args.harvest:
+    if args.harvest or args.gruntz:
         if not args.unit:
-            parser.error("--harvest needs --unit")
-        harvest = Harvest(args.harvest)
-        _print_result(harvest.diff(harvest.verdict(args.unit, args.function)), args.compiler or "gcc-4.4.3")
+            parser.error("--harvest and --gruntz need --unit")
+        checkout = _target(parser, args)
+        _print_result(checkout.diff(checkout.verdict(args.unit, args.function)), args.compiler or checkout.compiler)
     elif args.target and args.candidate:
         target = read_function(args.target, args.function)
         _print_result(diff_code(target, read_function(args.candidate, args.function)), args.compiler)
     else:
-        parser.error("pass --target and --candidate, or --harvest and --unit")
+        parser.error("pass --target and --candidate, or --unit with --harvest or --gruntz")
     return 0
+
+
+def _target(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Harvest | Gruntz:
+    """The target checkout a command names."""
+    if bool(args.harvest) == bool(args.gruntz):
+        parser.error("pass one of --harvest and --gruntz")
+    return Gruntz(args.gruntz) if args.gruntz else Harvest(args.harvest)
 
 
 def _match(args: argparse.Namespace) -> int:
@@ -1165,7 +1176,10 @@ def _match(args: argparse.Namespace) -> int:
 
 
 def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    harvest = Harvest(args.harvest)
+    harvest = _target(parser, args)
+    args.results = args.results or Path("results") / harvest.log
+    if args.apply_improved and not harvest.oracle:
+        parser.error("--apply-improved needs the behavior oracle, which only Harvest has; use --apply for exact matches")
     if args.near_miss is not None:
         targets = [(unit, symbol) for unit, symbol, _ in near_misses(harvest, args.near_miss)]
         if args.unit:
@@ -1192,7 +1206,7 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
                 raise
             print(f"skipped {symbol}: {error}")
             results.record(args.results, {
-                "command": "permute", "harvest": results.commit(harvest.root), "unit": unit, "symbol": symbol,
+                "command": "permute", Path(harvest.log).stem: results.commit(harvest.root), "unit": unit, "symbol": symbol,
                 "budget": args.budget, "batch": args.batch, "depth": args.depth, "seed": args.seed,
                 "reason": "oracle-baseline", "error": str(error), "exact": False,
             })
@@ -1201,11 +1215,14 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     return 0
 
 
-def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Namespace) -> bool:
+def _permute_one(harvest: Harvest | Gruntz, source: str, symbol: str, args: argparse.Namespace) -> bool:
     revision = results.commit(harvest.root)
-    original = (harvest.root / "src" / source).read_bytes()
+    path = harvest.source_path(source)
+    original = path.read_bytes()
     result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth)
-    result.source, repairs = repair(harvest, source, symbol, result.source, result.baseline.fuzzy or 0.0)
+    repairs = []
+    if harvest.oracle:  # repair compares behavior with the original executable's
+        result.source, repairs = repair(harvest, source, symbol, result.source, result.baseline.fuzzy or 0.0)
     repaired = any("error" not in step for step in repairs)
     improved = _key(result.best) > _key(result.baseline) or repaired
     finished = finish(harvest, source, symbol, result.source, original) if improved else None
@@ -1216,7 +1233,7 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
         print("an inexact candidate with a nan-sense step is unproven; nothing written")
         finished = None
         verdict = {"error": "inexact nan-sense step"}
-    elif finished is not None and not result.best.exact:
+    elif finished is not None and not result.best.exact and harvest.oracle:
         kept, verdict = oracle.gate(harvest, source, symbol, original, finished)
         if not kept:
             if verdict and "error" in verdict:
@@ -1230,7 +1247,7 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
         args.results,
         {
             "command": "permute",
-            "harvest": revision,
+            Path(harvest.log).stem: revision,
             "unit": source,
             "symbol": symbol,
             "budget": args.budget,
@@ -1241,12 +1258,18 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
             "tried": result.tried,
             "before": result.baseline.score,
             "after": result.best.score,
+            "fuzzy_before": result.baseline.fuzzy,
+            "fuzzy_after": result.best.fuzzy,
             "exact": result.best.exact,
             "steps": result.steps,
             "repairs": repairs,
             "finished": finished is not None if improved else None,
             "oracle": verdict,
-            "patch": results.save_patch(args.results, source, original, finished or result.source) if improved else None,
+            "patch": results.save_patch(
+                args.results, source, original, finished or result.source, str(path.relative_to(harvest.root)).removesuffix(source)
+            )
+            if improved
+            else None,
         },
     )
     print(f"baseline score {result.baseline.score:.2f}")
@@ -1258,11 +1281,10 @@ def _permute_one(harvest: Harvest, source: str, symbol: str, args: argparse.Name
         else:
             print(f"  repair {step['rewrite']}: original differences {step['original_differences']}")
     print(f"{result.reason}: score {result.best.score:.2f}, exact {result.best.exact}, {result.tried} candidates compiled")
-    _print_result(result.best, "gcc-4.4.3")
+    _print_result(result.best, harvest.compiler)
     if improved and finished is None and verdict is None:
         print("its temporaries could not be given concrete types without changing the bytes; nothing written")
     elif finished is not None and (result.best.exact and args.apply or args.apply_improved):
-        path = harvest.root / "src" / source
         path.write_bytes(finished)
         print(f"wrote {path}")
     return result.best.exact
@@ -1408,8 +1430,8 @@ def _blockers(args: argparse.Namespace) -> int:
     return 0
 
 
-def _bench(args: argparse.Namespace) -> int:
-    harvest = Harvest(args.harvest)
+def _bench(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    harvest = _target(parser, args)
     pool = bench.functions(harvest)
     sample = random.Random(args.seed).sample(pool, min(args.functions, len(pool)))
     found = bench.cases(harvest, sample, args.seed, args.per_kind)
@@ -1424,7 +1446,7 @@ def _bench(args: argparse.Namespace) -> int:
         outcomes.append(outcome)
         if args.save:
             row = {
-                "harvest": results.commit(harvest.root), "unit": case.unit, "symbol": case.symbol,
+                Path(harvest.log).stem: results.commit(harvest.root), "unit": case.unit, "symbol": case.symbol,
                 "mutation": case.mutation, "description": case.description, "score": case.score,
                 "match": outcome.match, "match_tried": outcome.match_tried,
                 "permute": outcome.permute, "permute_tried": outcome.permute_tried,
@@ -1445,7 +1467,7 @@ def _bench(args: argparse.Namespace) -> int:
     return 0
 
 
-def _bench_locate(harvest: Harvest, found: list, args: argparse.Namespace) -> int:
+def _bench_locate(harvest: Harvest | Gruntz, found: list, args: argparse.Namespace) -> int:
     located = []
     for case in found:
         try:
@@ -1456,7 +1478,7 @@ def _bench_locate(harvest: Harvest, found: list, args: argparse.Namespace) -> in
         located.append(item)
         if args.save:
             row = {
-                "harvest": results.commit(harvest.root), "unit": case.unit, "symbol": case.symbol,
+                Path(harvest.log).stem: results.commit(harvest.root), "unit": case.unit, "symbol": case.symbol,
                 "mutation": case.mutation, "description": case.description, "causes": item.causes,
                 "attributed": sorted(item.attributed), "changed": sorted(item.changed), "length": item.length,
             }  # fmt: skip

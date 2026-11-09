@@ -21,7 +21,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from concord import transforms
 from concord.diff import diff_code, read_function
+from concord.lines import inline_chains
 from concord.model import Cause, DiffFinding, DiffResult
 
 BUILD = "1.18-linux-amd64"
@@ -100,6 +102,12 @@ def _stop_drivers() -> None:
 
 
 class Harvest:
+    compiler = "gcc-4.4.3"
+    log = "harvest.jsonl"
+    oracle = True  # harvest-oracle can compare two compiles' behavior, and a compile's with the original's
+    rewrites = transforms.ALL  # the rewrites a search may try
+    find_function = staticmethod(transforms.find_function)  # a symbol's definition in a source text
+
     def __init__(self, root: Path, build: str = BUILD) -> None:
         self.root = root.resolve()
         self.build = build
@@ -171,6 +179,9 @@ class Harvest:
     def source(self, unit: str) -> str:
         """The unit's source path under src/, from its report."""
         return json.loads((self.reports / f"{self.slug(unit)}.json").read_text())["unit"]
+
+    def source_path(self, unit: str) -> Path:
+        return self.root / "src" / self.source(unit)
 
     def evaluate(self, unit: str, sources: dict[str, bytes]) -> dict[str, Evaluation]:
         """Compile each candidate source of the unit in Harvest's pinned toolchain,
@@ -252,6 +263,20 @@ class Harvest:
         items = {n: {"unit": u, "overlays": overlays.get(u, {})} for n, u in names.items()}
         request = {"out": str(out), "debug": True, "items": items}
         return {names[n]: Path(row["object"]) for n, row in self._driver(request).items() if "object" in row}
+
+    def source_lines(self, unit: str, symbol: str, source: bytes, offsets: list[int]) -> set[int]:
+        """Lines of the unit's source behind the code at `offsets` in `symbol`, for
+        the unit compiled from `source` with -g; each offset's whole inline chain
+        counts. Empty when the debug compile fails."""
+        unit = self.source(unit)
+        obj = self.debug_objects([unit], {unit: source}).get(unit)
+        if obj is None:
+            return set()
+        function = read_function(obj, symbol)
+        lines = set()
+        for chain in inline_chains(obj, function.section, [function.start + offset for offset in offsets]):
+            lines |= {frame.line for frame in chain if frame.path == f"src/{unit}"}
+        return lines
 
     def vtables(self) -> tuple[int, list[dict]]:
         """Compare every vtable the last `hv match` compiled with the target's. A slot that

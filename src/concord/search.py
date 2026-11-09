@@ -14,13 +14,38 @@ candidate needs the equivalence oracle yet.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Protocol
 
-from concord.diff import read_function
-from concord.harvest import Evaluation, Harvest, function_key
-from concord.lines import inline_chains
+from tree_sitter import Node
+
+from concord.harvest import Evaluation, FunctionVerdict, function_key
 from concord.model import DiffResult
-from concord.transforms import TRANSFORMS, Rewrite, find_function
+from concord.transforms import TRANSFORMS, Rewrite
+
+
+class Target(Protocol):
+    """What a search needs from a target project's checkout: its units' sources, a
+    compile of candidate sources compared by the project's own matcher, and the
+    place of a symbol's definition in a source text. concord.harvest.Harvest and
+    concord.gruntz.Gruntz provide it."""
+
+    root: Path
+    compiler: str  # the knowledge base's name for the project's compiler
+    log: str  # the file under results/ its searches are logged to
+    oracle: bool  # whether an inexact rewrite's behavior can be checked against its previous form
+    rewrites: list[Callable]  # the transforms its compiler accepts
+
+    def source(self, unit: str) -> str: ...
+    def source_path(self, unit: str) -> Path: ...
+    def verdicts(self, unit: str | None = None) -> Iterator[FunctionVerdict]: ...
+    def evaluate(self, unit: str, sources: dict[str, bytes]) -> dict[str, Evaluation]: ...
+    def diff(self, verdict: FunctionVerdict, candidate_object: Path | None = None) -> DiffResult: ...
+    def find_function(self, source: bytes, symbol: str) -> Node: ...
+    def debug_objects(self, units: list[str], sources: dict[str, bytes] | None = None) -> dict[str, Path]: ...
+    def source_lines(self, unit: str, symbol: str, source: bytes, offsets: list[int]) -> set[int]: ...
 
 
 @dataclass
@@ -45,15 +70,15 @@ def _key(diff: DiffResult) -> tuple:
     return (diff.exact, diff.fuzzy or 0.0, diff.score, -len(diff.findings))
 
 
-def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4, source: bytes | None = None) -> SearchResult:
+def search(target: Target, unit: str, symbol: str, rounds: int = 4, source: bytes | None = None) -> SearchResult:
     """Search from the unit's source in the checkout, or from `source`."""
-    source = source if source is not None else (harvest.root / "src" / harvest.source(unit)).read_bytes()
-    baseline = harvest.evaluate(unit, {"baseline": source})["baseline"]
+    source = source if source is not None else target.source_path(unit).read_bytes()
+    baseline = target.evaluate(unit, {"baseline": source})["baseline"]
     if baseline.error:
         raise RuntimeError(f"the unit's own source does not compile:\n{baseline.error}")
     protected = baseline.exact_functions()
     others = other_scores(baseline, symbol)
-    current = _diff(harvest, baseline, symbol)
+    current = _diff(target, baseline, symbol)
     result = SearchResult(current, current, source)
     for _ in range(rounds):
         if current.exact:
@@ -61,14 +86,15 @@ def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4, source: by
             break
         causes = {f.cause for f in current.findings}
         try:
-            rewrites = [r for cause in causes for t in TRANSFORMS.get(cause, []) for r in t(source, find_function(source, symbol))]
+            scope = target.find_function(source, symbol)
+            rewrites = [r for cause in causes for t in TRANSFORMS.get(cause, []) if t in target.rewrites for r in t(source, scope)]
         except KeyError:
             result.reason = "the function is not defined in the unit's own source (an inline copy from a header?)"
             break
         if not rewrites:
             result.reason = "no rewrite applies to the function's own source for the remaining causes"
             break
-        evaluations = harvest.evaluate(unit, {f"r{n}": r.source for n, r in enumerate(rewrites)})
+        evaluations = target.evaluate(unit, {f"r{n}": r.source for n, r in enumerate(rewrites)})
         result.tried += len(rewrites)
         result.transforms |= {r.transform for r in rewrites}
         improving = []
@@ -76,7 +102,7 @@ def search(harvest: Harvest, unit: str, symbol: str, rounds: int = 4, source: by
             e = evaluations[f"r{n}"]
             if e.error or not protected <= e.exact_functions():
                 continue
-            d = _diff(harvest, e, symbol)
+            d = _diff(target, e, symbol)
             if _key(d) > _key(current):
                 improving.append((rewrite, d, e))
         improving.sort(key=lambda c: _key(c[1]), reverse=True)
@@ -115,27 +141,19 @@ def net_gain(before: Evaluation, after: Evaluation) -> float:
     return sum(sizes.get(key, 0) * (after_scores.get(key, 0.0) - score) / 100 for key, score in before.fuzzy_by_key().items())
 
 
-def _diff(harvest: Harvest, evaluation: Evaluation, symbol: str) -> DiffResult:
+def _diff(target: Target, evaluation: Evaluation, symbol: str) -> DiffResult:
     verdict = evaluation.verdict(symbol)
     if verdict is None:
         raise KeyError(f"{symbol} is not in the compiled unit")
-    diff = harvest.diff(verdict, evaluation.object)
+    diff = target.diff(verdict, evaluation.object)
     diff.fuzzy = evaluation.fuzzy.get(symbol)
     return diff
 
 
-def attributed_lines(harvest: Harvest, unit: str, symbol: str, source: bytes, diff: DiffResult) -> set[int]:
+def attributed_lines(target: Target, unit: str, symbol: str, source: bytes, diff: DiffResult) -> set[int]:
     """Lines of the unit's source that the differing code of `symbol` comes from:
-    the unit is compiled from `source` with debug information and each finding of
-    the diff is traced through its inline chain. Empty when no finding has a place
-    in the candidate or the debug compile fails."""
-    unit = harvest.source(unit)
-    located = [finding for finding in diff.findings if finding.candidate is not None]
-    obj = harvest.debug_objects([unit], {unit: source}).get(unit) if located else None
-    if obj is None:
-        return set()
-    function = read_function(obj, symbol)
-    lines = set()
-    for chain in inline_chains(obj, function.section, [function.start + finding.candidate for finding in located]):
-        lines |= {frame.line for frame in chain if frame.path == f"src/{unit}"}
-    return lines
+    the unit is compiled from `source` with line information and each finding of
+    the diff is traced to its lines. Empty when no finding has a place in the
+    candidate or the compile fails."""
+    offsets = [finding.candidate for finding in diff.findings if finding.candidate is not None]
+    return target.source_lines(unit, symbol, source, offsets) if offsets else set()

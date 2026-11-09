@@ -5,8 +5,18 @@ import io
 import subprocess
 import sys
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 
 from concord.cli import build_parser, main
+
+
+def fake_harvest(root: Path) -> SimpleNamespace:
+    """What the permute command reads from a target, for a checkout with its sources under src/."""
+    return SimpleNamespace(
+        root=root, source=lambda unit: unit, source_path=lambda unit: root / "src" / unit,
+        log="harvest.jsonl", compiler="gcc-4.4.3", oracle=True,
+    )  # fmt: skip
 
 
 class CliTest(unittest.TestCase):
@@ -220,7 +230,6 @@ class CliTest(unittest.TestCase):
         import json
         import tempfile
         from pathlib import Path
-        from types import SimpleNamespace
         from unittest import mock
 
         from concord import oracle
@@ -229,7 +238,7 @@ class CliTest(unittest.TestCase):
             log = Path(tmp) / "runs.jsonl"
             targets = [("a.cpp", "slow", 99.5), ("b.cpp", "fine", 99.4)]
             stuck = oracle.OracleBaselineError("oracle failed on the baseline for slow: oracle check timed out after 60 seconds")
-            with mock.patch("concord.cli.Harvest", return_value=SimpleNamespace(source=lambda unit: unit, root=Path(tmp))), \
+            with mock.patch("concord.cli.Harvest", return_value=fake_harvest(Path(tmp))), \
                     mock.patch("concord.cli.near_misses", return_value=targets), \
                     mock.patch("concord.cli.results.commit", return_value="abc"), \
                     mock.patch("concord.cli._permute_one", side_effect=[stuck, False]) as run, \
@@ -243,12 +252,11 @@ class CliTest(unittest.TestCase):
     def test_near_miss_sweep_keeps_only_the_named_unit(self):
         import tempfile
         from pathlib import Path
-        from types import SimpleNamespace
         from unittest import mock
 
         with tempfile.TemporaryDirectory() as tmp:
             targets = [("a.cpp", "one", 99.5), ("b.cpp", "two", 99.4), ("a.cpp", "three", 99.1)]
-            with mock.patch("concord.cli.Harvest", return_value=SimpleNamespace(source=lambda unit: unit, root=Path(tmp))), \
+            with mock.patch("concord.cli.Harvest", return_value=fake_harvest(Path(tmp))), \
                     mock.patch("concord.cli.near_misses", return_value=targets), \
                     mock.patch("concord.cli._permute_one", return_value=False) as run, \
                     contextlib.redirect_stdout(io.StringIO()):
@@ -272,7 +280,7 @@ class CliTest(unittest.TestCase):
                 baseline=diff(95.0), best=diff(95.8), source=b"while (!(d <= 0)) {}",
                 steps=["nan-sense line 1: d > 0 as !(d <= 0)"], reason="budget spent", tried=8,
             )
-            with mock.patch("concord.cli.Harvest", return_value=SimpleNamespace(source=lambda unit: unit, root=Path(tmp))), \
+            with mock.patch("concord.cli.Harvest", return_value=fake_harvest(Path(tmp))), \
                     mock.patch("concord.cli.permute", return_value=found), \
                     mock.patch("concord.cli.repair", return_value=(found.source, [])), \
                     mock.patch("concord.cli.finish", return_value=found.source), \

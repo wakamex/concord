@@ -23,6 +23,7 @@ from capstone import x86
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import RelocationSection
 
+from concord import coff
 from concord.model import Cause, DiffFinding, DiffResult
 
 
@@ -36,6 +37,7 @@ class ObjectFunction:
     start: int  # offset of the function in its section
     code: bytes
     relocations: frozenset[int]
+    bits: int = 64  # 32 for i386 code
 
 
 def read_function(path: Path, symbol: str) -> ObjectFunction:
@@ -46,11 +48,19 @@ def read_function(path: Path, symbol: str) -> ObjectFunction:
 
 
 def read_functions(path: Path, symbols: Iterable[str]) -> dict[str, ObjectFunction]:
-    """Read selected functions from one object while parsing its ELF tables once."""
+    """Read selected functions from one ELF or i386 COFF object, parsing its tables once."""
     wanted = set(symbols)
     if not wanted:
         return {}
     with open(path, "rb") as stream:
+        if coff.is_i386(stream.read(20)):
+            stream.seek(0)
+            return {
+                name: ObjectFunction(name, f.section, f.start, f.code, f.relocations, 32)
+                for name, f in coff.functions(stream.read()).items()
+                if name in wanted
+            }
+        stream.seek(0)
         elf = ELFFile(stream)
         table = elf.get_section_by_name(".symtab")
         found = {}
@@ -121,7 +131,7 @@ def _family(name: str | None) -> str | None:
 
 
 def disassemble(function: ObjectFunction) -> list[Instruction]:
-    md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+    md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32 if function.bits == 32 else capstone.CS_MODE_64)
     md.detail = True
     out = []
     for i in md.disasm(function.code, 0):

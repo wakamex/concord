@@ -29,10 +29,9 @@ from dataclasses import dataclass, field
 
 from tree_sitter import Node
 
-from concord.harvest import Harvest
 from concord.model import Cause
 from concord.permute import drop_twins, permute
-from concord.search import _diff, attributed_lines, search
+from concord.search import Target, _diff, attributed_lines, search
 from concord.transforms import (
     Rewrite,
     _descendants,
@@ -40,7 +39,6 @@ from concord.transforms import (
     address_arithmetic,
     compress_assignment,
     expand_assignment,
-    find_function,
     for_loop,
     inline_temporaries,
     merge_conditions,
@@ -98,7 +96,7 @@ class Case:
     score: float  # the function's objdiff score after the change
 
 
-def functions(harvest: Harvest) -> list[tuple[str, str]]:
+def functions(harvest: Target) -> list[tuple[str, str]]:
     """(unit source, symbol) of every exact function defined in its unit's own source."""
     found = set()
     sources: dict[str, bytes] = {}
@@ -108,15 +106,15 @@ def functions(harvest: Harvest) -> list[tuple[str, str]]:
         unit = harvest.source(verdict.unit)
         try:
             if unit not in sources:
-                sources[unit] = (harvest.root / "src" / unit).read_bytes()
-            find_function(sources[unit], verdict.symbol)
+                sources[unit] = harvest.source_path(unit).read_bytes()
+            harvest.find_function(sources[unit], verdict.symbol)
         except (KeyError, FileNotFoundError):
             continue
         found.add((unit, verdict.symbol))
     return sorted(drop_twins(found))
 
 
-def cases(harvest: Harvest, sample: list[tuple[str, str]], seed: int = 0, per_kind: int | None = None) -> list[Case]:
+def cases(harvest: Target, sample: list[tuple[str, str]], seed: int = 0, per_kind: int | None = None) -> list[Case]:
     """One case per function and mutation that applies and stops only that
     function matching, at most `per_kind` of each mutation, chosen at random. The
     rewrite used is chosen at random among those the mutation offers."""
@@ -126,11 +124,13 @@ def cases(harvest: Harvest, sample: list[tuple[str, str]], seed: int = 0, per_ki
     for unit, symbol in sample:
         by_unit.setdefault(unit, []).append(symbol)
     for unit, symbols in sorted(by_unit.items()):
-        source = (harvest.root / "src" / unit).read_bytes()
+        source = harvest.source_path(unit).read_bytes()
         candidates = {}
         for symbol in symbols:
-            scope = find_function(source, symbol)
+            scope = harvest.find_function(source, symbol)
             for name, (mutation, _) in MUTATIONS.items():
+                if mutation is not commute and mutation not in harvest.rewrites:
+                    continue  # a rewrite the target's compiler does not accept
                 rewrites = list(mutation(source, scope))
                 if rewrites:
                     candidates[f"c{len(candidates)}"] = (symbol, name, rng.choice(rewrites))
@@ -155,23 +155,23 @@ def cases(harvest: Harvest, sample: list[tuple[str, str]], seed: int = 0, per_ki
 TWO_EDITS = "two edits"
 
 
-def pairs(harvest: Harvest, sample: list[tuple[str, str]], seed: int = 0, count: int | None = None) -> list[Case]:
+def pairs(harvest: Target, sample: list[tuple[str, str]], seed: int = 0, count: int | None = None) -> list[Case]:
     """Cases two changes away from a match: for each function, two mutations of
     kinds concord can undo, the second applied to the result of the first, kept
     when together they stop only that function matching. At most `count` cases."""
     rng = random.Random(seed)
-    known = [mutation for mutation, undoable in MUTATIONS.values() if undoable]
+    known = [mutation for mutation, undoable in MUTATIONS.values() if undoable and (mutation is commute or mutation in harvest.rewrites)]
     found = []
     by_unit: dict[str, list[str]] = {}
     for unit, symbol in sample:
         by_unit.setdefault(unit, []).append(symbol)
     for unit, symbols in sorted(by_unit.items()):
-        source = (harvest.root / "src" / unit).read_bytes()
+        source = harvest.source_path(unit).read_bytes()
         candidates = {}
         for symbol in symbols:
             text, steps = source, []
             for mutation in rng.sample(known, 2):
-                rewrites = list(mutation(text, find_function(text, symbol)))
+                rewrites = list(mutation(text, harvest.find_function(text, symbol)))
                 if not rewrites:
                     break
                 rewrite = rng.choice(rewrites)
@@ -199,7 +199,7 @@ class Outcome:
     permute_tried: int
 
 
-def solve(harvest: Harvest, case: Case, budget: int = 128, seed: int = 0, directed: bool = True) -> Outcome:
+def solve(harvest: Target, case: Case, budget: int = 128, seed: int = 0, directed: bool = True) -> Outcome:
     """Run both searches on the case; `directed` is permute's own setting."""
     by_cause = search(harvest, case.unit, case.symbol, source=case.source)
     found = permute(harvest, case.unit, case.symbol, budget=budget, seed=seed, source=case.source, directed=directed)
@@ -257,14 +257,14 @@ def changed_lines(original: bytes, mutated: bytes) -> set[int]:
     return lines
 
 
-def locate(harvest: Harvest, case: Case) -> Located:
+def locate(harvest: Target, case: Case) -> Located:
     """Compile the case with debug information and map each finding of its diff to
     the source line its code comes from."""
     result = Located(case)
-    scope = find_function(case.source, case.symbol)
+    scope = harvest.find_function(case.source, case.symbol)
     first, last = scope.start_point[0] + 1, scope.end_point[0] + 1
     result.length = last - first + 1
-    original = (harvest.root / "src" / case.unit).read_bytes()
+    original = harvest.source_path(case.unit).read_bytes()
     result.changed = {line for line in changed_lines(original, case.source) if first <= line <= last}
     evaluation = harvest.evaluate(case.unit, {"case": case.source})["case"]
     diff = _diff(harvest, evaluation, case.symbol)

@@ -20,7 +20,7 @@ from concord.bench import (
     while_loop,
 )
 from concord.harvest import Evaluation
-from concord.transforms import find_function
+from concord.transforms import ALL, find_function
 
 SOURCE = b"""int total(int* values, int count, int scale)
 {
@@ -77,8 +77,14 @@ class FakeHarvest:
     """The while-loop form stops `total` matching; the commuted form stops `skip`
     as well, which is an effect beyond the function."""
 
+    rewrites = ALL
+    find_function = staticmethod(find_function)
+
     def __init__(self, root):
         self.root = root
+
+    def source_path(self, unit):
+        return self.root / "src" / unit
 
     def evaluate(self, unit, sources):
         out = {}
