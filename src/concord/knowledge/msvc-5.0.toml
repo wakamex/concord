@@ -17,7 +17,7 @@ cause = "register-allocation"
 status = "confirmed"
 symptom = "two registers exchanged over a run of otherwise identical instructions, one load a few instructions earlier or later than in the target, or two x87 instructions (a load and an fxch) in the other order"
 fix = "Swap two adjacent statements that do not depend on each other, most often a local's initializing declaration and its neighbour. In the four functions of this idiom's evidence, the order of two independent initializations or stores decided which register each value took, or where its load stood."
-limits = "One swap made four of 182 searched functions exact, and statement swaps are 61 of the 80 steps in the 35 searches that improved a function without making it exact. In nine of those 35 the swaps are on consecutive lines, a statement moved two or three places or a run of member assignments reordered, as in the constructors of CToobSpikez (11 swaps among lines 42 to 44, 96.50 to 97.76) and CBattlezAiController (7 swaps, 96.03 to 97.68): the order of a constructor's member stores is searched one adjacent swap at a time, which a budget of 128 candidates does not finish. A swap of two calls is offered too, and only an exact match proves it kept the behavior."
+limits = "One swap made five functions exact, four of the 182 a first sweep searched and one more in a sweep of all 376 open functions. Statement swaps are 61 of the 80 steps in the first sweep's 35 searches that improved a function without making it exact. In nine of those 35 the swaps are on consecutive lines, a statement moved two or three places or a run of member assignments reordered, as in the constructors of CToobSpikez (11 swaps among lines 42 to 44, 96.50 to 97.76) and CBattlezAiController (7 swaps, 96.03 to 97.68): the order of a constructor's member stores is searched one adjacent swap at a time, which a budget of 128 candidates does not finish. A swap of two calls is offered too, and only an exact match proves it kept the behavior."
 before = "i32 pieceIndex = m_warpStonePieceIndex;\ndouble radius = static_cast<float>(m_pieceOrbitRadius);"
 after = "double radius = static_cast<float>(m_pieceOrbitRadius);\ni32 pieceIndex = m_warpStonePieceIndex;"
 evidence = [
@@ -25,6 +25,7 @@ evidence = [
   { function = "CBootyState::UpdateWarpStoneGlitterAnimation", note = "98.060 to exact after 21 candidates. Before: `fild dword ptr [edi*8]` and `fxch st(1)` in the other order. Change: the piece index declared after the orbit radius's conversion to floating point." },
   { function = "CGameLevel::FreeMove", note = "96.680 to exact after 22 candidates. Before: the loads of two fields at +0x13c and +0x140 and a stack reload placed differently, with `lea edi, [ecx + esi + 1]` where the target has `lea edi, [esi + edi + 1]`. Change: `cur = bounds.left` declared after `hiY = bounds.bottom + 1`." },
   { function = "RunCustomWorldDialog", note = "99.524 to exact after 8 candidates. Before: eax and edx exchanged at three instructions. Change: the store to g_customWorldParent after the store to g_customWorldSurfaceMgr, two independent globals." },
+  { function = "CTriggerMgr::ResurrectGruntsInArea", note = "91.972 to exact after 32 candidates: `b32 resurrected = false;` declared after the statement that followed it." },
 ]
 
 [[idiom]]
@@ -32,11 +33,16 @@ id = "named-temporary"
 cause = "register-allocation"
 status = "confirmed"
 symptom = "two or three registers exchanged or rotated at the instructions around one value: a call's result or a converted member that the source either names in a local used once or writes in place"
-fix = "Try the value both ways: named in a local of its own type before the statement that uses it, and written inside the one expression that uses it. Each form was the matching one for a function below."
-limits = "One function each way. Naming changed the function's code in 112 of 406 applications to exact functions and inlining in 4 of 20, so most temporaries can be written either way without effect. concord declares the local with the type libclang gives the expression and, for a value narrower than int, also as an int; a local the original declared with another type again is not found."
+fix = "Try the value both ways: named in a local of its own type before the statement that uses it, and written inside the one expression that uses it. Naming was the matching form for seven functions of this idiom's evidence and writing in place for one."
+limits = "Naming changed the function's code in 112 of 406 applications to exact functions and inlining in 4 of 20, so most temporaries can be written either way without effect. concord declares the local with the type libclang gives the expression and, for a value narrower than int, also as an int; a local the original declared with another type again is not found."
 before = "m_scrollScaleX = static_cast<float>(m_movementXPercent) * 0.01f;"
 after = "float movementXPercentFloat = static_cast<float>(m_movementXPercent);\nm_scrollScaleX = movementXPercentFloat * 0.01f;"
 evidence = [
   { function = "CLevelPlane::InitGeometry", note = "97.714 to exact after 32 candidates, by naming the conversion of m_movementXPercent to float before the multiplication that stores m_scrollScaleX. The parameter movementXPercent holds the plain name, so the local is named with its type." },
+  { function = "CTileExclusiveTriggerSwitchLogic::SwitchDown", note = "99.818 to exact after 28 candidates: `i32 linkedSwitchKey = m_linkedSwitchKeys[i];` before the `if` that tests it against 0." },
+  { function = "CCheatMgr::LoadCheatConfig", note = "98.105 to exact after 32 candidates: `const char* groupChar = static_cast<const char*>(group);` before the call that passes it." },
+  { function = "CExplosion::Update", note = "98.485 to exact after 7 candidates: `i32 advance = m_wwdObject->GetAnimationCursor().Advance(g_engineFrameDelta);` before the `if` that compares it with 1. CDroppedObjectShadow::Advance, the same statement compared with ANIM_EVENT_EFFECT_FRAME, went from 98.485 to exact after 4." },
+  { function = "CGrunt::UpdateExitAnimation", note = "98.766 to exact after 15 candidates: `CRezItm* rezFromPath = st->m_levelResources->GetRezFromPath(static_cast<LPCTSTR>(s), REZ_TAG_WWD);` before the `if` that tests it." },
+  { function = "CGruntzMgr::DelayedQuit", note = "94.672 to exact after 18 candidates: `DWORD time = timeGetTime();` before `base += time;`." },
   { function = "CStatusBarMgr::UpdateGruntOvens", note = "99.789 to exact after 11 candidates, the other way: `u32 frameDelayMs = g_buteMgr.GetDword(...)` written inside the division that used it. Before: ecx, edx and eax rotated at two instructions of the frame-index division." },
 ]

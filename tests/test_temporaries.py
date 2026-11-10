@@ -115,6 +115,14 @@ class TypedDeclarations(unittest.TestCase):
                   b"    m_scrollScaleX = concordTmp0 * 0.01f;\n}\n")
         self.assertIn(b"    float movementXPercentFloat = static_cast<float>(m_movementXPercent);\n", rename(*untyped(source), False))
 
+    def test_an_element_and_a_getter_get_the_names_a_person_would_write(self):
+        self.assertEqual(_name_for(b"m_linkedSwitchKeys[i]"), "linkedSwitchKey")
+        self.assertEqual(_name_for(b"table->m_entries[n + 1]"), "entry")
+        self.assertEqual(_name_for(b"m_class[i]"), "class")  # no plural to drop
+        self.assertEqual(_name_for(b"timeGetTime()"), "time")
+        self.assertEqual(_name_for(b"m_wwdObject->GetAnimationCursor().Advance(delta)"), "advance")
+        self.assertEqual(_name_for(b"target.GetTickCount()"), "tickCount")
+
     def test_source_without_typed_temporaries_is_unchanged(self):
         source = b"void f() {\n    int size = a.Size;\n    g(size);\n}\n"
         self.assertEqual(untyped(source), (source, {}))

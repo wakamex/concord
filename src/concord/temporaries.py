@@ -114,6 +114,7 @@ def _expression(text: bytes) -> Node:
 
 def _name_for(text: bytes) -> str:
     node = _expression(text)
+    element = False  # the value is one element of what it is named after
     while True:
         if node.type == "field_expression":
             word = node.child_by_field_name("field").text.decode()
@@ -137,6 +138,7 @@ def _name_for(text: bytes) -> str:
             node = node.child_by_field_name("left")
             continue
         if node.type in ("subscript_expression", "pointer_expression", "parenthesized_expression", "cast_expression"):
+            element = element or node.type == "subscript_expression"
             node = node.child_by_field_name("argument") or node.child_by_field_name("value") or node.named_children[-1]
             continue
         if node.type in ("identifier", "qualified_identifier"):
@@ -147,6 +149,9 @@ def _name_for(text: bytes) -> str:
     template = "<" in word  # a template-id such as CRect<int> names its type
     word = re.sub(r"<.*|[^\w]", "", word)
     word = re.sub(r"^(get|is)(?=[A-Z])|^(Get|Is)(?=[A-Z])|^[mg]_(?=\w)", "", word)  # an accessor's verb, a member's or global's prefix
+    word = re.sub(r"^.*[a-z]Get(?=[A-Z])", "", word)  # timeGetTime() gives time
+    if element:  # m_keys[i] is a key, m_entries[i] an entry
+        word = re.sub(r"ies$", "y", word) if word.endswith("ies") else re.sub(r"(?<=[^s])s$", "", word)
     if template and re.match(r"[A-Z][A-Z][a-z]", word):
         word = word[1:]  # the class prefix, dropped as in a conversion's suffix
     return word[:1].lower() + word[1:] or "value"

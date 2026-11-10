@@ -1,6 +1,6 @@
 # concord
 
-Tools for matching recompilation of x86-64 C++: finding source that, compiled with the original toolchain and flags, produces object code byte-identical to a target binary. concord verifies candidate source with the target project's own matcher and says what to change; it works today against [Harvest](https://github.com/banteg/harvest), a matching decompilation of a GCC 4.4.3 Linux amd64 game.
+Tools for matching recompilation of x86 and x86-64 C++: finding source that, compiled with the original toolchain and flags, produces object code byte-identical to a target binary. concord verifies candidate source with the target project's own matcher and says what to change; it works today against [Harvest](https://github.com/banteg/harvest), a matching decompilation of a GCC 4.4.3 Linux amd64 game, and its rewrite search and diff also run against [gruntz-decomp](https://github.com/sushi-shi/gruntz-decomp), a matching decompilation of a 32-bit Windows game built with Microsoft Visual C++ 5.0.
 
 ## The problem concord solves
 
@@ -33,7 +33,7 @@ The name is the goal state: the recompiled object in agreement with the target b
 
 ## Status
 
-Every command works against Harvest and only against Harvest: concord compiles and compares through that project's toolchain and matcher. An exact match needs no oracle: the target's own matcher proves the function byte-identical, which makes it equivalent at the machine level. A partial gain carries no such proof, so `match`, `permute` and `rerun` compile the function before and after each rewrite, run both on 5,000 generated inputs with [harvest-oracle](https://github.com/wakamex/harvest-oracle) (comparing return values, calls out of the function and memory written), and drop the rewrite on any difference. concord uses `harvest-oracle` when it is on `PATH` (`uv tool install git+https://github.com/wakamex/harvest-oracle`); `CONCORD_ORACLE` names another command with the same `check BEFORE.o AFTER.o --symbol SYMBOL --unit UNIT --cases N` interface, or turns the check off when empty. Each oracle process has a 60-second limit; set `CONCORD_ORACLE_TIMEOUT` to a positive number of seconds to change it. Set `CONCORD_ORACLE_CASES` to a positive integer to change the generated input count from its 5,000-case default. A timeout or process failure on a candidate is recorded with its rejection reason, while a baseline or command setup failure stops the command with an error. A case that indexes past the end of a sized table, which reads whatever each build places after it, is reported as undefined and left out of the verdict. The oracle compares two compiles of Harvest's source, and `repair` uses its comparison with the original image to move a function's behavior toward the original's.
+Every command works against Harvest, and `permute` and `diff` also work against gruntz-decomp ([a second target](#a-second-target-gruntz-decomp)): concord compiles and compares through the target project's toolchain and matcher. An exact match needs no oracle: the target's own matcher proves the function byte-identical, which makes it equivalent at the machine level. A partial gain carries no such proof, so `match`, `permute` and `rerun` compile the function before and after each rewrite, run both on 5,000 generated inputs with [harvest-oracle](https://github.com/wakamex/harvest-oracle) (comparing return values, calls out of the function and memory written), and drop the rewrite on any difference. concord uses `harvest-oracle` when it is on `PATH` (`uv tool install git+https://github.com/wakamex/harvest-oracle`); `CONCORD_ORACLE` names another command with the same `check BEFORE.o AFTER.o --symbol SYMBOL --unit UNIT --cases N` interface, or turns the check off when empty. Each oracle process has a 60-second limit; set `CONCORD_ORACLE_TIMEOUT` to a positive number of seconds to change it. Set `CONCORD_ORACLE_CASES` to a positive integer to change the generated input count from its 5,000-case default. A timeout or process failure on a candidate is recorded with its rejection reason, while a baseline or command setup failure stops the command with an error. A case that indexes past the end of a sized table, which reads whatever each build places after it, is reported as undefined and left out of the verdict. The oracle compares two compiles of Harvest's source, and `repair` uses its comparison with the original image to move a function's behavior toward the original's.
 
 Upstream results so far, each verified by Harvest's `hv match` on every unit:
 
@@ -174,6 +174,87 @@ Add `--search --budget 64` to measure caller rewrites at traced origins, recycle
 
 `concord causal-trial --harvest ROOT --header src/PATH --line N --save FILE` measures existing comparison and loop-form rewrites at a ranked line without writing the header. Use `--authored UNIT SYMBOL` instead of `--line` to measure every spelling in a registered authored header-function family, or add `--variant NAME` to measure one. The CString families cover copy-loop bounds, index and pointer traversal, comparison operand order and named character temporaries. It compiles every including unit, or repeatable `--unit UNIT` selections for a smaller initial check, and records exact-copy gains, exact-copy losses and lower scores, including those in already inexact functions. Candidate sources and object hashes are saved beside the report. Whole-build scoring and behavior verification remain the acceptance gates for a source change. The [CString spelling search](docs/CSTRING_FLIPS.md) records 53 measured forms, their local matches and the cross-unit losses that reject them.
 
+### A second target: gruntz-decomp
+
+`concord permute`, `concord diff` and `concord bench` take `--gruntz ROOT` in place of `--harvest ROOT`. [gruntz-decomp](https://github.com/sushi-shi/gruntz-decomp) reconstructs the 1999 Windows game Gruntz so that Microsoft Visual C++ 5.0 Service Pack 3 (`cl /O2 /MT`), run under [Wine](https://www.winehq.org/), emits [Common Object File Format (COFF)](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format) objects matching the retail executable. It scores each function with its own build of objdiff against objects its delinker cuts from the executable, and counts a function as matched when its present source has scored 100% in any build, the best score `config/match_baseline.tsv` keeps for it. concord's verdicts follow that rule.
+
+```sh
+uv run concord diff --gruntz ../gruntz-decomp --unit multi '?DispatchRecvMsg@CMulti@@QAEHHPADH@Z'
+uv run concord permute --gruntz ../gruntz-decomp --near-miss 90 --apply --skip-logged
+uv run concord bench --gruntz ../gruntz-decomp --functions 300 --per-kind 10
+```
+
+concord reads the checkout's report, baseline and address table, and finds a function in its unit's source by the `RVA(address, size)` label gruntz-decomp writes before each definition. Candidates are compiled and scored by `gruntz_driver.py`, which concord starts inside the checkout's [Nix](https://nixos.org/) dev shell and which calls the checkout's own compiler bridge, object canonicalizer, objdiff and exact-match rule (an unrounded 100%, the retail size, and equal ordered relocations). The diff reads i386 COFF objects and disassembles them as 32-bit code. Where the diff points in the source comes from the line records cl writes with `/Zd`, which leave every function's code as it was in all 289 units; cl gives code it inlined the line of the call, so the lines are always the function's own. Nothing checks the behavior of an inexact rewrite on this target, so `permute` writes exact matches only and refuses `--apply-improved`; `repair` and the other commands remain Harvest's.
+
+Requirements: a gruntz-decomp checkout after `gruntz build`, and either Nix with flakes or [Podman](https://podman.io/). Without `nix` on `PATH`, concord runs the dev shell in one long-lived rootless container per checkout (image `docker.io/nixos/nix`, with the Nix store in the volume `gruntz-nix-store`), since two Wine servers on one prefix would race; `CONCORD_GRUNTZ_SHELL` names another command prefix that runs its arguments in the dev shell. At gruntz-decomp b5b6262, `gruntz init` does not place the retail executable where the build graph reads it, so a fresh checkout needs `cp "$GRUNTZ_EXE" build/exe/GRUNTZ.EXE` once inside the dev shell. The tests in `tests/test_gruntz.py` that need a checkout run when `CONCORD_GRUNTZ` names one or one is at `../gruntz-decomp`.
+
+A search compiles hundreds of candidates per function, so the cost of one candidate decides how many functions a sweep covers. Called as they are, the checkout's helpers take 0.67 seconds a candidate on a small unit and 1.15 on its largest; concord's driver takes 0.11 and 0.25 with the same scores. The table gives seconds per candidate for one batch of 24 candidates compiled 8 at a time, on a 32-thread host whose other work held its load average between 50 and 60; every row produced identical scores for every function of both units.
+
+| Driver | `tileswitchlogic` (50 functions) | `play` (112 functions) |
+| --- | ---: | ---: |
+| The checkout's compile and score helpers, one Python thread per candidate | 0.67 | 1.15 |
+| Each directory's Windows path translated once, where the compiler bridge starts Wine eight times per compile for paths | 0.36 to 0.45 | 0.89 to 0.99 |
+| Worker processes, and objdiff's protobuf result read by `objdiff_scores.rs` in place of its JSON read by Python | 0.28 | 0.42 |
+| cl.exe run under [wibo](https://github.com/decompals/wibo) instead of Wine (`CONCORD_GRUNTZ_WIBO=/path/to/wibo`) | 0.11 | 0.25 |
+
+Where the time went, measured at b5b6262: a compile of `tileswitchlogic` under Wine takes 0.73 seconds, of which 0.20 is the three Wine processes cl starts (an empty file takes that long), about 0.5 is parsing its 43 headers and 0.04 its own code; the bridge also started Wine eight more times per compile to translate paths, 0.19 seconds each. objdiff's JSON result for `play` is 9.4 MB, since it holds every instruction row of every symbol: objdiff takes 0.42 seconds to write it and Python 0.47 to parse it, inside one interpreter lock that made the driver's threads wait on each other, while its protobuf result takes 0.19 seconds and `objdiff_scores.rs` reads the two numbers per symbol out of it without decoding the rest. That reader uses only the Rust standard library, and the driver compiles it with the dev shell's `rustc` on first use.
+
+Neither shortcut is taken on trust. For each unit the driver compiles the unchanged source through the checkout's bridge and scores it with the checkout's reader, uses `objdiff_scores` only if it gives the same score and size for every symbol, and uses wibo only if its object then gets the same row for every function. A candidate compiled under wibo whose set of exact functions differs from the unit's is compiled again through the bridge, so no function is called exact, or no longer exact, on wibo's word. Across all 289 units the reader agrees with the checkout's on all 29,245 symbols, and wibo's objects are byte-identical to Wine's in 270 units; in the other 19 every function's code is identical and some data sections come in a different order, the same on every run under each loader, so cl 5.0 orders them by something in the loader's memory layout. A precompiled header would halve the compile and is not used: after one, cl 5.0 generates different code for 5 functions of `play` and 2 of `grunt`, as gruntz-decomp's own compiler notes record.
+
+Results at gruntz-decomp b5b6262, which counts 4,056 of 4,426 functions exact and leaves 382 of the functions its report scores open. Two `concord permute --gruntz ROOT --apply` sweeps made 13 of them exact. The first, `--near-miss 90 --budget 128`, searched the 182 open functions whose instructions align with the target's at 90% or better: 19,427 candidates in 91 minutes, 5 exact. The second, `--near-miss 0 --budget 192 --seed 1`, searched all 376 still open, with the typed temporaries and the net rule described below: 68,221 candidates in five and a half hours, 8 more exact, 7 of them by naming a temporary. A further 163 functions improved without becoming exact and are not written. 13 of 382 is 3.4%, close to the 3 of 79 that `permute --near-miss` made exact on Harvest.
+
+| Function | Score before | Change that made it exact | Candidates compiled |
+| --- | ---: | --- | ---: |
+| `CMulti::DispatchRecvMsg` | 99.97 | two adjacent declarations swapped | 23 |
+| `CBootyState::UpdateWarpStoneGlitterAnimation` | 98.06 | two adjacent declarations swapped | 21 |
+| `CGameLevel::FreeMove` | 96.68 | two adjacent declarations swapped | 22 |
+| `RunCustomWorldDialog` | 99.52 | two adjacent stores to globals swapped | 8 |
+| `CTriggerMgr::ResurrectGruntsInArea` | 91.97 | a declaration swapped with the statement after it | 32 |
+| `CStatusBarMgr::UpdateGruntOvens` | 99.79 | a call written inside the expression that uses it, where a local named it | 11 |
+| `CLevelPlane::InitGeometry` | 97.71 | `static_cast<float>(m_movementXPercent)` named in a `float` | 32 |
+| `CTileExclusiveTriggerSwitchLogic::SwitchDown` | 99.82 | `m_linkedSwitchKeys[i]` named in an `i32` | 28 |
+| `CCheatMgr::LoadCheatConfig` | 98.10 | `static_cast<const char*>(group)` named in a `const char*` | 32 |
+| `CExplosion::Update` | 98.48 | the animation cursor's `Advance(...)` result named in an `i32` | 7 |
+| `CDroppedObjectShadow::Advance` | 98.48 | the animation cursor's `Advance(...)` result named in an `i32` | 4 |
+| `CGrunt::UpdateExitAnimation` | 98.77 | `GetRezFromPath(...)` named in a `CRezItm*` | 15 |
+| `CGruntzMgr::DelayedQuit` | 94.67 | `timeGetTime()` named in a `DWORD` | 18 |
+
+gruntz-decomp's own tools agree. After `gruntz build`, its merge gate `gruntz build verify` passes on the 13 changed files: no function below its banked score, no new dip in an unchanged function (106 before and after), and every gate of its fast and normal tiers OK. Its regenerated score block counts 4,069 of 4,426 functions exact where it counted 4,056, 91.93% against 91.64%, and 3,994 exact in the current build where there were 3,981. The changes are 20 added and 14 removed source lines, each a statement moved or a value named, such as `i32 advance = m_wwdObject->GetAnimationCursor().Advance(g_engineFrameDelta);` before the `if` that tests it.
+
+`concord bench` gives the same measurement as on Harvest, at the same settings (600 sampled exact functions, at most 12 cases per kind, 128 candidates per case): one change is applied to a function that matches, and the searches are asked to bring it back.
+
+| Change applied to an exact function | Cases | Recovered by `match` | Recovered by `permute` |
+| --- | ---: | ---: | ---: |
+| Swap a comparison's operands | 12 | 12 | 12 |
+| Swap an if's branches | 12 | 8 | 12 |
+| Swap adjacent statements | 12 | 0 | 12 |
+| Move a declaration | 12 | 0 | 12 |
+| Name a temporary | 12 | 0 | 11 |
+| Inline a temporary | 4 | 0 | 3 |
+| For loop as while loop | 1 | 0 | 1 |
+| While loop as for loop | 1 | 0 | 1 |
+| Merge nested ifs | 1 | 0 | 1 |
+| Two changes of the kinds above | 7 | 4 | 7 |
+| All | 74 | 24 | 72 |
+
+`permute` recovers 72 of 74, at a median of 17 candidates. Eight kinds have one case or none, because cl 5.0 compiles both forms to the same code. `concord bench` prints, for each kind, what every applied change did to the bytes; the table gives how many altered the function's code.
+
+| Change applied to an exact function | Applied | Altered the code | Share |
+| --- | ---: | ---: | ---: |
+| Swap an if's branches | 76 | 64 | 84% |
+| Swap adjacent statements | 277 | 228 | 82% |
+| Swap a comparison's operands | 167 | 80 | 48% |
+| Name a temporary | 406 | 112 | 28% |
+| Inline a temporary | 20 | 4 | 20% |
+| Move a declaration | 72 | 12 | 17% |
+| Loop form, compound assignment, `&&` nesting or merging, commutative operands, split declaration | 289 | 7 | 2% |
+
+GCC 4.4 on Harvest gave cases for loop forms, compound assignments, `&&` nesting and commutative operands; on cl 5.0 statement order, branch sense, comparison order and temporaries carry the search.
+
+Two changes to the search came from this benchmark. Before them `permute` recovered 57 of 63 cases, and all six misses were an inlined temporary: the rewrite that names one wrote GCC's `__typeof__`, which cl 5.0 rejects, and it reached only declarations and expression statements, while four of the six sat in a `return` or an `if` condition (`i32 hr = f(); return hr == 0;`). `name_temporaries` now reaches both for every target, and on gruntz declares the temporary with the type [libclang](https://clang.llvm.org/docs/LibClang.html) gives the expression in the checkout's dev shell, one parse per function; a value narrower than `int` is also offered as an `int`. The second change is to what a search may do to other functions. cl 5.0's code for one function shifts when another function of the unit changes, which gruntz-decomp calls a dip and does not count against the unchanged function, and `permute` refused any candidate that lowered another function's score, including one that undid a benchmark change. A target can now declare Goal 2's net rule for searches, as gruntz does: such a candidate is taken while no function exact in the build is lost and the unit gains by size-weighted score, and the log row names each function it lowered. Harvest's searches keep the strict rule. The rule recovers benchmark cases and decided none of the 13 matches: the best candidate lowered a neighbour for 12 functions of the second sweep, none of them exact.
+
+What does not carry over is everything that reads Harvest's build or GCC's internals: `seed` and the header commands translate Irrlicht into Harvest's names, and gruntz-decomp handles its one surviving ancestor, LithTech, with its own `gruntz lineage`; `phase`, `causal`, `scratch-history`, `inline-budget`, `limits` and `frames` read GCC 4.4's dumps and counters; `repair`, `rerun` and `--apply-improved` need harvest-oracle, which runs x86-64 ELF functions; `scores` is Harvest's whole-build gate, where gruntz-decomp has its own (`gruntz build verify`). concord's diff finds a register difference in 357 of the 382 open functions. gruntz-decomp's notes trace many such differences to the compiler's state on reaching the function and to its inlining budget, and it has its own instruments for both (`gruntz permute state`, `gruntz walls inline-solve`); concord's rewrites of a function's body reach neither.
+
 ## Roadmap
 
 concord is the deterministic half of matching: it verifies candidates with the target's own matcher and says what to change. Something else writes the source, whether a person, an agent or a model harness, and such a harness is a separate project. The steps below are in order, and each is judged against the first.
@@ -300,4 +381,4 @@ Which executor takes a task is decided by `delegate select` from the ledger in `
 
 ## License
 
-concord is under the [MIT License](LICENSE). `results/harvest.jsonl` and the knowledge base quote short fragments of Harvest source as evidence. The source patches that `concord match` and `concord permute` save under `results/patches/` stay local and untracked, since Harvest carries no license that would allow redistributing them.
+concord is under the [MIT License](LICENSE). `results/harvest.jsonl` and the knowledge base quote short fragments of Harvest source as evidence; `results/gruntz.jsonl`, `results/bench-gruntz.jsonl` and `msvc-5.0.toml` quote fragments of gruntz-decomp, which is under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The source patches that `concord match` and `concord permute` save under `results/patches/` stay local and untracked, since Harvest carries no license that would allow redistributing them.

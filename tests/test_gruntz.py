@@ -175,6 +175,9 @@ class BuiltCheckout(unittest.TestCase):
         cls.evaluation = cls.gruntz.evaluate(cls.UNIT, {"baseline": cls.gruntz.source_path(cls.UNIT).read_bytes()})["baseline"]
 
     def test_the_unchanged_source_scores_as_the_report_does(self):
+        source, report = self.gruntz.source_path(self.UNIT), self.gruntz.root / REPORT
+        if source.stat().st_mtime > report.stat().st_mtime:
+            self.skipTest(f"{source.name} changed after the checkout's report was written; run `gruntz build`")
         self.assertEqual(self.evaluation.error, "")
         self.assertIn("objdiff_scores", self.gruntz.using)  # the dev shell has rustc, so this checks the Rust reader
         self.assertEqual("wibo" in self.gruntz.using, bool(os.environ.get("CONCORD_GRUNTZ_WIBO")))
