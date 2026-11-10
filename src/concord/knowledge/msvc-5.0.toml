@@ -31,11 +31,12 @@ evidence = [
 id = "named-temporary"
 cause = "register-allocation"
 status = "confirmed"
-symptom = "two registers exchanged at the instructions around a call whose result the source names in a local used once"
-fix = "Write the call inside the one expression that uses its result instead of naming it in a local first."
-limits = "One function. The inverse, naming a subexpression, is not searched on this target: concord writes it with GCC's __typeof__, which cl 5.0 rejects."
-before = "u32 frameDelayMs = g_buteMgr.GetDword(\"StatusBar\", \"GruntOvenDelay\", 0xc8);\ni32 frameIndex = static_cast<i32>((static_cast<u32>(nonnegativeElapsedMs) / frameDelayMs)) + 1;"
-after = "i32 frameIndex = static_cast<i32>((static_cast<u32>(nonnegativeElapsedMs) / g_buteMgr.GetDword(\"StatusBar\", \"GruntOvenDelay\", 0xc8))) + 1;"
+symptom = "two or three registers exchanged or rotated at the instructions around one value: a call's result or a converted member that the source either names in a local used once or writes in place"
+fix = "Try the value both ways: named in a local of its own type before the statement that uses it, and written inside the one expression that uses it. Each form was the matching one for a function below."
+limits = "One function each way. Naming changed the function's code in 112 of 406 applications to exact functions and inlining in 4 of 20, so most temporaries can be written either way without effect. concord declares the local with the type libclang gives the expression and, for a value narrower than int, also as an int; a local the original declared with another type again is not found."
+before = "m_scrollScaleX = static_cast<float>(m_movementXPercent) * 0.01f;"
+after = "float movementXPercentFloat = static_cast<float>(m_movementXPercent);\nm_scrollScaleX = movementXPercentFloat * 0.01f;"
 evidence = [
-  { function = "CStatusBarMgr::UpdateGruntOvens", note = "99.789 to exact after 11 candidates. Before: ecx, edx and eax rotated at two instructions of the frame-index division." },
+  { function = "CLevelPlane::InitGeometry", note = "97.714 to exact after 32 candidates, by naming the conversion of m_movementXPercent to float before the multiplication that stores m_scrollScaleX. The parameter movementXPercent holds the plain name, so the local is named with its type." },
+  { function = "CStatusBarMgr::UpdateGruntOvens", note = "99.789 to exact after 11 candidates, the other way: `u32 frameDelayMs = g_buteMgr.GetDword(...)` written inside the division that used it. Before: ecx, edx and eax rotated at two instructions of the frame-index division." },
 ]

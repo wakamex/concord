@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from concord.temporaries import _name_for, rename, variable_types
+from concord.temporaries import _name_for, rename, untyped, variable_types
 
 SOURCE = b"""namespace ns { template <class T> struct Box { Box(const T* p) : p(p) {} const T* p; }; }
 struct Item { int Size; };
@@ -85,6 +85,39 @@ class CallNames(unittest.TestCase):
         out = rename(source, {"concordTmp0": "double"})
         self.assertIn(b"double cosAngle = cos((double)angle);", out)
         self.assertIn(b"x = y + cosAngle * 2.0;", out)
+
+
+class TypedDeclarations(unittest.TestCase):
+    """Temporaries a search declared with their types, for a compiler without __typeof__."""
+
+    def test_a_typed_temporary_is_named_after_its_expression(self):
+        source = (b"i32 CPlane::Init() {\n"
+                  b"    float concordTmp0 = static_cast<float>(m_movementXPercent);\n"
+                  b"    m_scrollScaleX = concordTmp0 * 0.01f;\n"
+                  b"    CGruntzMgr* concordTmp1 = g_gameReg;\n"
+                  b"    const char * concordTmp2 = owner->GetName();\n"
+                  b"    return Lower(concordTmp1, concordTmp2);\n}\n")
+        converted, types = untyped(source)
+        self.assertEqual(types, {"concordTmp0": "float", "concordTmp1": "CGruntzMgr*", "concordTmp2": "const char *"})
+        self.assertEqual(
+            rename(converted, types, False),
+            b"i32 CPlane::Init() {\n"
+            b"    float movementXPercent = static_cast<float>(m_movementXPercent);\n"  # the cast named after what it converts
+            b"    m_scrollScaleX = movementXPercent * 0.01f;\n"
+            b"    CGruntzMgr* gameReg = g_gameReg;\n"  # without the global's prefix
+            b"    const char * name = owner->GetName();\n"  # without the accessor's verb
+            b"    return Lower(gameReg, name);\n}\n",
+        )
+
+    def test_a_cast_whose_plain_name_is_taken_is_named_with_its_type(self):
+        source = (b"void CPlane::Init(i32 movementXPercent) {\n"
+                  b"    float concordTmp0 = static_cast<float>(m_movementXPercent);\n"
+                  b"    m_scrollScaleX = concordTmp0 * 0.01f;\n}\n")
+        self.assertIn(b"    float movementXPercentFloat = static_cast<float>(m_movementXPercent);\n", rename(*untyped(source), False))
+
+    def test_source_without_typed_temporaries_is_unchanged(self):
+        source = b"void f() {\n    int size = a.Size;\n    g(size);\n}\n"
+        self.assertEqual(untyped(source), (source, {}))
 
 
 if __name__ == "__main__":

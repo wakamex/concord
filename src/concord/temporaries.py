@@ -121,6 +121,9 @@ def _name_for(text: bytes) -> str:
         if node.type == "call_expression":
             function = node.child_by_field_name("function")
             arguments = node.child_by_field_name("arguments").named_children
+            if re.match(rb"(static|reinterpret|const|dynamic)_cast\s*<", function.text) and len(arguments) == 1:
+                node = arguments[0]  # a cast is named after what it converts: static_cast<float>(m_percent) is percent
+                continue
             if b"<" in function.text and len(arguments) == 1:
                 # a conversion such as CString<char>(extension): extensionString
                 kind = re.sub(r"<.*", "", function.text.decode()).split("::")[-1]
@@ -151,12 +154,18 @@ def _name_for(text: bytes) -> str:
 
 def _with_argument(text: bytes) -> str | None:
     """A call of one argument named after the function and the argument:
-    `cos((double)angle)` gives cosAngle."""
+    `cos((double)angle)` gives cosAngle. A cast is named after what it converts
+    and the type it converts to: `static_cast<float>(m_percent)` gives
+    percentFloat."""
     node = _expression(text)
     if node.type != "call_expression":
         return None
     function = node.child_by_field_name("function")
     arguments = node.child_by_field_name("arguments").named_children
+    cast = re.match(rb"(?:static|reinterpret|const|dynamic)_cast\s*<(.*)>$", function.text)
+    if cast and len(arguments) == 1:
+        kind = re.sub(r"\W", "", cast[1].decode().split()[-1])
+        return _name_for(arguments[0].text) + kind[:1].upper() + kind[1:] if kind else None
     if function.type != "identifier" or len(arguments) != 1:
         return None
     argument = _name_for(arguments[0].text)
