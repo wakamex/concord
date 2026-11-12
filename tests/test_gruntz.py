@@ -156,6 +156,27 @@ class DevShell(unittest.TestCase):
             with patch.dict(os.environ, {"PATH": tmp, "CONCORD_GRUNTZ_SHELL": ""}):
                 self.assertEqual(shell_command(Path("/g")), ["nix", "develop", "/g", "--command"])
 
+    def test_the_container_runs_as_its_own_user_unit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls, running = Path(tmp) / "calls", Path(tmp) / "running"
+            tools = {
+                "podman": f'echo "podman $*" >> {calls}\n'
+                f'[ "$2" = inspect ] && {{ [ -e {running} ] && echo true || echo false; }}\nexit 0',
+                "systemd-run": f'echo "systemd-run $*" >> {calls}\ntouch {running}',
+            }
+            for name, body in tools.items():
+                tool = Path(tmp) / name
+                tool.write_text(f"#!/bin/sh\n{body}\n")
+                tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
+            with patch.dict(os.environ, {"PATH": f"{tmp}:/usr/bin:/bin", "CONCORD_GRUNTZ_SHELL": ""}):
+                command = shell_command(Path("/g"))
+            started = [line for line in calls.read_text().splitlines() if line.startswith("systemd-run")]
+            self.assertEqual(len(started), 1)
+            self.assertIn("--user", started[0])
+            self.assertIn("podman start --attach concord-gruntz-", started[0])
+            self.assertEqual(command[:2], ["podman", "exec"])
+            self.assertIn("HOME=/root", command)
+
 
 def built_checkout() -> Path | None:
     root = Path(os.environ.get("CONCORD_GRUNTZ", Path(__file__).resolve().parents[2] / "gruntz-decomp"))

@@ -72,13 +72,38 @@ def shell_command(root: Path) -> list[str]:
     if subprocess.run(["podman", "container", "exists", name], check=False).returncode:
         settings = "experimental-features = nix-command flakes\nsandbox = false\nwarn-dirty = false\nmax-jobs = 2\ncores = 8"
         subprocess.run(
-            ["podman", "run", "-d", "--name", name, "--init", "--security-opt", "label=disable",
+            ["podman", "create", "--name", name, "--init", "--security-opt", "label=disable",
              "-v", f"{STORE}:/nix", "-v", f"{root}:{root}", "-e", f"NIX_CONFIG={settings}", IMAGE, "sleep", "infinity"],
-            check=True, stdout=subprocess.DEVNULL,
+            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )  # fmt: skip
-    subprocess.run(["podman", "start", name], check=True, stdout=subprocess.DEVNULL)
-    return ["podman", "exec", "-i", "-w", str(root), "-e", f"GRUNTZ_DIR={root}", name,
+    _start_container(name)
+    return ["podman", "exec", "-i", "-w", str(root), "-e", "HOME=/root", "-e", f"GRUNTZ_DIR={root}", name,
             "nix", "develop", str(root), "--profile", "/nix/var/nix/profiles/gruntz-devshell", "--command"]  # fmt: skip
+
+
+def _running(name: str) -> bool:
+    found = subprocess.run(["podman", "container", "inspect", "-f", "{{.State.Running}}", name],
+                           capture_output=True, text=True, check=False)  # fmt: skip
+    return found.stdout.strip() == "true"
+
+
+def _start_container(name: str, wait: float = 60) -> None:
+    """Start the container unless it runs. Where systemd is the user's service manager, it runs as the user unit
+    NAME, so it outlives the process that started it: started from an agent's shell, its monitor process was in
+    that shell's process tree and the container stopped within minutes, in the middle of a compile. A second
+    caller that finds the unit already starting waits for the container instead."""
+    if _running(name):
+        return
+    if shutil.which("systemd-run"):
+        subprocess.run(["systemd-run", "--user", "--quiet", "--collect", f"--unit={name}", "podman", "start", "--attach", name],
+                       check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # fmt: skip
+    else:
+        subprocess.run(["podman", "start", name], check=True, stdout=subprocess.DEVNULL)
+    deadline = time.monotonic() + wait
+    while not _running(name):
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"the dev shell container {name} did not start")
+        time.sleep(0.5)
 
 
 def _install(source: Path, destination: Path) -> None:
