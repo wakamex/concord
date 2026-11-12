@@ -8,6 +8,8 @@ lease_minutes = 30
 checkout = ["concord"]   # concord's own checkout, for capability tasks
 # Harvest checkouts beside it (/code/harvest-NAME), one task each; search and rule tasks work in one.
 harvest = ["swe2", "swe2c", "cursor", "sol", "terra"]
+# gruntz-decomp's matcher slots beside it (/code/gruntz-match-N), one lane each.
+gruntz = ["match-1", "match-2", "match-3"]
 
 # Kinds from docs/EXECUTORS.md. The whole-build gate (concord scores --base) compares every function and matched
 # byte with the original, so capability, search and rule tasks are gated; search and rule count newly exact functions.
@@ -36,3 +38,11 @@ measure = "pass-fail"
 classes = ["any"]
 investigation = true
 resources = []
+
+# A lane of open gruntz-decomp functions reconstructed by hand under its matcher skill. gruntz-decomp's own compare
+# proves each exact function and `gruntz build verify` gates the merge, so newly exact functions are counted.
+[kinds.gruntz-match]
+check = "gated"
+measure = "yield"
+classes = ["any"]
+resources = ["gruntz"]
