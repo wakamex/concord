@@ -156,19 +156,28 @@ class DevShell(unittest.TestCase):
             with patch.dict(os.environ, {"PATH": tmp, "CONCORD_GRUNTZ_SHELL": ""}):
                 self.assertEqual(shell_command(Path("/g")), ["nix", "develop", "/g", "--command"])
 
+    def fake_podman(self, tmp: str, start_after_removal: bool = False) -> Path:
+        """podman, systemctl and systemd-run stand-ins that log their calls: the container runs once systemd-run
+        starts it, or only after it was removed and created again."""
+        calls, running, removed = Path(tmp) / "calls", Path(tmp) / "running", Path(tmp) / "removed"
+        start = f"[ -e {removed} ] && touch {running}" if start_after_removal else f"touch {running}"
+        tools = {
+            "podman": f'echo "podman $*" >> {calls}\n'
+            f'[ "$2" = inspect ] && {{ [ -e {running} ] && echo true || echo false; }}\n'
+            f'[ "$1" = rm ] && touch {removed}\nexit 0',
+            "systemctl": f'echo "systemctl $*" >> {calls}',
+            "systemd-run": f'echo "systemd-run $*" >> {calls}\n{start}',
+        }
+        for name, body in tools.items():
+            tool = Path(tmp) / name
+            tool.write_text(f"#!/bin/sh\n{body}\n")
+            tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
+        return calls
+
     def test_the_container_runs_as_its_own_user_unit(self):
         with tempfile.TemporaryDirectory() as tmp:
-            calls, running = Path(tmp) / "calls", Path(tmp) / "running"
-            tools = {
-                "podman": f'echo "podman $*" >> {calls}\n'
-                f'[ "$2" = inspect ] && {{ [ -e {running} ] && echo true || echo false; }}\nexit 0',
-                "systemd-run": f'echo "systemd-run $*" >> {calls}\ntouch {running}',
-            }
-            for name, body in tools.items():
-                tool = Path(tmp) / name
-                tool.write_text(f"#!/bin/sh\n{body}\n")
-                tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
-            with patch.dict(os.environ, {"PATH": f"{tmp}:/usr/bin:/bin", "CONCORD_GRUNTZ_SHELL": ""}):
+            calls = self.fake_podman(tmp)
+            with patch.dict(os.environ, {"PATH": f"{tmp}:/usr/bin:/bin", "CONCORD_GRUNTZ_SHELL": "", "TMPDIR": tmp}):
                 command = shell_command(Path("/g"))
             started = [line for line in calls.read_text().splitlines() if line.startswith("systemd-run")]
             self.assertEqual(len(started), 1)
@@ -177,6 +186,16 @@ class DevShell(unittest.TestCase):
             self.assertEqual(command[:2], ["podman", "exec"])
             self.assertIn("HOME=/root", command)
 
+    def test_a_container_that_will_not_start_is_created_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = self.fake_podman(tmp, start_after_removal=True)
+            with patch.dict(os.environ, {"PATH": f"{tmp}:/usr/bin:/bin", "CONCORD_GRUNTZ_SHELL": "", "TMPDIR": tmp}), \
+                    patch("concord.gruntz.time.sleep"), patch("concord.gruntz.time.monotonic", side_effect=[0, 99, 100, 101, 102, 103]):
+                shell_command(Path("/g"))
+            lines = calls.read_text().splitlines()
+            self.assertEqual(sum(line.startswith("systemd-run") for line in lines), 2)
+            self.assertTrue(any(line.startswith("podman rm -f concord-gruntz-") for line in lines))
+            self.assertTrue(any(line.startswith("systemctl --user stop concord-gruntz-") for line in lines))
 
 def built_checkout() -> Path | None:
     root = Path(os.environ.get("CONCORD_GRUNTZ", Path(__file__).resolve().parents[2] / "gruntz-decomp"))
