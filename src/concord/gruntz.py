@@ -18,6 +18,7 @@ import fcntl
 import hashlib
 import json
 import os
+import pwd
 import re
 import shlex
 import shutil
@@ -59,6 +60,19 @@ def _stop_drivers() -> None:
             process.terminate()
 
 
+def _podman() -> list[str]:
+    """podman with the user's own storage. A harness can point XDG_DATA_HOME and its siblings into its run's
+    state: Devin's aop runs do, and there Podman looked for its containers in a new store under the run, which
+    SELinux keeps the container runtime from opening, so every gruntz command failed in those runs."""
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    places = {"XDG_DATA_HOME": home / ".local/share", "XDG_CONFIG_HOME": home / ".config", "XDG_RUNTIME_DIR": Path(f"/run/user/{os.getuid()}")}
+    settings = [f"{key}={value}" for key, value in places.items() if key != "XDG_RUNTIME_DIR" or value.is_dir()]
+    return ["env", "-u", "CONTAINERS_STORAGE_CONF", "-u", "CONTAINERS_CONF", f"HOME={home}", *settings, "podman"]
+
+
+PODMAN = _podman()
+
+
 def shell_command(root: Path) -> list[str]:
     """The command prefix that runs its arguments inside the checkout's dev shell,
     with the checkout as the working directory. CONCORD_GRUNTZ_SHELL names one;
@@ -71,12 +85,12 @@ def shell_command(root: Path) -> list[str]:
         return ["nix", "develop", str(root), "--command"]
     name = "concord-gruntz-" + hashlib.sha256(str(root).encode()).hexdigest()[:8]
     _ensure_container(name, root)
-    return ["podman", "exec", "-i", "-w", str(root), "-e", "HOME=/root", "-e", f"GRUNTZ_DIR={root}", name,
+    return [*PODMAN, "exec", "-i", "-w", str(root), "-e", "HOME=/root", "-e", f"GRUNTZ_DIR={root}", name,
             "nix", "develop", str(root), "--profile", "/nix/var/nix/profiles/gruntz-devshell", "--command"]  # fmt: skip
 
 
 def _running(name: str) -> bool:
-    found = subprocess.run(["podman", "container", "inspect", "-f", "{{.State.Running}}", name],
+    found = subprocess.run([*PODMAN, "container", "inspect", "-f", "{{.State.Running}}", name],
                            capture_output=True, text=True, check=False)  # fmt: skip
     return found.stdout.strip() == "true"
 
@@ -93,10 +107,10 @@ def _ensure_container(name: str, root: Path, wait: float = 30) -> None:
         for _ in range(2):
             if _running(name):
                 return
-            if subprocess.run(["podman", "container", "exists", name], check=False).returncode:
+            if subprocess.run([*PODMAN, "container", "exists", name], check=False).returncode:
                 settings = "experimental-features = nix-command flakes\nsandbox = false\nwarn-dirty = false\nmax-jobs = 2\ncores = 8"
                 subprocess.run(
-                    ["podman", "create", "--name", name, "--init", "--security-opt", "label=disable",
+                    [*PODMAN, "create", "--name", name, "--init", "--security-opt", "label=disable",
                      "-v", f"{STORE}:/nix", "-v", f"{root}:{root}", "-e", f"NIX_CONFIG={settings}", IMAGE, "sleep", "infinity"],
                     check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 )  # fmt: skip
@@ -104,15 +118,15 @@ def _ensure_container(name: str, root: Path, wait: float = 30) -> None:
                 quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
                 subprocess.run(["systemctl", "--user", "stop", name], check=False, **quiet)
                 subprocess.run(["systemd-run", "--user", "--quiet", "--collect", f"--unit={name}",
-                                "podman", "start", "--attach", name], check=False, **quiet)  # fmt: skip
+                                *PODMAN, "start", "--attach", name], check=False, **quiet)  # fmt: skip
             else:
-                subprocess.run(["podman", "start", name], check=False, stdout=subprocess.DEVNULL)
+                subprocess.run([*PODMAN, "start", name], check=False, stdout=subprocess.DEVNULL)
             deadline = time.monotonic() + wait
             while not _running(name) and time.monotonic() < deadline:
                 time.sleep(0.5)
             if _running(name):
                 return
-            subprocess.run(["podman", "rm", "-f", name], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run([*PODMAN, "rm", "-f", name], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     raise RuntimeError(f"the dev shell container {name} did not start")
 
 

@@ -8,13 +8,14 @@ The checkout tests run when CONCORD_GRUNTZ names a gruntz-decomp checkout after
 
 import json
 import os
+import pwd
 import stat
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from concord.gruntz import REPORT, Gruntz, shell_command
+from concord.gruntz import REPORT, Gruntz, _podman, shell_command
 from concord.permute import near_misses, singles
 from concord.search import attributed_lines
 from concord.transforms import name_temporaries
@@ -183,8 +184,17 @@ class DevShell(unittest.TestCase):
             self.assertEqual(len(started), 1)
             self.assertIn("--user", started[0])
             self.assertIn("podman start --attach concord-gruntz-", started[0])
-            self.assertEqual(command[:2], ["podman", "exec"])
+            exec_at = command.index("podman")
+            self.assertEqual(command[exec_at + 1], "exec")
             self.assertIn("HOME=/root", command)
+
+    def test_podman_uses_the_users_own_storage_whatever_the_caller_sets(self):
+        home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+        with patch.dict(os.environ, {"XDG_DATA_HOME": "/run-state/data", "CONTAINERS_STORAGE_CONF": "/tmp/s.conf"}):
+            command = _podman()
+        self.assertEqual(command[-1], "podman")
+        self.assertIn(f"XDG_DATA_HOME={home / '.local/share'}", command)
+        self.assertIn("CONTAINERS_STORAGE_CONF", command[command.index("-u") + 1 :])
 
     def test_a_container_that_will_not_start_is_created_again(self):
         with tempfile.TemporaryDirectory() as tmp:
