@@ -349,21 +349,27 @@ class Gruntz:
         """Lines of the unit's source behind the code at `offsets` in `symbol`, for
         the unit compiled from `source` with cl's /Zd line records. Empty when
         that compile fails."""
-        slug = self.slug(unit)
-        out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
-        out.mkdir(parents=True)
-        path = out / f"lines{Path(self.sources[slug]).suffix}"
-        path.write_bytes(source)
-        reply = self._driver({"unit": slug, "out": str(out), "lines": str(path), "wibo": self._wibo()})
-        if "object" not in reply:
+        data = self.line_object(unit, source)
+        if data is None:
             return set()
-        records = coff.lines(Path(reply["object"]).read_bytes(), symbol)
+        records = coff.lines(data, symbol)
         found = set()
         for offset in offsets:
             before = [line for start, line in records if start <= offset]
             if before:
                 found.add(before[-1])
         return found
+
+    def line_object(self, unit: str, source: bytes) -> bytes | None:
+        """The unit compiled from `source` with cl's /Zd line records, which leave
+        every function's code as the build has it; None when the compile fails."""
+        slug = self.slug(unit)
+        out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+        out.mkdir(parents=True)
+        path = out / f"lines{Path(self.sources[slug]).suffix}"
+        path.write_bytes(source)
+        reply = self._driver({"unit": slug, "out": str(out), "lines": str(path), "wibo": self._wibo()})
+        return Path(reply["object"]).read_bytes() if "object" in reply else None
 
     def _wibo(self) -> str | None:
         """The loader the driver may compile under, as it sees the path."""

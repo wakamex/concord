@@ -23,6 +23,7 @@ from concord import (
     comparison_flips,
     destructors,
     enumswitch,
+    first_differences,
     flag_audit,
     frames,
     initialization,
@@ -486,6 +487,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_residual.add_argument("--harvest", type=Path, required=True, help="Harvest checkout after `hv match`")
     p_residual.add_argument("--save", type=Path, help="write the census as JSON")
 
+    p_first = sub.add_parser(
+        "first-differences",
+        help="group a gruntz-decomp checkout's open functions by the helpers called where their code differs",
+    )
+    p_first.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_first.add_argument("--top", type=int, default=25, help="callees to print")
+    p_first.add_argument("--save", type=Path, help="write every function and the rankings as JSON")
+
     return parser
 
 
@@ -598,6 +607,19 @@ def _dispatch(argv: list[str] | None = None) -> int:
                     f"changed bytes target [{target_offsets}] candidate [{candidate_offsets}]; {location}"
                 )
         return 0
+    if args.command == "first-differences":
+        report = first_differences.run(Gruntz(args.gruntz), lambda unit, n: print(f"{unit}: {n} functions", flush=True))
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        print(f"{len(report['functions'])} open functions; {len(report['failed'])} not described")
+        for cause, row in report["causes"].items():
+            print(f"  {cause}: {row['functions']} functions, {row['bytes']} bytes")
+        for title, key in (("callees on any differing line", "by_callee"), ("callees on the first differing line", "by_first_callee")):
+            print(f"\n{title}:")
+            for row in report[key][: args.top]:
+                print(f"  {row['functions']:4} functions {row['bytes']:7} bytes  {row['callee']}")
+        return 0
+
     if args.command == "residual":
         print("Comparing calls, constants and data references across the build.", flush=True)
         report = residual.report(Harvest(args.harvest))
