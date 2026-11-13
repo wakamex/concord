@@ -38,6 +38,7 @@ from concord import (
     scores,
     scratch,
     signedness,
+    split_lever,
     statics,
     symbol_audit,
     symbol_table,
@@ -495,6 +496,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_first.add_argument("--top", type=int, default=25, help="callees to print")
     p_first.add_argument("--save", type=Path, help="write every function and the rankings as JSON")
 
+    p_split = sub.add_parser(
+        "split-lever",
+        help="measure a gruntz-decomp header change on every unit that includes it, and localize it where it splits",
+    )
+    p_split.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_split.add_argument("--header", required=True, help="header under include/, as a path in the checkout")
+    p_split.add_argument("--change", nargs=2, action="append", required=True, metavar=("OLD", "NEW"),
+                         help="replace OLD with NEW in the header; repeat for several")  # fmt: skip
+    p_split.add_argument("--local", nargs=2, action="append", metavar=("OLD", "NEW"),
+                         help="the change's local equivalent, written into each raised function alone")  # fmt: skip
+    p_split.add_argument("--unit", action="append", help="measure these units instead of every unit that includes the header")
+    p_split.add_argument("--save", type=Path, help="write the report as JSON")
+
     return parser
 
 
@@ -618,6 +632,24 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"\n{title}:")
             for row in report[key][: args.top]:
                 print(f"  {row['functions']:4} functions {row['bytes']:7} bytes  {row['callee']}")
+        return 0
+
+    if args.command == "split-lever":
+        report = split_lever.run(Gruntz(args.gruntz), args.header, [tuple(pair) for pair in args.change],
+                                 [tuple(pair) for pair in args.local or []], args.unit,
+                                 lambda unit: print(f"{unit} measured", flush=True))  # fmt: skip
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        print(f"{len(report['units'])} units; {len(report['failed'])} did not compile")
+        for title, key in (("raised", "raised"), ("lowered", "lowered")):
+            print(f"{title}: {len(report[key])}")
+            for row in report[key]:
+                print(f"  {row['base']:8.4f} -> {row['variant']:8.4f}  {row['unit']} {row['symbol']}")
+        if report["split"]:
+            print("the change splits: some functions rise and others fall")
+        for row in report["localized"]:
+            state = row.get("skipped") or (("exact" if row["exact"] else f"{row['score']:.4f}") + ("" if row["holds"] else f", breaks {row['broke']}" if row["broke"] else ", no gain"))
+            print(f"  local {'holds' if row['holds'] else 'fails'}: {row['unit']} {row['symbol']} ({state})")
         return 0
 
     if args.command == "residual":

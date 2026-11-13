@@ -16,7 +16,10 @@ below that held for the unit and a result is `{"object": PATH, "functions":
 [...]}` or `{"error": TEXT}`. A request with `"lines": SOURCE_PATH` in place of
 `candidates` compiles that one source with cl's /Zd, which adds line records
 and leaves the code as it was, and replies `{"ok": {"object": PATH}}` or
-`{"ok": {"error": TEXT}}` without scoring it. One with `"types": SOURCE_PATH`
+`{"ok": {"error": TEXT}}` without scoring it. A request may add `"include": DIRECTORY`, a tree of
+replacement headers laid out as under the checkout's `include/`, searched before the checkout's own
+include directories, so a header variant is measured without touching the checkout; every
+`#include` in gruntz-decomp uses angle brackets, so the replacement is found wherever it is included. One with `"types": SOURCE_PATH`
 and `"range": [START, END]` replies `{"ok": {TEXT: [TYPE, NARROW]}}`: the type
 libclang gives each expression between those byte offsets whose type is a
 number, an enumeration or a pointer, and whether it is an integer narrower than
@@ -125,19 +128,28 @@ def build_reader() -> bool:
     return True
 
 
-def compile(source: Path, out: Path, flags: list[str], wibo: str | None) -> str:
+def compile(source: Path, out: Path, flags: list[str], wibo: str | None, include: Path | None = None) -> str:
     """Compile one source to `out`, without cl's time stamp so equal sources give
-    equal objects; the compiler's complaint when it wrote no complete object."""
+    equal objects, with `include` searched before the checkout's include
+    directories; the compiler's complaint when it wrote no complete object."""
+    first = [f"/I{winepath(include)}"] if include else []
     if wibo:
         environment = os.environ | {name: ";".join(winepath(d) for d in found) for name, found in system_directories().items()}
         out.unlink(missing_ok=True)
-        command = [wibo, str(wine.era_tool("cl.exe")), *cl.repo_include_flags(), *flags, f"/Fo{winepath(out)}", winepath(source)]
+        command = [wibo, str(wine.era_tool("cl.exe")), *first, *cl.repo_include_flags(), *flags, f"/Fo{winepath(out)}", winepath(source)]
         try:
             done = subprocess.run(command, cwd=out.parent, env=environment, capture_output=True, timeout=TIMEOUT, check=False)
         except subprocess.TimeoutExpired:
             return f"cl under wibo ran past {TIMEOUT:g} seconds"
         if not out.exists():
             return (done.stdout + done.stderr).decode(errors="replace")[-4000:] or "cl under wibo wrote no object"
+    elif include:
+        # cl.compile puts its extra include directories after the checkout's, where they shadow nothing
+        out.unlink(missing_ok=True)
+        command = ["wine", str(wine.era_tool("cl.exe")), *first, *cl.repo_include_flags(), *flags, f"/Fo{winepath(out)}", winepath(source)]
+        output, _ = wine.run(command, cwd=out.parent, timeout=TIMEOUT, success=out)
+        if not out.exists():
+            return output[-4000:] or "cl wrote no object"
     else:
         try:
             cl.compile(source, out, flags, timeout=TIMEOUT)
@@ -248,11 +260,11 @@ def exact(rows: list[dict]) -> frozenset[str]:
     return frozenset(row["symbol"] for row in rows if row["exact"])
 
 
-def build(unit: Unit, source: Path, out: Path, name: str, wibo: str | None) -> tuple[Path | None, list[dict] | str]:
+def build(unit: Unit, source: Path, out: Path, name: str, wibo: str | None, include: Path | None = None) -> tuple[Path | None, list[dict] | str]:
     """Compile a source and score its object: the canonical object and one row per
     function it emits, or None and what went wrong."""
     raw = out / f"{name}.raw.obj"
-    error = compile(source, raw, unit.flags, wibo)
+    error = compile(source, raw, unit.flags, wibo, include)
     if error:
         return None, error
     candidate = canonicalize_disposable_object(raw, out / f"{name}.obj")
@@ -272,14 +284,14 @@ def build(unit: Unit, source: Path, out: Path, name: str, wibo: str | None) -> t
     return candidate, rows
 
 
-def evaluate(unit: Unit, out: Path, name: str, path: Path) -> dict:
+def evaluate(unit: Unit, out: Path, name: str, path: Path, include: Path | None = None) -> dict:
     _windows.update(unit.windows)
     sibling = unit.source.with_name(f".{unit.source.stem}.concord{os.getpid()}-{name}{unit.source.suffix}")
     sibling.write_bytes(path.read_bytes())
     try:
-        candidate, rows = build(unit, sibling, out, name, unit.wibo)
+        candidate, rows = build(unit, sibling, out, name, unit.wibo, include)
         if unit.wibo and isinstance(rows, list) and exact(rows) != unit.exact:
-            candidate, rows = build(unit, sibling, out, name, None)
+            candidate, rows = build(unit, sibling, out, name, None, include)
     finally:
         sibling.unlink(missing_ok=True)
     if isinstance(rows, str):
@@ -358,7 +370,8 @@ def serve() -> None:
                 if pool:
                     pool.shutdown()
                 pool, workers = ProcessPoolExecutor(jobs, multiprocessing.get_context("fork")), jobs
-            futures = {n: pool.submit(evaluate, unit, out, n, Path(p)) for n, p in request["candidates"].items()}
+            include = Path(request["include"]) if request.get("include") else None
+            futures = {n: pool.submit(evaluate, unit, out, n, Path(p), include) for n, p in request["candidates"].items()}
             using = [name for name, used in (("objdiff_scores", unit.reader), ("wibo", unit.wibo)) if used]
             reply = {"ok": {n: future.result() for n, future in futures.items()}, "using": using}
         except Exception:  # noqa: BLE001 (the client reports it and decides)

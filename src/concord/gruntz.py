@@ -316,10 +316,11 @@ class Gruntz:
         self.using = tuple(reply.get("using", self.using))
         return reply["ok"]
 
-    def evaluate(self, unit: str, sources: dict[str, bytes]) -> dict[str, Evaluation]:
+    def evaluate(self, unit: str, sources: dict[str, bytes], headers: dict[str, bytes] | None = None) -> dict[str, Evaluation]:
         """Compile each candidate source of the unit with the checkout's compiler,
-        in one batch, and compare it with the retail object. Work files go under
-        build/concord/."""
+        in one batch, and compare it with the retail object. `headers` replaces
+        headers under include/ (path under the checkout -> new bytes) for every
+        candidate, without touching the checkout. Work files go under build/concord/."""
         slug = self.slug(unit)
         out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
         out.mkdir(parents=True)
@@ -329,6 +330,12 @@ class Gruntz:
             paths[name].write_bytes(text)
         request = {"unit": slug, "out": str(out), "candidates": {n: str(p) for n, p in paths.items()},
                    "jobs": int(os.environ.get("CONCORD_JOBS", "8")), "wibo": self._wibo()}  # fmt: skip
+        if headers:
+            for path, text in headers.items():
+                relative = Path(path).relative_to("include")  # raises for a header outside include/
+                (out / "include" / relative).parent.mkdir(parents=True, exist_ok=True)
+                (out / "include" / relative).write_bytes(text)
+            request["include"] = str(out / "include")
         evaluations = {}
         for name, row in self._driver(request).items():
             functions = row.get("functions", [])
