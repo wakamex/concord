@@ -644,7 +644,8 @@ def _dispatch(argv: list[str] | None = None) -> int:
         for title, key in (("raised", "raised"), ("lowered", "lowered")):
             print(f"{title}: {len(report[key])}")
             for row in report[key]:
-                print(f"  {row['base']:8.4f} -> {row['variant']:8.4f}  {row['unit']} {row['symbol']}")
+                banked = " (banked exact)" if row.get("banked") == 100.0 else ""
+                print(f"  {row['base']:8.4f} -> {row['variant']:8.4f}  {row['unit']} {row['symbol']}{banked}")
         if report["split"]:
             print("the change splits: some functions rise and others fall")
         for row in report["localized"]:

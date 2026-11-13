@@ -104,9 +104,10 @@ def run(target, header: str, change: list[tuple[str, str]], local: list[tuple[st
             failed.append(str(error))
             continue
         for row in changed:
-            row["unit"] = unit
+            # the project counts a function exact by its banked best, so a gain on one banked at 100 is not a match
+            row["unit"], row["banked"] = unit, target.best.get((unit, row["symbol"]))
         found += changed
-        gainers = [row["symbol"] for row in changed if row["variant"] > row["base"] + EPS]
+        gainers = [row["symbol"] for row in changed if row["variant"] > row["base"] + EPS and row["banked"] != 100.0]
         if local and gainers:
             candidates = {}
             for symbol in gainers:
@@ -115,7 +116,7 @@ def run(target, header: str, change: list[tuple[str, str]], local: list[tuple[st
                 try:
                     candidates[symbol] = source[: node.start_byte] + replace(body, local, symbol) + source[node.end_byte :]
                 except ValueError:
-                    local_results.append({"symbol": symbol, "unit": unit, "holds": False, "skipped": "the local rewrite does not occur in it"})
+                    local_results.append({"symbol": symbol, "unit": unit, "holds": False, "skipped": "the local rewrite's text is not in its body, so it rose through a helper or the unit's compiler state"})
             if candidates:
                 named = {f"local{i}": text for i, text in enumerate(candidates.values())}
                 evaluations = target.evaluate(unit, named)
