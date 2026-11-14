@@ -370,6 +370,30 @@ class Gruntz:
         reply = self._driver({"unit": slug, "out": str(out), "replay": str(out / "il"), "wibo": self._wibo()})
         return self._evaluation("replay", slug, out, reply)
 
+    def regtrace(self, unit: str, source: bytes) -> tuple[str, Evaluation, Path | None]:
+        """Compile `source` as the unit, then run c2.exe on its captured input under winedbg: the debugger's
+        log of function starts and register grants (see concord.regtrace), the captured compile's evaluation,
+        and the capture's directory, for regforce."""
+        slug = self.slug(unit)
+        out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+        out.mkdir(parents=True)
+        path = out / f"regtrace{Path(self.sources[slug]).suffix}"
+        path.write_bytes(source)
+        row = self._driver({"unit": slug, "out": str(out), "regtrace": str(path), "wibo": self._wibo()})
+        return row.get("log", ""), self._evaluation("regtrace", slug, out, row), Path(row["il"]) if "il" in row else None
+
+    def regforce(self, unit: str, il: Path, force: dict[int, str]) -> Evaluation:
+        """Run c2.exe on a capture from regtrace with the Nth register grants given other registers
+        (N counting from 1, register by name), and compare its object with retail."""
+        from concord.regtrace import NUMBERS
+
+        slug = self.slug(unit)
+        out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+        out.mkdir(parents=True)
+        request = {"unit": slug, "out": str(out), "regforce": str(il), "force": {str(n): NUMBERS[r] for n, r in force.items()},
+                   "wibo": self._wibo()}  # fmt: skip
+        return self._evaluation("regforce", slug, out, self._driver(request))
+
     def _evaluation(self, name: str, slug: str, out: Path, row: dict) -> Evaluation:
         functions = row.get("functions", [])
         return Evaluation(name, slug, Path(row["object"]) if "object" in row else None, row.get("error", ""),

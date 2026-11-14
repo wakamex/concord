@@ -58,7 +58,14 @@ A request with `"capture": SOURCE_PATH` compiles that source through c2wrap.c (b
 checkout's cl on first use and passed to cl as `/B2`), which keeps the intermediate-language files cl
 hands the code generator, c2.exe, and the flags it passes it; it replies `{"ok": {"il": DIRECTORY,
 "object": PATH, "functions": [...]}}`. One with `"replay": DIRECTORY` runs c2.exe alone on such a
-directory, edited or not, and replies with the object and its function rows. c2.exe is a deterministic
+directory, edited or not, and replies with the object and its function rows. One with `"regtrace":
+SOURCE_PATH` captures the source the same way and then runs c2.exe on it under winedbg, stopping where
+c2's code generator starts a function (REGTRACE_RESET) and where it gives a temporary a register
+(REGTRACE_GRANT), and replies with winedbg's log next to the capture's reply; concord.regtrace reads it.
+One with `"regforce": DIRECTORY` and `"force": {N: REGISTER}` runs c2.exe on a capture under winedbg,
+overwrites the register of the Nth register grant (counting from 1) with c2's number for REGISTER
+before c2 records it, and replies with the object and its function rows: what c2 would have emitted
+had its allocator chosen so. c2.exe is a deterministic
 function of those files: a replay of an unedited capture gives the capture's object.
 
 A precompiled header would halve the compile and is not used: cl 5.0 generates
@@ -72,6 +79,7 @@ import json
 import multiprocessing
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -400,6 +408,64 @@ def replay(unit: Unit, out: Path, il: Path) -> dict:
     return {"object": str(candidate), "functions": rows}
 
 
+# c2.exe 11.00.7303 (VS97 SP3): where its code generator resets the round-robin register cursor at the start
+# of a function's code, the global holding that function's record, and the routine recording that a register
+# now holds a temporary (fastcall: ecx the register, edx the temporary's record).
+REGTRACE_RESET, REGTRACE_FUNCTION, REGTRACE_GRANT = 0x42A90E, 0x495F1C, 0x435F38
+REGTRACE_STOPS = 20000
+
+
+def regtrace(unit: Unit, out: Path, path: Path) -> dict:
+    """Capture the source's code-generator input, then run c2.exe on it under winedbg, logging every
+    function start and every register grant."""
+    captured = capture(unit, out, path)
+    if "error" in captured:
+        return captured
+    il = Path(captured["il"])
+    c2 = out / "c2.exe"
+    shutil.copy(wine.era_tool("c2.exe"), c2)
+    commands = out / "regtrace.cmd"
+    commands.write_text("\n".join([
+        f"break *{REGTRACE_RESET:#x}", f"break *{REGTRACE_GRANT:#x}",
+        *(["cont", f"x/1x {REGTRACE_FUNCTION:#x}", "info regs", "x/1x $esp", "x/12x $edx"] * REGTRACE_STOPS),
+        "quit", ""]))  # fmt: skip
+    prefix = next(il.glob("*ex")).name[:-2]
+    flags = (il / "flags.txt").read_text()
+    flags = re.sub(r"-il \S+", lambda _: f"-il {winepath(il)}\\{prefix}", flags)
+    flags = re.sub(r"-Fo\S+", lambda _: f"-Fo{winepath(out / 'regtrace.obj')}", flags)
+    log = out / "regtrace.log"
+    with environ({"MSC_CMD_FLAGS": flags, "WINEDEBUG": "-all"}), log.open("w") as stream:
+        subprocess.run(["winedbg", "--file", str(commands), str(c2)], cwd=out, stdout=stream, stderr=subprocess.STDOUT,
+                       timeout=TIMEOUT * 4, check=False)  # fmt: skip
+    text = log.read_text(errors="replace")
+    return {**captured, "log": text[: text.find("has terminated") + 200] if "has terminated" in text else text}
+
+
+def regforce(unit: Unit, out: Path, il: Path, force: dict[int, int]) -> dict:
+    """Run c2.exe on a capture with chosen register grants overwritten, and score the object."""
+    c2 = out / "c2.exe"
+    shutil.copy(wine.era_tool("c2.exe"), c2)
+    steps = [f"break *{REGTRACE_GRANT:#x}"]
+    for n in range(1, max(force) + 1):
+        steps.append("cont")
+        if n in force:
+            steps.append(f"set $ecx = {force[n]}")
+    commands = out / "regforce.cmd"
+    commands.write_text("\n".join([*steps, *(["cont"] * REGTRACE_STOPS), "quit", ""]))
+    prefix = next(il.glob("*ex")).name[:-2]
+    raw = out / "regforce.raw.obj"
+    flags = (il / "flags.txt").read_text()
+    flags = re.sub(r"-il \S+", lambda _: f"-il {winepath(il)}\\{prefix}", flags)
+    flags = re.sub(r"-Fo\S+", lambda _: f"-Fo{winepath(raw)}", flags)
+    with environ({"MSC_CMD_FLAGS": flags, "WINEDEBUG": "-all"}):
+        subprocess.run(["winedbg", "--file", str(commands), str(c2)], cwd=out, capture_output=True, timeout=TIMEOUT * 4, check=False)
+    if not raw.exists() or coff_defect(raw.read_bytes()):
+        return {"error": "c2 wrote no complete object with those registers"}
+    raw.write_bytes(stabilise(raw.read_bytes()))
+    candidate, rows = scored(unit, raw, out, "regforce")
+    return {"error": rows} if isinstance(rows, str) else {"object": str(candidate), "functions": rows}
+
+
 SCALARS = ("BOOL", "CHAR_U", "UCHAR", "USHORT", "UINT", "ULONG", "ULONGLONG", "CHAR_S", "SCHAR", "WCHAR", "SHORT", "INT", "LONG",
            "LONGLONG", "FLOAT", "DOUBLE", "POINTER", "ENUM")  # fmt: skip
 
@@ -454,6 +520,13 @@ def serve() -> None:
                 continue
             if "capture" in request:
                 print(json.dumps({"ok": capture(unit, out, Path(request["capture"]))}), flush=True)
+                continue
+            if "regtrace" in request:
+                print(json.dumps({"ok": regtrace(unit, out, Path(request["regtrace"]))}), flush=True)
+                continue
+            if "regforce" in request:
+                force = {int(n): int(r) for n, r in request["force"].items()}
+                print(json.dumps({"ok": regforce(unit, out, Path(request["regforce"]), force)}), flush=True)
                 continue
             if "replay" in request:
                 print(json.dumps({"ok": replay(unit, out, Path(request["replay"]))}), flush=True)

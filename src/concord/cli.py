@@ -35,6 +35,7 @@ from concord import (
     layout,
     oracle,
     place,
+    regtrace,
     residual,
     results,
     scores,
@@ -517,6 +518,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_at.add_argument("--unit", required=True, help="unit name or source path")
     p_at.add_argument("--symbol", action="append", help="print these functions' scores (default: the unit's exact count only)")
 
+    p_regtrace = sub.add_parser("regtrace", help="explain a gruntz-decomp function's register differences from MSVC 5.0's own register choices")
+    p_regtrace.add_argument("symbol", help="the function's symbol")
+    p_regtrace.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_regtrace.add_argument("--unit", required=True, help="unit name or source path")
+    p_regtrace.add_argument("--source", type=Path, help="compile this file as the unit (default: the unit's source)")
+    p_regtrace.add_argument("--save", type=Path, help="write the rows as JSON")
+
     p_il = sub.add_parser("il", help="capture or replay the intermediate language MSVC 5.0's cl hands its code generator")
     il_sub = p_il.add_subparsers(dest="il_command", required=True)
     p_capture = il_sub.add_parser("capture", help="compile a unit and keep the code generator's input files")
@@ -665,6 +673,27 @@ def _dispatch(argv: list[str] | None = None) -> int:
                               for s in args.symbol or [])  # fmt: skip
             exact = sum(function["exact"] for function in row["functions"])
             print(f"{row['commit']}: {scores}  {exact}/{len(row['functions'])} exact".replace(":  ", ": "))
+        return 0
+
+    if args.command == "regtrace":
+        target = Gruntz(args.gruntz)
+        source = (args.source or target.source_path(args.unit)).read_bytes()
+
+        def show(row):
+            where = f"+{row['offset']:#05x} {row['instruction']}" if row["offset"] is not None else "(changes no instruction)"
+            hint = f" (prefers {row['hint']})" if row["hint"] else ""
+            retail = f"  retail {row['retail']}" if row["retail"] else ""
+            print(f"  grant {row['grant']}: value {row['value']:#x} {row['register']} by {row['path']}{hint}  {where}{retail}", flush=True)
+            if row["reading"]:
+                print(f"      {row['reading']}", flush=True)
+
+        report = regtrace.run(target, args.unit, args.symbol, source, show)
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        print(f"{args.symbol}: {report['score']}; {len(report['grants'])} register grants")
+        if report["with_retail_registers"]:
+            got = report["with_retail_registers"]
+            print(f"with retail's registers at {len(report['forced'])} grants: {got['fuzzy']}{' (exact)' if got['exact'] else ''}")
         return 0
 
     if args.command == "il":
