@@ -283,6 +283,7 @@ class Gruntz:
             script.parent.mkdir(parents=True, exist_ok=True)
             _install(DRIVER, script)  # the dev shell sees the checkout, not concord
             _install(DRIVER.with_name("objdiff_scores.rs"), script.with_name("objdiff_scores.rs"))
+            _install(DRIVER.with_name("c2wrap.c"), script.with_name("c2wrap.c"))
             if os.environ.get("CONCORD_GRUNTZ_WIBO"):
                 _install(Path(os.environ["CONCORD_GRUNTZ_WIBO"]), script.with_name("wibo-loader"))
             log = tempfile.TemporaryFile(mode="w+")  # noqa: SIM115 (read when the driver stops, which is later)
@@ -348,6 +349,32 @@ class Gruntz:
                 {function["symbol"]: function["fuzzy"] for function in functions},
             )
         return evaluations
+
+    def capture_il(self, unit: str, source: bytes) -> tuple[Path | None, Evaluation]:
+        """Compile `source` as the unit and keep the intermediate-language files cl hands its code
+        generator, c2.exe: the directory holding them (None when the compile fails) and the evaluation."""
+        slug = self.slug(unit)
+        out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+        out.mkdir(parents=True)
+        path = out / f"capture{Path(self.sources[slug]).suffix}"
+        path.write_bytes(source)
+        row = self._driver({"unit": slug, "out": str(out), "capture": str(path), "wibo": self._wibo()})
+        return (Path(row["il"]) if "il" in row else None), self._evaluation("capture", slug, out, row)
+
+    def replay_il(self, unit: str, il: Path) -> Evaluation:
+        """Run c2.exe alone on a directory from capture_il, edited or not, and compare its object with retail.
+        The files are copied under the checkout first, since the dev shell may see nothing else."""
+        slug = self.slug(unit)
+        out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+        shutil.copytree(il, out / "il")
+        reply = self._driver({"unit": slug, "out": str(out), "replay": str(out / "il"), "wibo": self._wibo()})
+        return self._evaluation("replay", slug, out, reply)
+
+    def _evaluation(self, name: str, slug: str, out: Path, row: dict) -> Evaluation:
+        functions = row.get("functions", [])
+        return Evaluation(name, slug, Path(row["object"]) if "object" in row else None, row.get("error", ""),
+                          [{"functions": functions, "retail": str(out / "retail.obj")}],
+                          {function["symbol"]: function["fuzzy"] for function in functions})  # fmt: skip
 
     def debug_objects(self, units: list[str], sources: dict[str, bytes] | None = None) -> dict[str, Path]:
         raise RuntimeError("cl 5.0 objects carry no variable types concord reads")

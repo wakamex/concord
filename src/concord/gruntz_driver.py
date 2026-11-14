@@ -54,6 +54,13 @@ word. Whole objects are not compared: cl 5.0 orders some data sections by the
 loader's memory layout, so they differ between Wine and wibo in 19 of 289 units
 whose function code is identical.
 
+A request with `"capture": SOURCE_PATH` compiles that source through c2wrap.c (built here with the
+checkout's cl on first use and passed to cl as `/B2`), which keeps the intermediate-language files cl
+hands the code generator, c2.exe, and the flags it passes it; it replies `{"ok": {"il": DIRECTORY,
+"object": PATH, "functions": [...]}}`. One with `"replay": DIRECTORY` runs c2.exe alone on such a
+directory, edited or not, and replies with the object and its function rows. c2.exe is a deterministic
+function of those files: a replay of an unedited capture gives the capture's object.
+
 A precompiled header would halve the compile and is not used: cl 5.0 generates
 different code for some functions after one.
 """
@@ -267,6 +274,11 @@ def build(unit: Unit, source: Path, out: Path, name: str, wibo: str | None, incl
     error = compile(source, raw, unit.flags, wibo, include)
     if error:
         return None, error
+    return scored(unit, raw, out, name)
+
+
+def scored(unit: Unit, raw: Path, out: Path, name: str) -> tuple[Path | None, list[dict] | str]:
+    """Score a compiled object against the retail one: the canonical object and one row per function."""
     candidate = canonicalize_disposable_object(raw, out / f"{name}.obj")
     raw.unlink()
     found, sizes, log = scores(unit.retail, candidate, next(iter(unit.functions), ""), unit.reader)
@@ -308,6 +320,84 @@ def line_object(unit: Unit, out: Path, path: Path) -> dict:
     finally:
         sibling.unlink(missing_ok=True)
     return {"error": error.replace(sibling.name, unit.source.name)} if error else {"object": str(out / "lines.obj")}
+
+
+WRAPPER = Path(__file__).with_name("c2wrap.c")
+
+
+def wrapper() -> Path:
+    """c2wrap.exe, compiled from c2wrap.c with the checkout's cl when missing or older than its source."""
+    exe = WRAPPER.with_suffix(".exe")
+    if not exe.exists() or exe.stat().st_mtime < WRAPPER.stat().st_mtime:
+        environment = {name: ";".join(winepath(d) for d in found) for name, found in system_directories().items()}
+        command = ["wine", str(wine.era_tool("cl.exe")), "/nologo", "/O2", f"/Fe{winepath(exe)}", winepath(WRAPPER)]
+        with environ(environment):
+            output, _ = wine.run(command, cwd=exe.parent, timeout=TIMEOUT, success=exe)
+        if not exe.exists():
+            raise RuntimeError(f"c2wrap.c did not compile:\n{output[-2000:]}")
+    return exe
+
+
+class environ:
+    """Set environment variables for the Wine processes started inside the block."""
+
+    def __init__(self, values: dict[str, str]) -> None:
+        self.values, self.saved = values, {}
+
+    def __enter__(self) -> None:
+        self.saved = {name: os.environ.get(name) for name in self.values}
+        os.environ.update(self.values)
+
+    def __exit__(self, *_) -> None:
+        for name, value in self.saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def capture(unit: Unit, out: Path, path: Path) -> dict:
+    """Compile the source through c2wrap, keeping the code generator's input in out/il."""
+    il = out / "il"
+    il.mkdir(parents=True, exist_ok=True)
+    sibling = unit.source.with_name(f".{unit.source.stem}.concord{os.getpid()}-capture{unit.source.suffix}")
+    sibling.write_bytes(path.read_bytes())
+    raw = out / "capture.raw.obj"
+    command = ["wine", str(wine.era_tool("cl.exe")), *cl.repo_include_flags(), *unit.flags, f"/B2{winepath(wrapper())}",
+               f"/Fo{winepath(raw)}", winepath(sibling)]  # fmt: skip
+    try:
+        with environ({"C2CAPTURE": winepath(il), "C2REAL": winepath(wine.era_tool("c2.exe"))}):
+            output, _ = wine.run(command, cwd=out, timeout=TIMEOUT, success=raw)
+    finally:
+        sibling.unlink(missing_ok=True)
+    if not raw.exists() or not (il / "flags.txt").exists():
+        return {"error": output.replace(sibling.name, unit.source.name)[-4000:] or "cl wrote no object"}
+    candidate, rows = scored(unit, raw, out, "capture")
+    if isinstance(rows, str):
+        return {"error": rows}
+    return {"il": str(il), "object": str(candidate), "functions": rows}
+
+
+def replay(unit: Unit, out: Path, il: Path) -> dict:
+    """Run c2.exe alone on a captured, possibly edited, directory of intermediate-language files."""
+    prefix = next(il.glob("*ex")).name[:-2]
+    raw = out / "replay.raw.obj"
+    raw.unlink(missing_ok=True)
+    flags = (il / "flags.txt").read_text()
+    flags = re.sub(r"-il \S+", lambda _: f"-il {winepath(il)}\\{prefix}", flags)
+    flags = re.sub(r"-Fo\S+", lambda _: f"-Fo{winepath(raw)}", flags)
+    with environ({"MSC_CMD_FLAGS": flags}):
+        output, _ = wine.run(["wine", str(wine.era_tool("c2.exe"))], cwd=out, timeout=TIMEOUT, success=raw)
+    if not raw.exists():
+        return {"error": output[-4000:] or "c2 wrote no object"}
+    data = raw.read_bytes()
+    if coff_defect(data):
+        return {"error": f"c2 wrote an incomplete object: {coff_defect(data)}"}
+    raw.write_bytes(stabilise(data))
+    candidate, rows = scored(unit, raw, out, "replay")
+    if isinstance(rows, str):
+        return {"error": rows}
+    return {"object": str(candidate), "functions": rows}
 
 
 SCALARS = ("BOOL", "CHAR_U", "UCHAR", "USHORT", "UINT", "ULONG", "ULONGLONG", "CHAR_S", "SCHAR", "WCHAR", "SHORT", "INT", "LONG",
@@ -361,6 +451,12 @@ def serve() -> None:
             unit = Unit(root, request["unit"], out, request.get("wibo"), reader)
             if "lines" in request:
                 print(json.dumps({"ok": line_object(unit, out, Path(request["lines"]))}), flush=True)
+                continue
+            if "capture" in request:
+                print(json.dumps({"ok": capture(unit, out, Path(request["capture"]))}), flush=True)
+                continue
+            if "replay" in request:
+                print(json.dumps({"ok": replay(unit, out, Path(request["replay"]))}), flush=True)
                 continue
             if "types" in request:
                 print(json.dumps({"ok": expression_types(root, unit, Path(request["types"]), *request["range"])}), flush=True)

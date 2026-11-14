@@ -6,6 +6,7 @@ import argparse
 import json
 import random
 import shlex
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -26,6 +27,7 @@ from concord import (
     first_differences,
     flag_audit,
     frames,
+    history,
     initialization,
     inline_budget,
     inlines,
@@ -509,6 +511,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_split.add_argument("--unit", action="append", help="measure these units instead of every unit that includes the header")
     p_split.add_argument("--save", type=Path, help="write the report as JSON")
 
+    p_at = sub.add_parser("at-commit", help="compile a gruntz-decomp unit with its source and headers as of each commit")
+    p_at.add_argument("commits", nargs="+", help="commits, oldest or newest first as you like")
+    p_at.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_at.add_argument("--unit", required=True, help="unit name or source path")
+    p_at.add_argument("--symbol", action="append", help="print these functions' scores (default: the unit's exact count only)")
+
+    p_il = sub.add_parser("il", help="capture or replay the intermediate language MSVC 5.0's cl hands its code generator")
+    il_sub = p_il.add_subparsers(dest="il_command", required=True)
+    p_capture = il_sub.add_parser("capture", help="compile a unit and keep the code generator's input files")
+    p_capture.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_capture.add_argument("--unit", required=True, help="unit name or source path")
+    p_capture.add_argument("--source", type=Path, help="compile this file as the unit (default: the unit's source)")
+    p_capture.add_argument("--out", type=Path, required=True, help="directory to copy the files into")
+    p_replay = il_sub.add_parser("replay", help="run c2.exe alone on captured, possibly edited, files and score the result")
+    p_replay.add_argument("il", type=Path, help="directory from `concord il capture`")
+    p_replay.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_replay.add_argument("--unit", required=True, help="unit name or source path")
+    p_replay.add_argument("--symbol", action="append", help="print these functions' scores (default: every function)")
+
     return parser
 
 
@@ -632,6 +653,44 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"\n{title}:")
             for row in report[key][: args.top]:
                 print(f"  {row['functions']:4} functions {row['bytes']:7} bytes  {row['callee']}")
+        return 0
+
+    if args.command == "at-commit":
+        for row in history.at_commit(Gruntz(args.gruntz), args.unit, args.commits):
+            if "error" in row:
+                print(f"{row['commit']}: does not compile: {row['error'].splitlines()[-1]}")
+                continue
+            functions = {function["symbol"]: function for function in row["functions"]}
+            scores = " ".join(f"{functions[s]['fuzzy']:.4f}{'*' if functions[s]['exact'] else ''}" if s in functions else "absent"
+                              for s in args.symbol or [])  # fmt: skip
+            exact = sum(function["exact"] for function in row["functions"])
+            print(f"{row['commit']}: {scores}  {exact}/{len(row['functions'])} exact".replace(":  ", ": "))
+        return 0
+
+    if args.command == "il":
+        target = Gruntz(args.gruntz)
+        if args.il_command == "capture":
+            source = (args.source or target.source_path(args.unit)).read_bytes()
+            il, evaluation = target.capture_il(args.unit, source)
+            if il is None:
+                print(f"the unit did not compile: {evaluation.error[-2000:]}")
+                return 1
+            args.out.mkdir(parents=True, exist_ok=True)
+            for path in sorted(il.iterdir()):
+                shutil.copy2(path, args.out / path.name)
+                print(f"  {path.name} {path.stat().st_size} bytes")
+            rows = evaluation.sections[0]["functions"]
+            print(f"{args.out}: {sum(r['exact'] for r in rows)}/{len(rows)} functions exact in the captured compile")
+            return 0
+        evaluation = target.replay_il(args.unit, args.il)
+        if evaluation.error:
+            print(f"c2 failed: {evaluation.error[-2000:]}")
+            return 1
+        rows = evaluation.sections[0]["functions"]
+        for row in rows:
+            if not args.symbol or row["symbol"] in args.symbol:
+                print(f"  {row['fuzzy']:8.4f}{' exact' if row['exact'] else ''}  {row['symbol']}")
+        print(f"{sum(r['exact'] for r in rows)}/{len(rows)} functions exact")
         return 0
 
     if args.command == "split-lever":
