@@ -24,6 +24,13 @@ class Parse(unittest.TestCase):
         self.assertEqual([g.register for g in constructor[2:]], ["eax", "ecx", "edx"] * 3)
         self.assertEqual({g.path for g in constructor[2:]}, {"round-robin"})
         self.assertEqual([g.index for g in constructor][-1], 13)
+        # only the exception-unwind stubs' temporaries prefer a register: ecx, for the destructor's this
+        self.assertEqual([(g.value, g.prefers) for g in constructor if g.prefers], [(0xCD, "ecx"), (0xA2, "ecx")])
+
+    def test_a_preference_names_the_register_whose_descriptor_it_points_at(self):
+        from concord.regtrace import Grant
+        self.assertEqual(Grant(1, 0, "ecx", 0x47, "round-robin", 0x4947A8).prefers, "eax")  # 0x494758 + 80 * 1
+        self.assertIsNone(Grant(1, 0, "ecx", 0x47, "round-robin", 0x4947A9).prefers)
 
 
 class Registers(unittest.TestCase):

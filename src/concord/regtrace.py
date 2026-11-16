@@ -23,6 +23,7 @@ from concord.diff import _family, disassemble, read_function
 REGISTERS = {1: "eax", 2: "ecx", 3: "edx", 4: "ebx", 5: "esp", 6: "ebp", 7: "esi", 8: "edi"}
 NUMBERS = {name: number for number, name in REGISTERS.items()}
 ROTATION = ["eax", "ecx", "edx"]
+DESCRIPTORS, DESCRIPTOR_SIZE = 0x494758, 80  # c2's register descriptor table; a preference points at its entry
 # return addresses into c2's register picker (0x435C37) naming the rule that chose the register
 PATHS = {0x435CF9: "round-robin", 0x435DB5: "first free"}
 WORD = re.compile(r"^\s*([0-9a-f]{8})\s*$")
@@ -36,7 +37,13 @@ class Grant:
     register: str
     value: int  # the temporary's number
     path: str
-    hint: int  # register number the temporary prefers, 0 for none
+    hint: int  # c2's pointer to the descriptor of the register the temporary prefers, 0 for none
+
+    @property
+    def prefers(self) -> str | None:
+        """The register the temporary prefers, from its descriptor pointer."""
+        number, rest = divmod(self.hint - DESCRIPTORS, DESCRIPTOR_SIZE)
+        return REGISTERS.get(number) if self.hint and rest == 0 else None
 
 
 def parse(log: str) -> tuple[list[Grant], int]:
@@ -126,7 +133,7 @@ def run(target, unit: str, symbol: str, source: bytes, progress=None) -> dict:
         rotation = step(grant.register, theirs) if theirs and grant.path == "round-robin" else None
         rows.append({
             "grant": grant.index, "value": grant.value, "register": grant.register, "path": grant.path,
-            "hint": REGISTERS.get(grant.hint), "offset": first.offset if first else None,
+            "hint": grant.prefers, "offset": first.offset if first else None,
             "instruction": first.text if first else None, "retail": theirs,
             "reading": None if rotation is None else
             "one more round-robin grant before this one than the original" if rotation == 1 else
