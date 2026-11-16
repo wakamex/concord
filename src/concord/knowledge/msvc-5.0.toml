@@ -29,6 +29,19 @@ evidence = [
 ]
 
 [[idiom]]
+id = "accessor-read"
+cause = "register-allocation"
+status = "confirmed"
+symptom = "eax, ecx and edx rotated one place from the target from some instruction onward, each a temporary c2's local allocator gave out in round-robin order (concord regtrace reads the rule and the order)"
+fix = "Write a trivial inline accessor's call as a read of the member it returns, or the member's read as the call. cl 5.0 inlines the call, but the two spellings can reach c2's register allocator as a different number of round-robin temporaries, which moves every later register in the rotation."
+limits = "One function so far. On the seven NORMALIZE_BIG_ANIMATION_WITH_AUX constructors neither GetLogicRecord() nor GetFrameImage() read either way moves a register, though regtrace shows the same one-step rotation."
+before = "World()->GetDisplayBuffers()->GetFrontSurface()->GetSurface()->Flip(NULL);"
+after = "m_world->GetDisplayBuffers()->GetFrontSurface()->GetSurface()->Flip(NULL);"
+evidence = [
+  { function = "CState::PresentTitlePage", note = "99.524 to exact by reading m_world in place of World(); making World() return CGameWorld* const& had the same effect on it and lowered three other functions of the unit (concord split-lever)." },
+]
+
+[[idiom]]
 id = "named-temporary"
 cause = "register-allocation"
 status = "confirmed"

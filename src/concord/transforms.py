@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from itertools import pairwise
 
@@ -527,6 +527,60 @@ def join_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
 
 # Expressions worth naming: a value computed from others, not a plain name or literal.
 HOISTABLE = {"binary_expression", "field_expression", "subscript_expression", "pointer_expression", "call_expression"}
+
+
+ACCESSOR = re.compile(rb"\b(\w+)\s*\(\s*\)\s*(?:const\s*)?\{\s*return\s+(?:this->)?(m_\w+)\s*;\s*\}")
+
+
+def accessor_table(headers: Iterable[bytes]) -> dict[bytes, bytes]:
+    """Each trivial inline accessor in the headers, `Name() const { return m_member; }`, as name ->
+    member; a name defined with two different members is left out."""
+    found: dict[bytes, set[bytes]] = {}
+    for text in headers:
+        for match in ACCESSOR.finditer(text):
+            found.setdefault(match[1], set()).add(match[2])
+    return {name: members.pop() for name, members in found.items() if len(members) == 1}
+
+
+def accessor_reads(source: bytes, scope: Node, accessors: dict[bytes, bytes]) -> Iterator[Rewrite]:
+    """A call of a trivial accessor written as a read of the member it returns, and a read of a member
+    written as the call of the one accessor returning it: each site alone, then every site of one
+    accessor together. cl 5.0 inlines the call, but the two spellings can reach its register allocator
+    as different temporaries; CState::PresentTitlePage became exact by reading m_world for World()."""
+    members = {}
+    for name, member in accessors.items():
+        members.setdefault(member, []).append(name)
+    sites: dict[bytes, list[tuple[Node, bytes]]] = {}
+    for call in _descendants(scope, "call_expression"):
+        function, arguments = call.child_by_field_name("function"), call.child_by_field_name("arguments")
+        if arguments is None or arguments.named_child_count:
+            continue
+        if function.type == "field_expression":
+            name = function.child_by_field_name("field").text
+            if name in accessors:
+                obj, op = function.child_by_field_name("argument").text, function.child_by_field_name("operator").text
+                sites.setdefault(name, []).append((call, obj + op + accessors[name]))
+        elif function.type == "identifier" and function.text in accessors:
+            sites.setdefault(function.text, []).append((call, accessors[function.text]))
+    for read in _descendants(scope, "field_expression"):
+        field = read.child_by_field_name("field").text
+        parent = read.parent
+        if len(members.get(field, ())) != 1 or parent is None:
+            continue
+        if parent.type == "call_expression" or (parent.type in WRITES and parent.child_by_field_name("left") == read):
+            continue  # a method called through it, or a member written
+        name = members[field][0]
+        obj, op = read.child_by_field_name("argument").text, read.child_by_field_name("operator").text
+        sites.setdefault(field, []).append((read, obj + op + name + b"()"))
+    for key, found in sites.items():
+        for node, replacement in found:
+            yield _rewrite("accessor-read", Cause.REGISTER_ALLOCATION, source, node, replacement, f"{node.text.decode()} -> {replacement.decode()}")
+        if len(found) > 1:
+            text = source
+            for node, replacement in sorted(found, key=lambda pair: -pair[0].start_byte):
+                text = text[: node.start_byte] + replacement + text[node.end_byte :]
+            line = source.count(b"\n", 0, found[0][0].start_byte) + 1
+            yield Rewrite("accessor-read", Cause.REGISTER_ALLOCATION, f"line {line}: every {key.decode()} site rewritten", text)
 
 
 def name_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:

@@ -38,7 +38,14 @@ from concord.diff import diff_code, read_functions
 from concord.harvest import Evaluation, FunctionVerdict
 from concord.model import Cause, DiffFinding, DiffResult
 from concord.temporaries import DECLARATION
-from concord.transforms import ALL, CPP, Rewrite, name_temporaries
+from concord.transforms import (
+    ALL,
+    CPP,
+    Rewrite,
+    accessor_reads,
+    accessor_table,
+    name_temporaries,
+)
 
 DRIVER = Path(__file__).with_name("gruntz_driver.py")
 REPORT = Path("build/objdiff/compare-new/report.json")
@@ -154,7 +161,8 @@ class Gruntz:
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
-        self.rewrites = [*self.untyped, self.name_typed_temporaries]
+        self.rewrites = [*self.untyped, self.name_typed_temporaries, self.accessor_reads]
+        self._accessors: dict[bytes, bytes] | None = None
         # (unit, function address) -> expression text -> (type, whether narrower than int)
         self.types: dict[tuple[str, int], dict[bytes, tuple[str, bool]]] = {}
         self.using: tuple[str, ...] = ()  # the driver's shortcuts that held for the last unit evaluated
@@ -272,6 +280,12 @@ class Gruntz:
                 yield Rewrite(rewrite.transform, rewrite.cause, rewrite.description + note, typed)
 
     name_typed_temporaries.stands_for = name_temporaries  # the benchmark's mutation it replaces
+
+    def accessor_reads(self, source: bytes, scope: Node) -> Iterator[Rewrite]:
+        """concord.transforms.accessor_reads with the trivial accessors the checkout's headers define."""
+        if self._accessors is None:
+            self._accessors = accessor_table(path.read_bytes() for path in sorted((self.root / "include").rglob("*.h")))
+        yield from accessor_reads(source, scope, self._accessors)
 
     def _driver(self, request: dict) -> dict:
         """Send one request to the checkout's driver and return its result. The

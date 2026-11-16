@@ -8,6 +8,8 @@ from tree_sitter import Parser
 from concord.transforms import (
     CPP,
     _negate,
+    accessor_reads,
+    accessor_table,
     address_arithmetic,
     comparisons,
     compress_assignment,
@@ -447,6 +449,33 @@ class AddressArithmetic(unittest.TestCase):
         self.assertIn(b"*(float*)((char*)v[1] - off)", rewrites[2])
         self.assertIn(b"(float*)((int)v[2] + off)", rewrites[3])
         self.assertIn(b"(float*)((long)v[2] + off)", rewrites[4])
+
+
+class Accessors(unittest.TestCase):
+    HEADER = b"""
+class CState {
+    CGameWorld* World() { return m_world; }
+    CGameWorld* const& WorldRef() const { return this->m_world; }
+    i32 Count() const { return m_count; }
+    i32 Size() const { if (m_count) return 0; return m_size; }
+};
+class CMgr { i32 Count() const { return m_total; } };
+"""
+
+    def test_the_table_keeps_trivial_accessors_with_one_member(self):
+        self.assertEqual(accessor_table([self.HEADER]), {b"World": b"m_world", b"WorldRef": b"m_world"})
+
+    def test_calls_become_reads_and_reads_become_calls_one_site_and_all_sites(self):
+        source = b"int CState::Present() { World()->Flip(); m_state->m_world->Draw(); g->World()->Flip(); m_world = 0; return 1; }"
+        scope = Parser(CPP).parse(source).root_node
+        rewrites = list(accessor_reads(source, scope, {b"World": b"m_world"}))
+        texts = [r.source for r in rewrites]
+        self.assertIn(source.replace(b"{ World()->Flip()", b"{ m_world->Flip()"), texts)
+        self.assertIn(source.replace(b"g->World()", b"g->m_world"), texts)
+        self.assertIn(source.replace(b"m_state->m_world->Draw", b"m_state->World()->Draw"), texts)
+        self.assertIn(source.replace(b"{ World()->Flip()", b"{ m_world->Flip()").replace(b"g->World()", b"g->m_world"), texts)
+        self.assertNotIn(b"World() = 0", b"".join(texts))  # a member written stays a member
+        self.assertEqual({r.transform for r in rewrites}, {"accessor-read"})
 
 
 if __name__ == "__main__":
