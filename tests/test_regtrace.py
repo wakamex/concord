@@ -23,6 +23,7 @@ class Parse(unittest.TestCase):
         self.assertEqual([g.value for g in constructor], [0xCD, 0xA2, 0x152, 0x151, 0x150, 0x14F, 0x153, 0x154, 0x155, 0x156, 0x157])
         self.assertEqual([g.register for g in constructor[2:]], ["eax", "ecx", "edx"] * 3)
         self.assertEqual({g.path for g in constructor[2:]}, {"round-robin"})
+        self.assertEqual({g.path for g in constructor[:2]}, {"preference"})
         self.assertEqual([g.index for g in constructor][-1], 13)
         # only the exception-unwind stubs' temporaries prefer a register: ecx, for the destructor's this
         self.assertEqual([(g.value, g.prefers) for g in constructor if g.prefers], [(0xCD, "ecx"), (0xA2, "ecx")])

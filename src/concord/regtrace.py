@@ -24,8 +24,10 @@ REGISTERS = {1: "eax", 2: "ecx", 3: "edx", 4: "ebx", 5: "esp", 6: "ebp", 7: "esi
 NUMBERS = {name: number for number, name in REGISTERS.items()}
 ROTATION = ["eax", "ecx", "edx"]
 DESCRIPTORS, DESCRIPTOR_SIZE = 0x494758, 80  # c2's register descriptor table; a preference points at its entry
-# return addresses into c2's register picker (0x435C37) naming the rule that chose the register
-PATHS = {0x435CF9: "round-robin", 0x435DB5: "first free"}
+# return addresses into c2's register picker (0x435C37) naming the rule that chose the register: the
+# temporary's preferred register (an operand's, which an arithmetic result or copy may reuse) when free,
+# otherwise the next free scratch register in round-robin order
+PATHS = {0x435CF9: "round-robin", 0x435DB5: "preference"}
 WORD = re.compile(r"^\s*([0-9a-f]{8})\s*$")
 DUMP = re.compile(r"^\s*0x[0-9a-f]+(?: \S+)?:\s+((?:[0-9a-f]{8}\s*)+)$")
 
@@ -107,9 +109,10 @@ def other(register: str) -> str:
     return ROTATION[(ROTATION.index(register) + 1) % 3] if register in ROTATION else "eax"
 
 
-def run(target, unit: str, symbol: str, source: bytes, progress=None) -> dict:
+def run(target, unit: str, symbol: str, source: bytes, progress=None, map_grants: bool = True) -> dict:
     """Trace c2's register grants for one function of the unit, tie each to its instruction, compare with
-    retail's registers, and score the function with every differing grant given retail's register."""
+    retail's registers, and score the function with every differing grant given retail's register. Without
+    `map_grants`, only the trace: each grant's rule, register and preference, in c2's order."""
     log, evaluation, il = target.regtrace(unit, source)
     if evaluation.error or evaluation.object is None or il is None:
         raise RuntimeError(f"the unit did not compile: {evaluation.error[-2000:]}")
@@ -126,6 +129,12 @@ def run(target, unit: str, symbol: str, source: bytes, progress=None) -> dict:
     retail = retail_registers(findings)
     rows = []
     for grant in (g for g in grants if g.function == order.index(symbol)):
+        if not map_grants:
+            rows.append({"grant": grant.index, "value": grant.value, "register": grant.register, "path": grant.path,
+                         "hint": grant.prefers, "offset": None, "instruction": None, "retail": None, "reading": None})  # fmt: skip
+            if progress:
+                progress(rows[-1])
+            continue
         moved = target.regforce(unit, il, {grant.index: other(grant.register)})
         hit = changed(ours, disassemble(read_function(moved.object, symbol))) if moved.object else []
         first = next((ins for ins in hit if writes(ins, grant.register)), hit[0] if hit else None)
@@ -142,6 +151,8 @@ def run(target, unit: str, symbol: str, source: bytes, progress=None) -> dict:
         if progress:
             progress(rows[-1])
     retail_choice = {row["grant"]: row["retail"] for row in rows if row["retail"]}
+    if not map_grants:
+        return {"symbol": symbol, "score": verdict.row["fuzzy"] if verdict else None, "grants": rows, "forced": {}, "with_retail_registers": None}
     with_retail = None
     if retail_choice:
         forced = target.regforce(unit, il, retail_choice).verdict(symbol)

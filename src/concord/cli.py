@@ -524,6 +524,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_regtrace.add_argument("--unit", required=True, help="unit name or source path")
     p_regtrace.add_argument("--source", type=Path, help="compile this file as the unit (default: the unit's source)")
     p_regtrace.add_argument("--save", type=Path, help="write the rows as JSON")
+    p_regtrace.add_argument("--trace-only", action="store_true", help="list the grants without tying them to instructions (one c2 run)")
 
     p_il = sub.add_parser("il", help="capture or replay the intermediate language MSVC 5.0's cl hands its code generator")
     il_sub = p_il.add_subparsers(dest="il_command", required=True)
@@ -687,7 +688,7 @@ def _dispatch(argv: list[str] | None = None) -> int:
             if row["reading"]:
                 print(f"      {row['reading']}", flush=True)
 
-        report = regtrace.run(target, args.unit, args.symbol, source, show)
+        report = regtrace.run(target, args.unit, args.symbol, source, show, map_grants=not args.trace_only)
         if args.save:
             args.save.write_text(json.dumps(report, indent=2) + "\n")
         print(f"{args.symbol}: {report['score']}; {len(report['grants'])} register grants")
