@@ -40,7 +40,7 @@ The behavioural gate runs the original machine code and the recompiled machine c
 
 ### Results
 
-- Pass (or certified, for a byte-identical rebuild with the original compiler), fail, inconclusive (a run hit its step, time or page limit) and under-exercised. A behavioural pass needs a coverage floor on both the original's and the reconstruction's branches, since a branch only the reconstruction has (a wrong guard) is otherwise never counted; below the floor the result is under-exercised, not pass.
+- Pass (or certified, for a byte-identical rebuild with the original compiler, or proved, under Formal proofs below), fail, inconclusive (a run hit its step, time or page limit) and under-exercised. A behavioural pass needs a coverage floor on both the original's and the reconstruction's branches, since a branch only the reconstruction has (a wrong guard) is otherwise never counted; below the floor the result is under-exercised, not pass.
 - Branch coverage is not equivalence: covering both sides of `if (x > 100)` does not catch `x >= 100` or a signedness error. Inputs at boundaries (each comparison's constant and its neighbours, signs, zero, overflow) are part of the generated set.
 - Floating point: MSVC 5.0 computes with the x87 unit. A recompilation with a compiler that also emits x87 code at the same precision can be compared exactly; one that emits SSE cannot, and a tolerance on results misses a rounding difference that flips a comparison or a float-to-int truncation. Functions using floating point are reported as a class of their own until both sides use the same floating-point model.
 
@@ -56,6 +56,24 @@ The behavioural gate runs the original machine code and the recompiled machine c
 
 A symbolic engine (Triton, or [angr](https://angr.io/)) is safest as an input finder: it solves for a state that reaches an untaken branch, and both functions then run from that state in the emulator, so a wrong instruction semantics in the solver costs coverage, not correctness. Proving small loop-free functions equivalent outright is possible but trusts the engine's semantics, which the lifting project found wrong in several places; such proofs need the semantics cross-checked against the emulator on the same instructions first. The lifting project's per-step proofs (about 400,000 steps without a refutation, at 30 to 40 milliseconds per step) were facts about one program, not equivalence of two, and do not carry over as a scale estimate.
 
+## Formal proofs
+
+Proving a reconstructed function equivalent to the original for every input needs three formal models: the instruction semantics of x86, so the original machine code means something to a prover; the world, meaning what memory, globals and callees may do; and an invariant for each loop that cannot be unrolled. The first has to be cross-checked against real execution before it is trusted, as above. The second is the same problem the emulation harness has, stated in logic instead of sampled, and for a function that calls into MFC, DirectX or the game's own objects it means specifying every callee's behaviour formally, which is harder than recording it.
+
+That makes proofs a tier for one slice of the functions, not the gate for all of them:
+
+- Leaf functions without calls, and functions without loops, can be proved equivalent outright with an SMT solver such as [Z3](https://github.com/Z3Prover/z3), usually in seconds: arithmetic, bit manipulation, parsing, table lookups. A proved function needs no behavioural run, like a byte-identical one.
+- Functions with loops can be checked with the loops unrolled a fixed number of times: equivalence up to that depth, stronger than sampled runs and weaker than a proof. The result records the bound.
+- Everything else goes through the emulation gate.
+
+The result classes gain one: proved, for a function the solver showed equivalent for all inputs under the stated semantics.
+
+## A reimplementation with stated laws
+
+A language built around machine-checked properties, such as [Bend 2](https://github.com/bendlang/bend), whose compiler demands a proof of each law a program declares in a `LAWS.bend` file whenever the program changes, fits a different project from this one. Its programs are pure and linear, without mutable memory or pointers, so stating a Gruntz function in it means first modelling memory and the world explicitly, and proving such a function equivalent to the original binary needs x86 semantics inside the language's logic, which does not exist. Laws state properties (a grunt's health never goes negative, a level can always be finished), not equivalence to a binary, so proving them does not show that a reconstruction does what the original did.
+
+Where it fits is a clean reimplementation of a game's logic, a remake rather than a decompilation: the laws carry the specification, and the original binary, run through the emulation harness or the replay rig, supplies concrete behaviour to test the laws and the reimplementation against. There the decompilation's checked functions are the oracle, not the product.
+
 ## What per-function checks miss
 
 Stubbed callees cannot see a function breaking a contract another relies on: an object left in a state its next method does not expect, a buffer sized differently, an order of side effects that only matters across calls. Whole-program replay covers this: recorded inputs replayed against the original and against the original with reconstructed functions linked or detoured in, comparing frames, saved games and network messages.
@@ -66,7 +84,7 @@ Stubbed callees cannot see a function breaking a contract another relies on: an 
 2. A prototype and vtable database built from the reconstructed headers and the binary (conventions, argument sizes, struct returns, result registers), and address canonicalization between the original image and recompiled code.
 3. The two-sided per-function runner with the comparison above, validated on equivalent-but-different builds and on the seeded-wrong suite before it reports on anything.
 4. Snapshot replay with mutation, then type-guided allocation for functions no snapshot reaches, then boundary and solver-generated inputs for untaken branches.
-5. Exact proofs for small loop-free functions, once the engine's semantics are cross-checked.
+5. Proofs with an SMT solver for leaf and loop-free functions, and bounded checks for functions with loops, once the instruction semantics are cross-checked against the emulator.
 
 ## Where it is hard for a game like Gruntz
 
