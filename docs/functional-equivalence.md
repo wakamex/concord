@@ -1,59 +1,69 @@
 # Functional equivalence as a decompilation target
 
-A decompilation is usually judged by rebuilding the original binary byte for byte. This note argues that a future decompilation project should instead check that each reconstructed function behaves like the original one, and describes how to build that check. It draws on two sources: concord's work on [gruntz-decomp](https://github.com/sushi-shi/gruntz-decomp), which pushed byte matching as far as it would go, and a verification harness built for a [rev.ng](https://rev.ng/)-based lifting project, which checked rewrites of 1,525 Warcraft III functions.
+A decompilation is usually judged by rebuilding the original binary byte for byte. This note proposes that a future decompilation project gate each reconstructed function on whether it behaves like the original, keep byte identity as the strongest pass when it happens, and describes how to build a behavioural check that a pass can be trusted from. It draws on concord's work on [gruntz-decomp](https://github.com/sushi-shi/gruntz-decomp), on a verification harness built for a [rev.ng](https://rev.ng/)-based lifting project that checked rewrites of 1,525 Warcraft III functions, and on a review of an earlier version of this note (docs/reviews/functional-equivalence-carbon-2026-11-17.md).
 
-## Why byte matching is the wrong target
+## What byte matching gives, and where it stops
 
-gruntz-decomp rebuilds the 1999 game Gruntz with Microsoft Visual C++ 5.0 and has 4,080 of 4,426 functions byte-exact (92.18%). Part of the remainder is not wrong code at all. Of the 110 open functions at 97% or more whose first difference is a register choice, retail's registers alone make 21 byte-exact (`concord regtrace`, which forces the compiler's own register grants): their source already does what the original does, and only the order in which MSVC's code generator handed out eax, ecx and edx differs. Searching with concord's source rewrites, hand reconstruction, model agents and a debugger reading of the code generator's allocator closed one of those 21. A byte-matching project spends most of its late effort on functions that are already correct, and its percentage cannot tell a function that is wrong from one whose registers rotate one place.
+gruntz-decomp rebuilds the 1999 game Gruntz with Microsoft Visual C++ 5.0 (MSVC) and has 4,080 of 4,426 functions byte-exact (92.18%). Byte identity with the original compiler, with relocations checked, is the strongest result a function can have: it holds for every input and path, it pins struct layouts, vtables, name mangling and exception tables, it lets reconstructed objects link into the original executable, and it costs one diff to check.
 
-A behavioural check accepts those functions now, and its failures point at real defects. Byte identity still certifies a function completely when it happens, so it remains useful as a bonus, not as the gate.
+Its limit is the last few percent. Of the 110 open functions at 97% or more whose first difference is a register choice, giving them retail's registers alone (`concord regtrace`, which forces the code generator's own register grants) makes 21 byte-exact: the code generator's input from their current source already yields retail's bytes when only the order in which it handed out eax, ecx and edx changes. Searching with concord's source rewrites, hand reconstruction, model agents and a debugger reading of the code generator's allocator closed one of those 21. They are 6% of the 346 open functions; for the other 325, whether they are behaviourally right is unknown, and a byte-matching percentage cannot say which are right and which are wrong.
+
+The proposal is therefore a second gate, not a replacement of the first: a function that is byte-exact passes outright; any other function needs a behavioural pass, and the project reports how many functions sit in each class.
 
 ## The check
 
-The gate is differential emulation of each function: run the original machine code and the recompiled machine code from the same starting state, and require the same observable effects.
+The behavioural gate runs the original machine code and the recompiled machine code of one function from the same starting state and compares what each does that its callers can observe.
 
-1. Emulator. [Unicorn](https://www.unicorn-engine.org/), a CPU emulator library, runs both functions in 32-bit or 64-bit mode as the target needs.
-2. A deterministic world, the same on both sides by construction:
-   - every memory page a function touches outside its own frame is mapped with bytes derived from the page's address;
-   - every call leaving the function returns at once, with a result derived from the call's position in the sequence and its arguments (callees are stubbed, not emulated, so each function is checked alone and an interface difference shows as a different call);
-   - each run starts from the same random registers and stack, several times per function.
-3. Observable effects only, compared in order:
-   - the return registers;
-   - memory writes outside the function's own stack frame;
-   - the calls, as callee plus register and stack arguments;
-   - the stack pointer at return, which also checks how many bytes the function pops (`ret N`) under its calling convention.
+### Starting state
 
-   Scratch registers, frame layout and spill slots are excluded, because a correct recompilation differs there.
-4. Results are pass, fail, inconclusive (a run hit its step, time or page limit) and not exercised. Inconclusive and not exercised are never counted as passes.
-5. Coverage is measured and reported per function: how many of the original's branches the runs executed. In the lifting project, random inputs reached 94 of one slice's 6,981 branches, so a pass from random inputs alone mostly says that the common paths agree.
-6. Every function has an assumption record: its calling convention (cdecl, stdcall, thiscall, fastcall), which callees are stubbed, how globals and objects are seeded, and the floating-point mode. MSVC 5.0 computes with the x87 unit, whose precision and rounding a modern compiler does not reproduce, so floating-point results need a stated tolerance or exact x87 emulation on both sides.
+- Start from real states, not random ones. Run the original program (the retail executable exists and runs) under instrumentation, with function-entry hooks or full-system tracing, through recorded play, and capture at each function's entry its registers, x87 and segment state, the memory it reads (copy-on-write page snapshots), and what each of its callees returned and wrote. Every object, vtable, list and DirectDraw descriptor in such a snapshot is valid without hand-written seeding.
+- Reach code those runs did not with mutations on top of real snapshots: scalar fields, counts within bounds, error results from callees (DirectX's DD_OK is zero, so an injected failure takes the error path).
+- Where no snapshot reaches a function, allocate its inputs type-guided from the reconstructed headers: pointers into a controlled arena, objects stamped with their real vtable pointer, lists ended by NULL with a probability that grows with depth, enums within their values, page zero unmapped. Address-derived bytes (every unmapped byte a hash of its address) remain the last resort and do not terminate on linked structures.
+- Respect the entry ABI: the direction flag clear, the x87 control word as MSVC sets it (0x027F), all x87 stack slots empty, a thread environment block mapped at fs so that structured exception registration works.
+
+### The world outside the function
+
+- Map the original image's read-only data, vtables and initial data, and resolve the recompiled function's references to globals, string literals, constants, vtables and jump tables to the original's addresses (link it against the original image, or detour it into a copy of the retail executable). Without this, every reference differs by raw address.
+- Stub callees, with each stub's behaviour taken from the callee's recorded effects in the snapshot or from its contract: the prototype (argument count, stack cleanup, whether a struct return goes through a hidden pointer, whether the result is in eax, edx:eax or the x87 stack), pure getters keyed on their arguments, not their position in the call sequence, out-parameters written identically on both sides, allocators returning fresh arena memory, and volatile registers and flags clobbered after every stubbed call so code that wrongly relies on them surviving fails.
+- Canonicalize pointers into the function's own stack: a pointer to a local passed to a callee (`GetClientRect(hWnd, &rc)`) differs between correct builds, so arguments are compared after mapping each stack pointer to the local it points at.
+
+### What is compared
+
+- At each call and at return, the state the rest of the program can see: memory outside the function's own frame (compared as state at those points, not as an ordered trace of stores, since a correct build may reorder, merge or drop independent stores; padding bytes masked), the call's callee and its arguments as the prototype defines them, and at return the result as the prototype defines it (al for a bool, eax, edx:eax, st(0), or the hidden struct pointer echoed in eax), the stack pointer (which checks the bytes popped), the callee-saved registers ebx, esi, edi and ebp, the direction flag, and the x87 stack depth and control word.
+- The function's own frame is excluded, and so are the incoming argument slots, which MSVC uses as scratch; this needs the function's argument size, from its prototype.
+- MSVC 5.0's C++ exception handling (/GX) registers a frame through fs:[0] in any function with a local that has a destructor, writing the function's own stack pointer outside its frame; the comparison treats that registration as part of the frame, and exception paths get their own runs in which stubs raise.
+- Constructors return this in eax; member functions returning a struct by value always do so through a hidden pointer; variadic member functions and COM interfaces do not use thiscall. The prototype database states which applies, function by function.
+
+### Results
+
+- Exact (byte-identical), pass, fail, inconclusive (a run hit its step, time or page limit) and under-exercised. A behavioural pass needs a coverage floor on both the original's and the reconstruction's branches, since a branch only the reconstruction has (a wrong guard) is otherwise never counted; below the floor the result is under-exercised, not pass.
+- Branch coverage is not equivalence: covering both sides of `if (x > 100)` does not catch `x >= 100` or a signedness error. Inputs at boundaries (each comparison's constant and its neighbours, signs, zero, overflow) are part of the generated set.
+- Floating point: MSVC 5.0 computes with the x87 unit. A recompilation with a compiler that also emits x87 code at the same precision can be compared exactly; one that emits SSE cannot, and a tolerance on results misses a rounding difference that flips a comparison or a float-to-int truncation. Functions using floating point are reported as a class of their own until both sides use the same floating-point model.
 
 ## Making a pass mean something
 
-- The harness must fail on purpose. A suite of seeded wrong variants (a flipped condition, a constant off by one, a missing or extra write, swapped arguments) runs whenever the harness changes, and each must fail. A check that has never failed is not known to work.
-- Every input a tool skips is a counted class: an instruction the emulator or solver cannot execute, an offset format a parser ignores, an implicit register write a disassembler does not report. In the lifting project, one field check had silently ignored every hexadecimal offset and reported zero problems.
-- Every disagreement is attributed to one side before anything changes. Most of the lifting project's refutations were checker bugs: [Triton](https://triton-library.github.io/)'s instruction semantics (a 32-bit shift that forgot the upper half is zero, missing SSE conversions and compares), [Capstone](https://www.capstone-engine.org/)'s flag details, and LLVM's register descriptions were each wrong somewhere.
+- Validate the harness on pairs known to be equivalent that are not byte-identical: the same reconstructed source compiled with different optimization, inlining and declaration order. Byte-exact pairs share stack layout, registers and addresses and hide every false failure a real recompilation causes.
+- Seeded wrong variants (a flipped condition, a constant off by one, a missing or extra write, swapped arguments, a clobbered callee-saved register, an x87 stack leak) must fail; the suite reruns whenever the harness changes.
+- Every input a tool skips is a counted class: an instruction the emulator or solver cannot execute, an offset format a parser ignores, an implicit register write a disassembler does not report. In the lifting project, one field check silently ignored every hexadecimal offset and reported zero problems.
+- Every disagreement is attributed to one side before anything changes. Most of the lifting project's refutations were checker bugs, not defects: [Triton](https://triton-library.github.io/)'s instruction semantics, [Capstone](https://www.capstone-engine.org/)'s flag details and LLVM's register descriptions were each wrong somewhere. A behavioural check's failures point at real defects only once its own failures have been worked through.
 - Two implementations agreeing proves nothing when they share a blind spot; compare their results item by item.
 
-## Reaching the code random inputs miss
+## Symbolic tools
 
-Coverage-guided inputs fill the gaps: for a branch of the original no run has taken, a symbolic engine (Triton, or [angr](https://angr.io/)) solves for registers and memory that reach it, and both functions run from that state. Small straight-line functions can be proved equivalent outright with the same engine.
-
-For proofs about one program, the lifting project's approach scales well: prove each instruction's effect on a stated set of facts for all inputs (are the facts after an instruction implied by the facts before it?), which needs no loop unrolling or path enumeration. It proved about 400,000 steps over six slices without a refutation, at 30 to 40 milliseconds per step. Proving equivalence of two whole functions with calls and loops does not scale the same way, which is why emulation is the gate and symbolic solving serves coverage.
+A symbolic engine (Triton, or [angr](https://angr.io/)) is safest as an input finder: it solves for a state that reaches an untaken branch, and both functions then run from that state in the emulator, so a wrong instruction semantics in the solver costs coverage, not correctness. Proving small loop-free functions equivalent outright is possible but trusts the engine's semantics, which the lifting project found wrong in several places; such proofs need the semantics cross-checked against the emulator on the same instructions first. The lifting project's per-step proofs (about 400,000 steps without a refutation, at 30 to 40 milliseconds per step) were facts about one program, not equivalence of two, and do not carry over as a scale estimate.
 
 ## What per-function checks miss
 
-Stubbed callees cannot see a function breaking a contract another function relies on: an object left in a state its next method does not expect, a buffer sized differently, an order of side effects that only matters across calls. Whole-program behaviour tests sit on top: recorded input sequences replayed against the original and the rebuilt program, comparing outputs such as frames, saved games and network messages.
-
-## Where it is hard for a game like Gruntz
-
-The world is the hard part. Gruntz calls MFC (Microsoft Foundation Classes), DirectDraw and DirectSound, and keeps much of its state in globals and long-lived objects. Stubbing calls by call count keeps both sides consistent, but a function that reads an object's fields needs those objects seeded identically on both sides and in shapes the code expects; deriving them from addresses works for raw loads and fails for code that walks linked structures. Expect most of the harness work, and most inconclusive results, to come from seeding objects and globals.
+Stubbed callees cannot see a function breaking a contract another relies on: an object left in a state its next method does not expect, a buffer sized differently, an order of side effects that only matters across calls. Whole-program replay covers this: recorded inputs replayed against the original and against the original with reconstructed functions linked or detoured in, comparing frames, saved games and network messages.
 
 ## Build order
 
-1. A two-sided harness for one function pair: the deterministic world, the effect comparison, limits that report inconclusive, the coverage counter, and the seeded-wrong suite. Validate it on functions already byte-exact (which must pass) and on seeded variants of them (which must fail).
-2. A corpus runner with per-function assumption records and a report of pass, fail, inconclusive and coverage per function.
-3. Symbolic or coverage-guided input generation for branches no run has taken.
-4. Whole-program replay tests once enough functions pass.
+1. A rig that detours one reconstructed function into a copy of the retail executable, and deterministic replay of recorded play with it in place. It gives ground truth from day one and records the entry snapshots and callee effects the per-function runner needs.
+2. A prototype and vtable database built from the reconstructed headers and the binary (conventions, argument sizes, struct returns, result registers), and address canonicalization between the original image and recompiled code.
+3. The two-sided per-function runner with the comparison above, validated on equivalent-but-different builds and on the seeded-wrong suite before it reports on anything.
+4. Snapshot replay with mutation, then type-guided allocation for functions no snapshot reaches, then boundary and solver-generated inputs for untaken branches.
+5. Exact proofs for small loop-free functions, once the engine's semantics are cross-checked.
 
-On an existing byte-matching project the check can start at once on the open functions: gruntz-decomp's 346 would split into functionally correct, wrong, and not yet checkable, which is the number a reader of its progress actually wants.
+## Where it is hard for a game like Gruntz
+
+The world is most of the work: Gruntz calls MFC (Microsoft Foundation Classes), DirectDraw and DirectSound, keeps much of its state in globals and long-lived objects, and walks MFC lists whose iterators advance through reference parameters. Snapshots from the running game should remove much of that work; functions that only run in rare states remain the hard cases. On an existing byte-matching project such as gruntz-decomp, the check would sort the 346 open functions into behaviourally passing, failing, under-exercised and not yet checkable, which is the measure a reader of its progress wants next to the byte-exact count.
