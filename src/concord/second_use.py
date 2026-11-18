@@ -9,8 +9,10 @@ supplies the second use, and the check leaves no code in the function.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterator
+from pathlib import Path
 
 from tree_sitter import Node
 
@@ -23,6 +25,13 @@ INCLUDE = re.compile(rb"(?m)^#include\b.*\r?\n")
 MACRO = re.compile(rb"[A-Z][A-Z0-9_]+")
 POINTERS = {"call_expression", "field_expression", "identifier", "parenthesized_expression", "subscript_expression"}
 MAX_TRIALS = 60
+
+
+def finished(results: Path | None) -> set[str]:
+    """The symbols an earlier sweep already recorded in `results`, so that a stopped sweep can carry on."""
+    if results is None or not results.exists():
+        return set()
+    return {json.loads(line)["symbol"] for line in results.read_text().splitlines() if line.strip()}
 
 
 def extra_grant(rows: list[dict]) -> dict | None:

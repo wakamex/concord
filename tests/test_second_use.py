@@ -1,4 +1,7 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from tree_sitter import Parser
 
@@ -7,6 +10,7 @@ from concord.second_use import (
     HELPER,
     costs_nothing,
     extra_grant,
+    finished,
     pointer_sites,
     wrapped,
 )
@@ -96,6 +100,16 @@ class Cost(unittest.TestCase):
         self.assertFalse(costs_nothing(base, evaluation(a=99.0, b=95.0)))
         self.assertFalse(costs_nothing(base, evaluation(a=100.0, b=80.0)))
         self.assertFalse(costs_nothing(base, evaluation(a=100.0)))
+
+
+class Finished(unittest.TestCase):
+    def test_a_stopped_sweep_knows_what_it_recorded(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "sweep.jsonl"
+            self.assertEqual(finished(path), set())
+            path.write_text(json.dumps({"symbol": "a"}) + "\n" + json.dumps({"symbol": "b"}) + "\n")
+            self.assertEqual(finished(path), {"a", "b"})
+        self.assertEqual(finished(None), set())
 
 
 if __name__ == "__main__":

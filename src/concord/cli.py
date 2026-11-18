@@ -526,7 +526,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_second.add_argument("--all", action="store_true", help="try every open function scoring at least --min-score")
     p_second.add_argument("--min-score", type=float, default=97.0, help="lowest score --all tries (default: 97)")
     p_second.add_argument("--write", action="store_true", help="write each accepted source to the checkout")
-    p_second.add_argument("--results", type=Path, help="append one JSON line per function")
+    p_second.add_argument("--results", type=Path, help="append one JSON line per function; --all skips functions already in it")
     p_regtrace = sub.add_parser("regtrace", help="explain a gruntz-decomp function's register differences from MSVC 5.0's own register choices")
     p_regtrace.add_argument("symbol", help="the function's symbol")
     p_regtrace.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
@@ -713,7 +713,8 @@ def _dispatch(argv: list[str] | None = None) -> int:
         todo = [(args.unit, args.symbol)]
         if args.all:
             open_functions = (v for v in target.verdicts() if not v.row["exact"] and v.row["fuzzy"] >= args.min_score)
-            todo = [(v.unit, v.symbol) for v in sorted(open_functions, key=lambda v: -v.row["fuzzy"])]
+            done = second_use.finished(args.results)
+            todo = [(v.unit, v.symbol) for v in sorted(open_functions, key=lambda v: -v.row["fuzzy"]) if v.symbol not in done]
         for unit, symbol in todo:
             try:
                 result = second_use.search(target, unit, symbol, target.source_path(unit).read_bytes())
