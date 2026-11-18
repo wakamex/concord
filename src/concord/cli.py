@@ -40,6 +40,7 @@ from concord import (
     results,
     scores,
     scratch,
+    second_use,
     signedness,
     split_lever,
     statics,
@@ -518,6 +519,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_at.add_argument("--unit", required=True, help="unit name or source path")
     p_at.add_argument("--symbol", action="append", help="print these functions' scores (default: the unit's exact count only)")
 
+    p_second = sub.add_parser("second-use", help="give a pointer a second use so MSVC 5.0's round-robin registers line up with retail")
+    p_second.add_argument("symbol", nargs="?", help="the function's symbol; omit with --all")
+    p_second.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_second.add_argument("--unit", help="unit name or source path of the symbol")
+    p_second.add_argument("--all", action="store_true", help="try every open function scoring at least --min-score")
+    p_second.add_argument("--min-score", type=float, default=97.0, help="lowest score --all tries (default: 97)")
+    p_second.add_argument("--write", action="store_true", help="write each accepted source to the checkout")
+    p_second.add_argument("--results", type=Path, help="append one JSON line per function")
     p_regtrace = sub.add_parser("regtrace", help="explain a gruntz-decomp function's register differences from MSVC 5.0's own register choices")
     p_regtrace.add_argument("symbol", help="the function's symbol")
     p_regtrace.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
@@ -695,6 +704,29 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if report["with_retail_registers"]:
             got = report["with_retail_registers"]
             print(f"with retail's registers at {len(report['forced'])} grants: {got['fuzzy']}{' (exact)' if got['exact'] else ''}")
+        return 0
+
+    if args.command == "second-use":
+        if bool(args.all) == bool(args.symbol) or (args.symbol and not args.unit):
+            parser.error("second-use takes a symbol with --unit, or --all")
+        target = Gruntz(args.gruntz)
+        todo = [(args.unit, args.symbol)]
+        if args.all:
+            open_functions = (v for v in target.verdicts() if not v.row["exact"] and v.row["fuzzy"] >= args.min_score)
+            todo = [(v.unit, v.symbol) for v in sorted(open_functions, key=lambda v: -v.row["fuzzy"])]
+        for unit, symbol in todo:
+            try:
+                result = second_use.search(target, unit, symbol, target.source_path(unit).read_bytes())
+            except (KeyError, RuntimeError, OSError, ValueError) as error:
+                result = {"unit": unit, "symbol": symbol, "status": f"failed: {error}"[:200]}
+            source = result.pop("source", None)
+            if source and args.write:
+                target.source_path(unit).write_bytes(source)
+            scores = f"{result['before']:.2f} -> {result['after']:.2f}  " if "before" in result else ""
+            print(f"{result['status']:22} {scores}{symbol}  {result.get('expression', '')}", flush=True)
+            if args.results:
+                with args.results.open("a") as stream:
+                    stream.write(json.dumps(result) + "\n")
         return 0
 
     if args.command == "il":
