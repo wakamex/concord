@@ -1,6 +1,6 @@
 # Functional equivalence as a decompilation target
 
-A decompilation is usually judged by rebuilding the original binary byte for byte. This note proposes that a future decompilation project make functional equivalence its target instead: each reconstructed function must behave like the original, and no effort goes into making its bytes identical. It describes how to build a behavioural check that a pass can be trusted from. It draws on concord's work on [gruntz-decomp](https://github.com/sushi-shi/gruntz-decomp), on a verification harness built for a [rev.ng](https://rev.ng/)-based lifting project that checked rewrites of 1,525 Warcraft III functions, and on a review of an earlier version of this note (docs/reviews/functional-equivalence-carbon-2026-11-17.md).
+A decompilation is usually judged by rebuilding the original binary byte for byte. This note proposes that a future decompilation project make functional equivalence its target instead: each reconstructed function must behave like the original, and no effort goes into making its bytes identical. The check it describes is differential testing: run the original and the reconstruction of each function on the same inputs and compare what callers can observe. Generating those inputs is the fuzzing part. The note describes how to build the check so that a pass can be trusted, and leaves open which existing engine it should be built on. It draws on concord's work on [gruntz-decomp](https://github.com/sushi-shi/gruntz-decomp), on a verification harness built for a [rev.ng](https://rev.ng/)-based lifting project that checked rewrites of 1,525 Warcraft III functions, and on a review of an earlier version of this note (docs/reviews/functional-equivalence-carbon-2026-11-17.md).
 
 ## Why not byte matching
 
@@ -16,7 +16,7 @@ The other things byte matching is credited with do not need it either. Linking r
 
 ## The check
 
-The behavioural gate runs the original machine code and the recompiled machine code of one function from the same starting state and compares what each does that its callers can observe.
+The behavioural gate runs the original machine code and the recompiled machine code of one function from the same starting state and compares what each does that its callers can observe. Existing engines can run and solve machine code, but none supplies what the subsections below specify: where starting states come from, what callees do, how the two sides' addresses correspond, and what counts as observable for MSVC 5.0 code. That logic has to be written whichever engine runs underneath it.
 
 ### Starting state
 
@@ -78,11 +78,35 @@ Where it fits is a clean reimplementation of a game's logic, a remake rather tha
 
 Stubbed callees cannot see a function breaking a contract another relies on: an object left in a state its next method does not expect, a buffer sized differently, an order of side effects that only matters across calls. Whole-program replay covers this: recorded inputs replayed against the original and against the original with reconstructed functions linked or detoured in, comparing frames, saved games and network messages.
 
+## Existing tools and the engine choice
+
+Symbolic execution frameworks supply engines, not this check. Triton is a library for symbolic execution and taint analysis, with no fuzzing loop or notion of comparing two functions. angr loads PE and ELF binaries, models calling conventions (including 32-bit MSVC thiscall and Win64), replaces callees with stubs through its SimProcedures, runs concrete code through [Unicorn](https://www.unicorn-engine.org/), and solves for inputs symbolically, but has no analysis that decides whether two functions behave the same; its BinDiff analysis matches functions by structure. The closest published equivalence checker is UC-KLEE (Ramos and Engler, "Practical, low-effort equivalence verification of real code", CAV 2011), which checks two versions of a function from under-constrained inputs, but works on LLVM bitcode compiled from source, not on a retail binary against a recompilation.
+
+The lifting project built a version of the check for its own purpose, and it shows what the check needs rather than settling what to build on. It lifts whole binaries, including Warcraft III, to C with rev.ng and recompiles them with a modern compiler, and its target is behaviour agreeing with the original, with byte-identical compilation explicitly out of scope. Its runner executes a function in two binaries under Unicorn from the same random registers, maps untouched pages with address-derived bytes, stubs calls leaving the slice, compares rax, the memory writes and the calls with their arguments, and reports runs that hit a limit as inconclusive. Three of its choices would be wrong here: it compares a binary with a jump-rewritten copy of itself, so both sides share a compiler and layout; it compares writes as an ordered sequence, which a correct recompilation can break by reordering or merging stores; and it handles only x86-64. Its plans do supply one input this check needs, real starting states: the Warcraft III build it lifts first is the one another project reads live memory snapshots from.
+
+A shared harness would take reconstructed functions from two producers: rev.ng's recompiled output, and hand decompilations such as gruntz-decomp for the functions byte matching does not close. Harvest, the game concord matches against, is also on the lifting project's list of binaries to lift, so one Harvest function could have a hand reconstruction and a lifted one, both checked against the original, which tests that the harness does not reflect one producer's habits.
+
+The engine is the open decision, and the choice should be made for the end state, a harness that serves both producers on 32-bit and 64-bit code at the scale of Warcraft III's up to 135,606 functions, not for what already exists. The criteria:
+
+- Fidelity: x87 at 80-bit precision, flags, the fs segment and structured exception handling, all as the real CPU does them.
+- Throughput: concrete runs per second, at several runs per function across 100,000 functions or more.
+- World control: starting from a captured snapshot, stubbing a callee, and catching faults, unmapped reads and runaway loops.
+- Reach: support for 32-bit MSVC and 64-bit code, and a path to solver-generated inputs for untaken branches.
+
+The candidates:
+
+- angr. It supplies loading, calling conventions (including 32-bit MSVC thiscall and Win64), stubbing through SimProcedures and the solver, so it covers most of the reach criterion. Concrete runs go through Python. It translates instructions through VEX, the intermediate form of [Valgrind](https://valgrind.org/), whose documentation states that it computes x87 arithmetic at 64-bit precision rather than 80-bit; if angr inherits that, the engine itself would misreport Gruntz's x87 code. angr's current behaviour has not been checked.
+- [Qiling](https://qiling.io/), a framework on Unicorn that loads PE and ELF binaries and hooks Windows API calls. It keeps Unicorn's speed and fidelity and supplies loading, but has no solver, so generated inputs would come from angr or Triton alongside it.
+- Unicorn on its own. Fast, and it uses QEMU's 80-bit x87 emulation, but the harness writes its own loading, calling conventions and stubs for each architecture, and the solver comes from elsewhere.
+- Native execution: both functions run on the real CPU inside a process holding the original image (32-bit under [Wine](https://www.winehq.org/) or on Windows), with the snapshot restored before each run. It is exact by construction and the fastest, and it is the same rig as build step 1. Isolation is the cost: faults, reads of unmapped memory and runaway loops have to be caught with exception handlers, guard pages and timers instead of emulator hooks, and a solver still has to come from elsewhere.
+
+A test settles it before the harness is built: take a small set of functions with known verdicts (the equivalent-but-different builds and seeded wrong variants from "Making a pass mean something"), drawn from both a 32-bit MSVC binary and a 64-bit one and including x87 code, and run the comparison on each candidate cheap enough to prototype. Score each on correct verdicts, time per function, and x87 results against native execution as ground truth. Either way the result is one harness, not one per project.
+
 ## Build order
 
 1. A rig that detours one reconstructed function into a copy of the retail executable, and deterministic replay of recorded play with it in place. It gives ground truth from day one and records the entry snapshots and callee effects the per-function runner needs.
 2. A prototype and vtable database built from the reconstructed headers and the binary (conventions, argument sizes, struct returns, result registers), and address canonicalization between the original image and recompiled code.
-3. The two-sided per-function runner with the comparison above, validated on equivalent-but-different builds and on the seeded-wrong suite before it reports on anything.
+3. The two-sided per-function runner, on the engine chosen above, with the comparison above, validated on equivalent-but-different builds and on the seeded-wrong suite before it reports on anything.
 4. Snapshot replay with mutation, then type-guided allocation for functions no snapshot reaches, then boundary and solver-generated inputs for untaken branches.
 5. Proofs with an SMT solver for leaf and loop-free functions, and bounded checks for functions with loops, once the instruction semantics are cross-checked against the emulator.
 
