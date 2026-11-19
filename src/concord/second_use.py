@@ -3,8 +3,9 @@
 c2.exe hands a temporary used once to its local allocator, which takes the next of eax, ecx and edx and
 advances a cursor. A pointer used twice goes to the global colouring pass instead and spends no step. When
 every register up to a pointer load agrees with retail and the next one is a step ahead, the original held
-that pointer globally. Passing the pointer through an inline helper whose null check has an empty body
-supplies the second use, and the check leaves no code in the function.
+that pointer globally. Passing the pointer through an inline helper that reports a null pointer with MFC's
+TRACE supplies the second use: a release build compiles TRACE to nothing, so the check leaves no code, as
+debug logging in the original's release build would have.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from tree_sitter import Node
 from concord import regtrace
 
 HELPER_NAME = b"CheckedPointer"
-HELPER = b"template <class T>\ninline T* CheckedPointer(T* pointer) {\n    if (pointer != NULL) {\n    }\n    return pointer;\n}\n"
+HELPER = b"template <class T>\ninline T* CheckedPointer(T* pointer) {\n    if (pointer == NULL)\n        TRACE(\"null pointer\\n\");\n    return pointer;\n}\n"
 LOAD = re.compile(r"mov e\w\w, dword ptr \[(?!esp\b)e\w\w(?: \+ 0x[0-9a-f]+)?\]")
 INCLUDE = re.compile(rb"(?m)^#include\b.*\r?\n")
 MACRO = re.compile(rb"[A-Z][A-Z0-9_]+")
