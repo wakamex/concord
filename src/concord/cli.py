@@ -33,6 +33,7 @@ from concord import (
     inlines,
     knowledge,
     layout,
+    normalized,
     oracle,
     place,
     regtrace,
@@ -519,6 +520,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_at.add_argument("--unit", required=True, help="unit name or source path")
     p_at.add_argument("--symbol", action="append", help="print these functions' scores (default: the unit's exact count only)")
 
+    p_norm = sub.add_parser("normalized", help="sort a gruntz-decomp checkout's open functions by the least normalization that matches retail")
+    p_norm.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_norm.add_argument("--save", type=Path, help="write every function's row as JSON")
     p_second = sub.add_parser("second-use", help="give a pointer a second use so MSVC 5.0's round-robin registers line up with retail")
     p_second.add_argument("symbol", nargs="?", help="the function's symbol; omit with --all")
     p_second.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
@@ -704,6 +708,17 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if report["with_retail_registers"]:
             got = report["with_retail_registers"]
             print(f"with retail's registers at {len(report['forced'])} grants: {got['fuzzy']}{' (exact)' if got['exact'] else ''}")
+        return 0
+
+    if args.command == "normalized":
+        found = normalized.census(Gruntz(args.gruntz))
+        if args.save:
+            args.save.write_text(json.dumps(found, indent=1) + "\n")
+        print(f"{found['functions']} open functions")
+        for level, row in found["levels"].items():
+            print(f"  {level:10} {row['functions']:4} functions {row['bytes']:7} bytes")
+        for row in found["shared"]:
+            print(f"  shared by {row['functions']}: {row['signature']}")
         return 0
 
     if args.command == "second-use":
