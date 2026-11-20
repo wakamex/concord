@@ -14,18 +14,21 @@ gruntz = ["match-1", "match-2", "match-3"]
 # Kinds from docs/EXECUTORS.md. The whole-build gate (concord scores --base) compares every function and matched
 # byte with the original, so capability, search and rule tasks are gated; search and rule count newly exact functions.
 [kinds.capability]
+workdir = "/code/{checkout}"
 check = "gated"
 measure = "pass-fail"
 classes = ["any"]
 resources = ["checkout"]
 
 [kinds.search]
+workdir = "/code/harvest-{harvest}"
 check = "gated"
 measure = "yield"
 classes = ["any"]
 resources = ["harvest"]
 
 [kinds.rule]
+workdir = "/code/harvest-{harvest}"
 check = "gated"
 measure = "yield"
 classes = ["any"]
@@ -33,6 +36,7 @@ resources = ["harvest"]
 
 # One bounded question with a stop limit, where a measured negative result is a complete answer.
 [kinds.diagnosis]
+workdir = "/code/concord"
 check = "reviewed"
 measure = "pass-fail"
 classes = ["any"]
@@ -42,6 +46,7 @@ resources = []
 # A lane of open gruntz-decomp functions reconstructed by hand under its matcher skill. gruntz-decomp's own compare
 # proves each exact function and `gruntz build verify` gates the merge, so newly exact functions are counted.
 [kinds.gruntz-match]
+workdir = "/code/gruntz-{gruntz}"
 check = "gated"
 measure = "yield"
 classes = ["any"]
