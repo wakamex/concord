@@ -441,6 +441,26 @@ def regtrace(unit: Unit, out: Path, path: Path) -> dict:
     return {**captured, "log": text[: text.find("has terminated") + 200] if "has terminated" in text else text}
 
 
+def peek(unit: Unit, out: Path, il: Path, stop: int, dumps: list[list[int]]) -> dict:
+    """Run c2.exe on a capture under winedbg, stop where its code generator starts the `stop`th function
+    (counting from 1), and dump each [address, words] range of memory there; reply with winedbg's log."""
+    c2 = out / "c2.exe"
+    shutil.copy(wine.era_tool("c2.exe"), c2)
+    commands = out / "peek.cmd"
+    commands.write_text("\n".join([f"break *{REGTRACE_RESET:#x}", *(["cont"] * stop), f"x/1x {REGTRACE_FUNCTION:#x}",
+                                   *(f"x/{words}x {address:#x}" for address, words in dumps), "quit", ""]))  # fmt: skip
+    prefix = next(il.glob("*ex")).name[:-2]
+    flags = (il / "flags.txt").read_text()
+    flags = re.sub(r"-il \S+", lambda _: f"-il {winepath(il)}\\{prefix}", flags)
+    flags = re.sub(r"-Fo\S+", lambda _: f"-Fo{winepath(out / 'peek.obj')}", flags)
+    log = out / "peek.log"
+    with environ({"MSC_CMD_FLAGS": flags, "WINEDEBUG": "-all"}), log.open("w") as stream:
+        subprocess.run(["winedbg", "--file", str(commands), str(c2)], cwd=out, stdout=stream, stderr=subprocess.STDOUT,
+                       timeout=TIMEOUT * 4, check=False)  # fmt: skip
+    text = log.read_text(errors="replace")
+    return {"log": text[text.rfind("Stopped on breakpoint"):]}
+
+
 def regforce(unit: Unit, out: Path, il: Path, force: dict[int, int]) -> dict:
     """Run c2.exe on a capture with chosen register grants overwritten, and score the object."""
     c2 = out / "c2.exe"
@@ -523,6 +543,9 @@ def serve() -> None:
                 continue
             if "regtrace" in request:
                 print(json.dumps({"ok": regtrace(unit, out, Path(request["regtrace"]))}), flush=True)
+                continue
+            if "peek" in request:
+                print(json.dumps({"ok": peek(unit, out, Path(request["peek"]), int(request["stop"]), request["dumps"])}), flush=True)
                 continue
             if "regforce" in request:
                 force = {int(n): int(r) for n, r in request["force"].items()}

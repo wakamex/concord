@@ -21,6 +21,7 @@ from concord import (
     calls_constants,
     causal,
     census,
+    colour,
     comparison_flips,
     destructors,
     enumswitch,
@@ -520,6 +521,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_at.add_argument("--unit", required=True, help="unit name or source path")
     p_at.add_argument("--symbol", action="append", help="print these functions' scores (default: the unit's exact count only)")
 
+    p_colour = sub.add_parser("colour", help="read MSVC 5.0's global register colouring of a gruntz-decomp function from c2.exe's memory")
+    p_colour.add_argument("symbol", help="the function's symbol")
+    p_colour.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_colour.add_argument("--unit", required=True, help="unit name or source path")
+    p_colour.add_argument("--source", type=Path, help="compile this file as the unit (default: the unit's source)")
+    p_colour.add_argument("--save", type=Path, help="write the ranges as JSON")
     p_norm = sub.add_parser("normalized", help="sort a gruntz-decomp checkout's open functions by the least normalization that matches retail")
     p_norm.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
     p_norm.add_argument("--save", type=Path, help="write every function's row as JSON")
@@ -708,6 +715,18 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if report["with_retail_registers"]:
             got = report["with_retail_registers"]
             print(f"with retail's registers at {len(report['forced'])} grants: {got['fuzzy']}{' (exact)' if got['exact'] else ''}")
+        return 0
+
+    if args.command == "colour":
+        target = Gruntz(args.gruntz)
+        found = colour.run(target, args.unit, args.symbol, (args.source or target.source_path(args.unit)).read_bytes())
+        if args.save:
+            args.save.write_text(json.dumps(found, indent=1) + "\n")
+        print(f"{args.symbol}: {found['score']}; {len(found['ranges'])} globally coloured ranges, in colouring order")
+        for r in found["ranges"]:
+            where = f" frame {r['frame_offset']:+d}" if r["frame_offset"] is not None else ""
+            print(f"  id {r['id']:3}  priority {r['priority']:5}  {r['register'] or '-':4} references {r['references']:3}  "
+                  f"{r['symbol_kind']} {r['symbol_number']}{where}")
         return 0
 
     if args.command == "normalized":

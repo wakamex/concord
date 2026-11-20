@@ -396,6 +396,19 @@ class Gruntz:
         row = self._driver({"unit": slug, "out": str(out), "regtrace": str(path), "wibo": self._wibo()})
         return row.get("log", ""), self._evaluation("regtrace", slug, out, row), Path(row["il"]) if "il" in row else None
 
+    def peek(self, unit: str, il: Path, stop: int, dumps: list[tuple[int, int]]) -> str:
+        """winedbg's dump of each (address, words) range of c2.exe's memory where its code generator starts the
+        `stop`th function of a capture from capture_il, counting from 1."""
+        slug = self.slug(unit)
+        out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+        out.mkdir(parents=True)
+        local = out / "il"
+        if not il.is_relative_to(self.root):
+            shutil.copytree(il, local)
+            il = local
+        request = {"unit": slug, "out": str(out), "peek": str(il), "stop": stop, "dumps": [list(d) for d in dumps], "wibo": self._wibo()}
+        return self._driver(request)["log"]
+
     def regforce(self, unit: str, il: Path, force: dict[int, str]) -> Evaluation:
         """Run c2.exe on a capture from regtrace with the Nth register grants given other registers
         (N counting from 1, register by name), and compare its object with retail."""
