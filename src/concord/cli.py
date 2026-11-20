@@ -1390,7 +1390,7 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     harvest = _target(parser, args)
     args.results = args.results or Path("results") / harvest.log
     if args.apply_improved and not harvest.oracle:
-        parser.error("--apply-improved needs the behavior oracle, which only Harvest has; use --apply for exact matches")
+        parser.error("--apply-improved needs a configured behavior oracle; install the target oracle or set CONCORD_ORACLE; use --apply for exact matches")
     if args.near_miss is not None:
         targets = [(unit, symbol) for unit, symbol, _ in near_misses(harvest, args.near_miss)]
         if args.unit:
@@ -1432,7 +1432,7 @@ def _permute_one(harvest: Harvest | Gruntz, source: str, symbol: str, args: argp
     original = path.read_bytes()
     result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth)
     repairs = []
-    if harvest.oracle:  # repair compares behavior with the original executable's
+    if harvest.oracle and not isinstance(harvest, Gruntz):  # repair uses Harvest's original image
         result.source, repairs = repair(harvest, source, symbol, result.source, result.baseline.fuzzy or 0.0)
     repaired = any("error" not in step for step in repairs)
     improved = _key(result.best) > _key(result.baseline) or repaired

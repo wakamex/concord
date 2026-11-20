@@ -151,13 +151,19 @@ def _install(source: Path, destination: Path) -> None:
 class Gruntz:
     compiler = "msvc-5.0"
     log = "gruntz.jsonl"
-    oracle = False  # nothing checks an inexact rewrite's behavior, so only exact matches are written
     # cl 5.0's code for one function shifts when another function of the unit changes, which the project
     # calls a dip and does not count against the unchanged function. A search may therefore lower another
     # function's score, as long as no function exact in the build stops being exact and the unit gains.
     net_rule = True
     # cl 5.0 has no __typeof__, which name_temporaries writes; name_typed_temporaries stands in for it.
     untyped: ClassVar[list] = [transform for transform in ALL if transform is not name_temporaries]
+
+    @property
+    def oracle(self) -> bool:
+        """Whether an installed or configured oracle can check partial gains."""
+        from concord.oracle import configured
+
+        return configured(self)
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()

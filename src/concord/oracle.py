@@ -7,11 +7,12 @@ compiles the function before and after the rewrite and runs both on the same
 generated inputs (differential testing), comparing return values, calls out of
 the function and memory written. Agreement is evidence, not proof.
 
-The check is an external command, harvest-oracle when it is installed or the
-command the CONCORD_ORACLE environment variable names (empty turns it off), run from the Harvest checkout as
+The check is an external command: gruntz-oracle for Gruntz, harvest-oracle for
+Harvest, or the command CONCORD_ORACLE names (empty turns it off). Run from the
+target checkout as
 `$CONCORD_ORACLE check BEFORE.o AFTER.o --symbol SYMBOL --unit UNIT --cases N`. It prints
 one JSON line with "verdict" ("agree" or "differ") and exits 0 on agreement and
-1 on a difference. harvest-oracle implements it.
+1 on a difference. Other exit codes indicate errors.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from concord.gruntz import Gruntz
 from concord.harvest import Harvest
 from concord.model import EquivalenceResult
 
@@ -53,16 +55,17 @@ class OracleBaselineError(OracleSetupError):
     """The oracle could not establish a usable baseline for a candidate check."""
 
 
-def command() -> str | None:
-    """The check to run: CONCORD_ORACLE, or harvest-oracle when it is installed.
+def command(target: Harvest | Gruntz | None = None) -> str | None:
+    """The configured command, or the installed oracle for this target.
     Setting CONCORD_ORACLE to an empty string turns the check off."""
     if VARIABLE in os.environ:
         return os.environ[VARIABLE] or None
-    return "harvest-oracle" if shutil.which("harvest-oracle") else None
+    default = "gruntz-oracle" if isinstance(target, Gruntz) else "harvest-oracle"
+    return default if shutil.which(default) else None
 
 
-def configured() -> bool:
-    return command() is not None
+def configured(target: Harvest | Gruntz | None = None) -> bool:
+    return command(target) is not None
 
 
 def timeout_seconds() -> float:
@@ -143,7 +146,7 @@ def _report(stdout: str, label: str) -> dict:
     return report
 
 
-def _check_baseline(harvest: Harvest, unit: str, symbol: str, before: Path) -> None:
+def _check_baseline(harvest: Harvest | Gruntz, unit: str, symbol: str, before: Path) -> None:
     try:
         verdict = check_objects(harvest, unit, symbol, before, before)
     except OracleInvocationError as error:
@@ -159,10 +162,10 @@ def _original_baseline(harvest: Harvest, symbol: str, before: Path) -> None:
         raise OracleBaselineError(f"oracle failed on the baseline for {symbol}: {error}") from error
 
 
-def check(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> EquivalenceResult | None:
+def check(harvest: Harvest | Gruntz, unit: str, symbol: str, before: bytes, after: bytes) -> EquivalenceResult | None:
     """Whether the function behaves the same compiled from `before` and from `after`,
     or None when no oracle is configured."""
-    prefix = command()
+    prefix = command(harvest)
     if prefix is None:
         return None
     evaluations = harvest.evaluate(unit, {"before": before, "after": after})
@@ -180,9 +183,9 @@ def check(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes)
         raise
 
 
-def check_objects(harvest: Harvest, unit: str, symbol: str, before: Path, after: Path) -> EquivalenceResult | None:
+def check_objects(harvest: Harvest | Gruntz, unit: str, symbol: str, before: Path, after: Path) -> EquivalenceResult | None:
     """Compare already compiled objects, including objects from header overlays."""
-    prefix = command()
+    prefix = command(harvest)
     if prefix is None:
         return None
     argv = [*_command_args(prefix, "oracle"), "check", str(before), str(after),
@@ -200,7 +203,7 @@ def original_differences(harvest: Harvest, unit: str, symbol: str, sources: dict
     differs from the original executable's own code, from one oracle run that
     generates the cases and runs the original once. None when no oracle is
     configured; sources that do not compile are left out."""
-    prefix = command()
+    prefix = command(harvest)
     if prefix is None:
         return None
     evaluations = harvest.evaluate(unit, sources)
@@ -218,7 +221,7 @@ def original_differences(harvest: Harvest, unit: str, symbol: str, sources: dict
 
 def original_comparison_objects(harvest: Harvest, symbol: str, objects: dict[str, Path]) -> dict:
     """Compare the original and compiled objects on the same generated cases."""
-    prefix = command()
+    prefix = command(harvest)
     if prefix is None:
         raise ValueError("an oracle is required for an original comparison")
     argv = [*_command_args(prefix, "oracle"), "compare", symbol, "original=image",
@@ -248,7 +251,7 @@ def toward_original(harvest: Harvest, unit: str, symbol: str, before: bytes, aft
     return {**counts, "cases": case_count()}
 
 
-def gate(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) -> tuple[bool, dict | None]:
+def gate(harvest: Harvest | Gruntz, unit: str, symbol: str, before: bytes, after: bytes) -> tuple[bool, dict | None]:
     """Whether a partial gain may be kept, with the evidence: it behaves like
     `before`, or it changes behavior and differs from the original code in fewer
     cases than `before` does. (True, None) when no oracle is configured."""
@@ -261,6 +264,8 @@ def gate(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) 
     record = {"same": json.loads(same.detail)}
     if same.equivalent:
         return True, record
+    if isinstance(harvest, Gruntz):
+        return False, record
     try:
         record["original"] = toward_original(harvest, unit, symbol, before, after)
     except OracleInvocationError as error:
@@ -269,7 +274,7 @@ def gate(harvest: Harvest, unit: str, symbol: str, before: bytes, after: bytes) 
     return closer, record
 
 
-def gate_objects(harvest: Harvest, unit: str, symbol: str, before: Path, after: Path) -> tuple[bool, dict | None]:
+def gate_objects(harvest: Harvest | Gruntz, unit: str, symbol: str, before: Path, after: Path) -> tuple[bool, dict | None]:
     """Apply the behavior gate to compiled overlay objects."""
     try:
         same = check_objects(harvest, unit, symbol, before, after)
@@ -281,6 +286,8 @@ def gate_objects(harvest: Harvest, unit: str, symbol: str, before: Path, after: 
     record = {"same": json.loads(same.detail)}
     if same.equivalent:
         return True, record
+    if isinstance(harvest, Gruntz):
+        return False, record
     try:
         report = original_comparison_objects(harvest, symbol, {"before": before, "after": after})
     except OracleInvocationError as error:
