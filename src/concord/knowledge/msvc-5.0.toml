@@ -59,3 +59,12 @@ evidence = [
   { function = "CGruntzMgr::DelayedQuit", note = "94.672 to exact after 18 candidates: `DWORD time = timeGetTime();` before `base += time;`." },
   { function = "CStatusBarMgr::UpdateGruntOvens", note = "99.789 to exact after 11 candidates, the other way: `u32 frameDelayMs = g_buteMgr.GetDword(...)` written inside the division that used it. Before: ecx, edx and eax rotated at two instructions of the frame-index division." },
 ]
+
+[[idiom]]
+id = "declaration-scope"
+cause = "stack-layout"
+status = "hypothesis"
+symptom = "the frame (sub esp) four or more bytes larger or smaller than the target's, with locals at shifted [esp+N] offsets"
+fix = "Move an uninitialized local into the innermost block that uses it, or out to the statement that holds its block. Crimson's notes on the VC6 back end report that c2 gives non-overlapping locals the same slot, so a local's lifetime decides which values share a slot and the frame's size."
+limits = "Untested on cl 5.0. Only locals declared without an initializer are moved, since moving an initializer would change when it runs."
+evidence = []

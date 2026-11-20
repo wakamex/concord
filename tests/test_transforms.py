@@ -480,3 +480,46 @@ class CMgr { i32 Count() const { return m_total; } };
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeclarationScope(unittest.TestCase):
+    def rewrites(self, transform, text):
+        from tree_sitter import Parser
+
+        from concord.transforms import CPP
+
+        tree = Parser(CPP).parse(text)
+        return [r.source for r in transform(text, tree.root_node.children[-1])]
+
+    def test_narrow_moves_a_local_into_the_one_block_that_uses_it(self):
+        from concord.transforms import narrow_declaration
+
+        text = b"void f(int c) {\n    int x;\n    g();\n    if (c) {\n        x = 1;\n        h(x);\n    }\n}\n"
+        self.assertEqual(self.rewrites(narrow_declaration, text),
+                         [b"void f(int c) {\n    g();\n    if (c) {\n        int x;\n        x = 1;\n        h(x);\n    }\n}\n"])  # fmt: skip
+
+    def test_narrow_leaves_a_local_used_in_two_statements(self):
+        from concord.transforms import narrow_declaration
+
+        text = b"void f(int c) {\n    int x;\n    if (c) {\n        x = 1;\n    }\n    h(x);\n}\n"
+        self.assertEqual(self.rewrites(narrow_declaration, text), [])
+
+    def test_narrow_leaves_an_initialized_local(self):
+        from concord.transforms import narrow_declaration
+
+        text = b"void f(int c) {\n    int x = g();\n    if (c) {\n        h(x);\n    }\n}\n"
+        self.assertEqual(self.rewrites(narrow_declaration, text), [])
+
+    def test_widen_is_the_inverse(self):
+        from concord.transforms import narrow_declaration, widen_declaration
+
+        narrow = b"void f(int c) {\n    g();\n    if (c) {\n        int x;\n        x = 1;\n        h(x);\n    }\n}\n"
+        wide = b"void f(int c) {\n    g();\n    int x;\n    if (c) {\n        x = 1;\n        h(x);\n    }\n}\n"
+        self.assertEqual(self.rewrites(widen_declaration, narrow), [wide])
+        self.assertEqual(self.rewrites(narrow_declaration, wide), [narrow])
+
+    def test_widen_skips_a_name_the_outer_block_declares(self):
+        from concord.transforms import widen_declaration
+
+        text = b"void f(int c) {\n    int x;\n    if (c) {\n        int x;\n        h(x);\n    }\n}\n"
+        self.assertEqual(self.rewrites(widen_declaration, text), [])

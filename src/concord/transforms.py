@@ -474,6 +474,84 @@ def move_declarations(source: bytes, scope: Node) -> Iterator[Rewrite]:
                 )
 
 
+def _declaration_line(source: bytes, declaration: Node) -> tuple[int, int] | None:
+    """The byte range of the line a declaration stands on alone, with its newline."""
+    start = _line_start(source, declaration.start_byte)
+    end = source.find(b"\n", declaration.end_byte) + 1 or len(source)
+    if source[start : declaration.start_byte].strip() or source[declaration.end_byte : end].strip():
+        return None
+    return start, end
+
+
+def _plain_declaration(node: Node) -> set[bytes] | None:
+    """The names an uninitialized declaration of locals declares, or None for anything else."""
+    if node.type != "declaration" or _descendants(node, "init_declarator") or b"(" in node.text or b"static" in node.text:
+        return None
+    return _names(node)[0] or None
+
+
+def _moved(source: bytes, line: tuple[int, int], text: bytes, at: int) -> bytes:
+    start, end = line
+    if at < start:
+        return source[:at] + text + source[at:start] + source[end:]
+    return source[:start] + source[end:at] + text + source[at:]
+
+
+def narrow_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """An uninitialized local moved into the innermost nested block that holds every use of it. cl 5.0 gives
+    locals whose lifetimes do not overlap the same stack slot, so a narrower scope can let a later value
+    share its slot and change the frame size and the slots after it."""
+    for block in _descendants(scope, "compound_statement"):
+        statements = [c for c in block.named_children if c.type != "comment"]
+        for i, declaration in enumerate(statements):
+            declared = _plain_declaration(declaration)
+            line = _declaration_line(source, declaration) if declared else None
+            if not line:
+                continue
+            users = [s for s in statements[i + 1 :] if declared & _names(s)[1]]
+            if len(users) != 1:
+                continue
+            mentions = [n for n in _descendants(users[0], "identifier") if n.text in declared]
+            holders = [b for b in _descendants(users[0], "compound_statement")
+                       if all(b.start_byte <= n.start_byte and n.end_byte <= b.end_byte for n in mentions)]  # fmt: skip
+            inner = min(holders, key=lambda b: b.end_byte - b.start_byte, default=None)
+            if inner is None or any(_plain_declaration(c) and _plain_declaration(c) & declared for c in inner.named_children):
+                continue
+            first = next((c for c in inner.named_children if c.type != "comment"), None)
+            if first is None:
+                continue
+            at = _line_start(source, first.start_byte)
+            text = source[at : first.start_byte] + declaration.text + b"\n"
+            name, number = b", ".join(sorted(declared)).decode(), source.count(b"\n", 0, declaration.start_byte) + 1
+            yield Rewrite("declaration-scope", Cause.STACK_LAYOUT, f"line {number}: {name} declared in the block that uses it",
+                          _moved(source, line, text, at))  # fmt: skip
+
+
+def widen_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """An uninitialized local declared in a nested block, moved out to the start of the statement that holds
+    the block, the inverse of narrow_declaration: a longer lifetime keeps its slot apart from later values."""
+    for block in _descendants(scope, "compound_statement"):
+        if block is scope or block.parent is None:
+            continue
+        holder = block
+        while holder.parent is not None and holder.parent.type != "compound_statement":
+            holder = holder.parent
+        outer = holder.parent
+        if outer is None or holder is block:
+            continue
+        outer_names = set().union(*(_plain_declaration(c) or set() for c in outer.named_children))
+        for declaration in block.named_children:
+            declared = _plain_declaration(declaration)
+            line = _declaration_line(source, declaration) if declared else None
+            if not line or declared & outer_names:
+                continue
+            at = _line_start(source, holder.start_byte)
+            text = source[at : holder.start_byte] + declaration.text + b"\n"
+            name, number = b", ".join(sorted(declared)).decode(), source.count(b"\n", 0, declaration.start_byte) + 1
+            yield Rewrite("declaration-scope", Cause.STACK_LAYOUT, f"line {number}: {name} declared before the statement that holds its block",
+                          _moved(source, line, text, at))  # fmt: skip
+
+
 def split_declaration(source: bytes, scope: Node) -> Iterator[Rewrite]:
     """`float x = e;` as `float x; x = e;`, for a non-const local of a built-in
     type. GCC 4.4 numbers the declaration and the assignment as separate
@@ -954,6 +1032,8 @@ ALL = [
     swap_branches,
     swap_statements,
     move_declarations,
+    narrow_declaration,
+    widen_declaration,
     split_declaration,
     join_declaration,
     name_temporaries,
