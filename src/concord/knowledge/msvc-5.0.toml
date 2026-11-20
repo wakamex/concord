@@ -66,5 +66,8 @@ cause = "stack-layout"
 status = "hypothesis"
 symptom = "the frame (sub esp) four or more bytes larger or smaller than the target's, with locals at shifted [esp+N] offsets"
 fix = "Move an uninitialized local into the innermost block that uses it, or out to the statement that holds its block. Crimson's notes on the VC6 back end report that c2 gives non-overlapping locals the same slot, so a local's lifetime decides which values share a slot and the frame's size."
-limits = "Untested on cl 5.0. Only locals declared without an initializer are moved, since moving an initializer would change when it runs."
-evidence = []
+limits = "Only locals declared without an initializer are moved, since moving an initializer would change when it runs. A first sweep of permute (240 candidates, depth 2) over the 39 open functions whose first difference is the frame size made none exact; this rewrite was the only step of one improvement and one of two steps of another, while naming temporaries and swapping statements gave most of the 18 improvements. A frame size off by a few bytes mostly follows from other differences in the function."
+evidence = [
+  { commit = "8c3a113ca", function = "CTriggerMgr::Load", note = "declaration-scope alone, 97.62 to 97.67, not exact" },
+  { commit = "8c3a113ca", function = "CBattlezAiController::ResolveArrival", note = "statement-order and declaration-scope, 88.76 to 89.50, not exact" },
+]
