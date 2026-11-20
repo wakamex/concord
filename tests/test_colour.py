@@ -40,6 +40,11 @@ class Ranges(unittest.TestCase):
         self.assertEqual(found[0] | {}, {"id": 6, "priority": 57, "register": "ecx", "references": 5, "symbol_kind": "named", "symbol_number": 4, "frame_offset": -12})
         self.assertEqual(found[1]["symbol_kind"], "temporary")
 
+    def test_stale_memory_is_not_a_range(self):
+        words = record(0x1000, 0x5000, 16, 0x494758 + 80 * 3, 9, 3)
+        words[0x1000 + 8] = 0x1234
+        self.assertEqual(ranges(words, [0x1000]), [])
+
     def test_wanted_asks_for_unread_records_then_their_symbols(self):
         self.assertEqual(wanted({}, [0x2000]), [(0x2000, 17)])
         words = record(0x2000, 0x6000, 1, 0, 1, 1)

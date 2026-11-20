@@ -46,6 +46,8 @@ def ranges(words: dict[int, int], heads: list[int]) -> list[dict]:
         if at in found or at + 4 * (RECORD_WORDS - 1) not in words:
             continue
         record = [words[at + 4 * i] for i in range(RECORD_WORDS)]
+        if record[2] != at:  # every live range records its own address; anything else is stale memory
+            continue
         symbol = record[0]
         name = words.get(symbol)
         found[at] = {
