@@ -1,7 +1,8 @@
 """Read MSVC 5.0's global register colouring of one gruntz-decomp function from c2.exe's memory.
 
-Global colouring of a function runs just after c2.exe's code generator starts it, and its live ranges stay in a
-hash table of 1,024 buckets keyed by `id & 0x3ff` until the next function starts, where concord reads them.
+Global colouring of a function runs just before c2.exe's code generator starts its local register allocation
+(where concord stops), and its live ranges are still in a hash table of 1,024 buckets keyed by `id & 0x3ff`
+there.
 Code generation runs in its own order, not the object's, and can start a function twice, so concord finds the
 function by the name in c2's function record. Each range records the symbol it belongs to, its priority
 (the colouring queue runs in descending priority, and each range takes the first free register in the order
@@ -111,9 +112,9 @@ def run(target, unit: str, symbol: str, source: bytes, limit: int = 6) -> dict:
     started = names(target.peek(unit, il, 2 * count + 2, []))
     if symbol not in started:
         raise KeyError(f"code generation never starts {symbol} in {unit}")
-    # global colouring runs right after the function starts and its ranges live until the next function
-    # starts, so they are read there; a function started twice is read after its last start
-    stop = len(started) - started[::-1].index(symbol) + 1
+    # global colouring of a function runs just before the start the record names, and its ranges are still
+    # in the table there; a function started twice is read at its last start
+    stop = len(started) - started[::-1].index(symbol)
     words = memory(target.peek(unit, il, stop, [(TABLE, BUCKETS)]))
     heads = [words[TABLE + 4 * i] for i in range(BUCKETS) if words.get(TABLE + 4 * i)]
     for _ in range(limit):
