@@ -21,6 +21,7 @@ class GruntzOracle(unittest.TestCase):
         self.target = Gruntz.__new__(Gruntz)
         self.target.root = Path.cwd()
         self.target.sources = {"unit": "src/unit.cpp"}
+        self.target.layouts = lambda unit: Path(f"{unit}-layouts.json")
 
     def test_default_commands_are_target_specific(self):
         with patch.dict(os.environ, {}, clear=True), patch("concord.oracle.shutil.which", side_effect=lambda name: name):
@@ -45,7 +46,8 @@ class GruntzOracle(unittest.TestCase):
             result = oracle.check_objects(self.target, "unit", "?f@@YAHH@Z", Path("before.obj"), Path("after.obj"))
         self.assertTrue(result.equivalent)
         self.assertEqual(run.call_args.args, (
-            ["gruntz-oracle", "check", "before.obj", "after.obj", "--symbol", "?f@@YAHH@Z", "--unit", "unit", "--cases", "17"],
+            ["gruntz-oracle", "check", "before.obj", "after.obj", "--symbol", "?f@@YAHH@Z", "--unit", "unit", "--cases", "17",
+             "--layouts", "unit-layouts.json"],
             self.target.root, (0, 1, 3), "oracle check",
         ))
 

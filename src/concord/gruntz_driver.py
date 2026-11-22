@@ -24,7 +24,9 @@ and `"range": [START, END]` replies `{"ok": {TEXT: [TYPE, NARROW]}}`: the type
 libclang gives each expression between those byte offsets whose type is a
 number, an enumeration or a pointer, and whether it is an integer narrower than
 int, for the rewrite that names a temporary, since cl 5.0 has nothing like
-`__typeof__`. A function row has `symbol`, `address`, `size`, `fuzzy` (objdiff's score against
+`__typeof__`. One with `"layouts": true` replies `{"ok": {RECORD: {"size": N, "pointers": [[OFFSET,
+TARGET], ...]}}}`, where each record the unit defines keeps its pointer fields, for the behaviour oracle
+to lay out memory by type. A function row has `symbol`, `address`, `size`, `fuzzy` (objdiff's score against
 the retail object) and `exact` (the checkout's closure rule: an unrounded 100%,
 the retail size, and equal ordered relocation streams).
 
@@ -530,6 +532,71 @@ def expression_types(root: Path, unit: Unit, path: Path, start: int, end: int) -
     return {expression: next(iter(types)) for expression, types in found.items() if len(types) == 1 and "(" not in next(iter(types))[0]}
 
 
+def layouts(root: Path, unit: Unit) -> dict[str, dict]:
+    """Every complete record the unit's source defines, by name: its size and where its pointer fields are,
+    with the type each points to (a record's name, or "*" before a pointer's target), base classes, embedded
+    records and arrays laid out in place, as libclang computes them for the target. A union's storage is
+    described by its first member; a pointer to anything else (numbers, functions, void) is left out."""
+    import clang.cindex as ci
+    from gruntz.permute.generate_ast_variants import clang_args, configure_libclang
+
+    configure_libclang()
+    base_offset = ci.conf.lib.clang_getOffsetOfBase
+    base_offset.argtypes, base_offset.restype = [ci.Cursor, ci.Cursor], ci.c_longlong
+    parsed = ci.Index.create().parse(str(unit.source), args=clang_args(root, unit.source))
+    definitions = {}
+    for cursor in parsed.cursor.walk_preorder():
+        if cursor.kind in (ci.CursorKind.CLASS_DECL, ci.CursorKind.STRUCT_DECL, ci.CursorKind.UNION_DECL) and cursor.is_definition():
+            name = cursor.type.get_canonical().spelling
+            if cursor.type.get_size() > 0 and not cursor.is_anonymous():
+                definitions.setdefault(name, cursor)
+
+    def target(kind, depth=0):
+        kind = kind.get_canonical()
+        if kind.kind == ci.TypeKind.RECORD:
+            return kind.spelling if kind.spelling in definitions else None
+        if kind.kind == ci.TypeKind.POINTER and depth < 3:
+            inner = target(kind.get_pointee(), depth + 1)
+            return "*" + inner if inner else None
+        return None
+
+    def place(kind, at, pointers):
+        """Add the pointer fields of a value of this type stored at byte offset `at`."""
+        kind = kind.get_canonical()
+        if kind.kind in (ci.TypeKind.POINTER, ci.TypeKind.LVALUEREFERENCE):
+            pointee = target(kind.get_pointee())
+            if pointee:
+                pointers[at] = pointee
+        elif kind.kind == ci.TypeKind.CONSTANTARRAY:
+            size = kind.element_type.get_size()
+            for index in range(min(kind.element_count, 64)):
+                place(kind.element_type, at + index * size, pointers)
+        elif kind.kind == ci.TypeKind.RECORD and kind.spelling in definitions:
+            members(definitions[kind.spelling], at, pointers)
+
+    def members(cursor, at, pointers):
+        record = cursor.type.get_canonical()
+        for child in cursor.get_children():
+            if child.kind == ci.CursorKind.CXX_BASE_SPECIFIER and child.type.get_canonical().spelling in definitions:
+                members(definitions[child.type.get_canonical().spelling], at + base_offset(cursor, child) // 8, pointers)
+        def fields(parent):
+            for child in parent.get_children():
+                if child.kind == ci.CursorKind.FIELD_DECL and child.spelling:
+                    offset = record.get_offset(child.spelling)
+                    if offset >= 0 and offset % 8 == 0 and at + offset // 8 not in pointers:
+                        place(child.type, at + offset // 8, pointers)
+                elif child.kind in (ci.CursorKind.UNION_DECL, ci.CursorKind.STRUCT_DECL) and child.is_anonymous():
+                    fields(child)
+        fields(cursor)
+
+    found = {}
+    for name, cursor in definitions.items():
+        pointers: dict[int, str] = {}
+        members(cursor, 0, pointers)
+        found[name] = {"size": cursor.type.get_size(), "pointers": sorted(pointers.items())}
+    return found
+
+
 def serve() -> None:
     root = Path.cwd()
     reader = build_reader()
@@ -558,6 +625,9 @@ def serve() -> None:
                 continue
             if "replay" in request:
                 print(json.dumps({"ok": replay(unit, out, Path(request["replay"]))}), flush=True)
+                continue
+            if "layouts" in request:
+                print(json.dumps({"ok": layouts(root, unit)}), flush=True)
                 continue
             if "types" in request:
                 print(json.dumps({"ok": expression_types(root, unit, Path(request["types"]), *request["range"])}), flush=True)

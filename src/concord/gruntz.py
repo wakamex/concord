@@ -402,6 +402,23 @@ class Gruntz:
         row = self._driver({"unit": slug, "out": str(out), "regtrace": str(path), "wibo": self._wibo()})
         return row.get("log", ""), self._evaluation("regtrace", slug, out, row), Path(row["il"]) if "il" in row else None
 
+    def layouts(self, unit: str) -> Path:
+        """A JSON file of the records the unit's source defines, with the offset and target type of each pointer
+        field, from gruntz_driver's layouts request; written once per unit source and state of the headers."""
+        slug = self.slug(unit)
+        digest = hashlib.sha256((self.root / self.sources[slug]).read_bytes())
+        for header in sorted((self.root / "include").rglob("*.h")):
+            stat = header.stat()
+            digest.update(f"{header}:{stat.st_mtime_ns}:{stat.st_size}".encode())
+        digest = digest.hexdigest()[:16]
+        path = self.root / "build" / "concord" / slug / f"layouts-{digest}.json"
+        if not path.exists():
+            out = path.parent / uuid.uuid4().hex
+            out.mkdir(parents=True)
+            records = self._driver({"unit": slug, "out": str(out), "layouts": True, "wibo": self._wibo()})
+            path.write_text(json.dumps(records, separators=(",", ":")))
+        return path
+
     def peek(self, unit: str, il: Path, stop: int, dumps: list[tuple[int, int]]) -> str:
         """winedbg's dump of each (address, words) range of c2.exe's memory where its code generator starts the
         `stop`th function of a capture from capture_il, counting from 1."""

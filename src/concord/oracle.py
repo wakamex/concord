@@ -191,6 +191,8 @@ def check_objects(harvest: Harvest | Gruntz, unit: str, symbol: str, before: Pat
         return None
     argv = [*_command_args(prefix, "oracle"), "check", str(before), str(after),
             "--symbol", symbol, "--unit", unit, "--cases", str(case_count())]
+    if hasattr(harvest, "layouts"):  # a target that knows its record layouts lets the oracle lay out memory by type
+        argv += ["--layouts", str(harvest.layouts(unit))]
     # exit 3 and "under-exercised": no case ran the differing code to completion, so equivalence is not shown
     done = _run(argv, harvest.root, (0, 1, 3), "oracle check")
     report = _report(done.stdout, "oracle check")
