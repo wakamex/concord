@@ -11,8 +11,9 @@ The check is an external command: gruntz-oracle for Gruntz, harvest-oracle for
 Harvest, or the command CONCORD_ORACLE names (empty turns it off). Run from the
 target checkout as
 `$CONCORD_ORACLE check BEFORE.o AFTER.o --symbol SYMBOL --unit UNIT --cases N`. It prints
-one JSON line with "verdict" ("agree" or "differ") and exits 0 on agreement and
-1 on a difference. Other exit codes indicate errors.
+one JSON line with "verdict" ("agree", "differ" or, for gruntz-oracle, "under-exercised") and exits 0 on
+agreement, 1 on a difference and 3 when no case ran the differing code to completion; an under-exercised
+candidate is not shown equivalent and is rejected like a difference. Other exit codes indicate errors.
 """
 
 from __future__ import annotations
@@ -190,10 +191,11 @@ def check_objects(harvest: Harvest | Gruntz, unit: str, symbol: str, before: Pat
         return None
     argv = [*_command_args(prefix, "oracle"), "check", str(before), str(after),
             "--symbol", symbol, "--unit", unit, "--cases", str(case_count())]
-    done = _run(argv, harvest.root, (0, 1), "oracle check")
+    # exit 3 and "under-exercised": no case ran the differing code to completion, so equivalence is not shown
+    done = _run(argv, harvest.root, (0, 1, 3), "oracle check")
     report = _report(done.stdout, "oracle check")
     verdict = report.get("verdict")
-    if not isinstance(verdict, str) or verdict not in {"agree", "differ"}:
+    if not isinstance(verdict, str) or verdict not in {"agree", "differ", "under-exercised"}:
         raise OracleInvocationError("oracle check returned an invalid verdict")
     return EquivalenceResult(verdict == "agree", "differential-test", json.dumps(report))
 

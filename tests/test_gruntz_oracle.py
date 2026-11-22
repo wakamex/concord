@@ -46,8 +46,15 @@ class GruntzOracle(unittest.TestCase):
         self.assertTrue(result.equivalent)
         self.assertEqual(run.call_args.args, (
             ["gruntz-oracle", "check", "before.obj", "after.obj", "--symbol", "?f@@YAHH@Z", "--unit", "unit", "--cases", "17"],
-            self.target.root, (0, 1), "oracle check",
+            self.target.root, (0, 1, 3), "oracle check",
         ))
+
+    def test_under_exercised_is_not_equivalent(self):
+        with patch.dict(os.environ, {}, clear=True), patch("concord.oracle.shutil.which", return_value="gruntz-oracle"), patch(
+            "concord.oracle._run", return_value=SimpleNamespace(stdout='{"verdict":"under-exercised"}')
+        ):
+            result = oracle.check_objects(self.target, "unit", "?f@@YAHH@Z", Path("before.obj"), Path("after.obj"))
+        self.assertFalse(result.equivalent)
 
     def test_difference_never_uses_harvest_image_repair(self):
         different = EquivalenceResult(False, "differential-test", '{"verdict":"differ"}')
