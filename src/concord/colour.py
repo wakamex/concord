@@ -1,7 +1,9 @@
 """Read MSVC 5.0's global register colouring of one gruntz-decomp function from c2.exe's memory.
 
-When c2.exe's code generator starts a function, global colouring has finished and its live ranges are still in
-a hash table of 1,024 buckets keyed by `id & 0x3ff`. Each range records the symbol it belongs to, its priority
+Global colouring of a function runs just after c2.exe's code generator starts it, and its live ranges stay in a
+hash table of 1,024 buckets keyed by `id & 0x3ff` until the next function starts, where concord reads them.
+Code generation runs in its own order, not the object's, and can start a function twice, so concord finds the
+function by the name in c2's function record. Each range records the symbol it belongs to, its priority
 (the colouring queue runs in descending priority, and each range takes the first free register in the order
 eax, ecx, edx), the register it got and its reference count. concord runs c2.exe on the unit's captured input
 under winedbg, stops there, and reads the table and the records it points to, over as many runs as it takes
@@ -36,6 +38,20 @@ def signed(word: int) -> int:
 def register(word: int) -> str | None:
     number, rest = divmod(word - DESCRIPTORS, DESCRIPTOR_SIZE)
     return REGISTERS.get(number) if word and rest == 0 else None
+
+
+STARTED = "Stopped on breakpoint 1 at "
+
+
+def names(log: str) -> list[str]:
+    """The function names winedbg's `x/s` printed after each start of code generation, in order: each is
+    the first line after the stop line."""
+    found = []
+    for block in log.split(STARTED)[1:]:
+        lines = [line.strip() for line in block.splitlines()[1:] if line.strip()]
+        if lines and not lines[0].startswith(("Process ", "Invalid ")):
+            found.append(lines[0])
+    return found
 
 
 def ranges(words: dict[int, int], heads: list[int]) -> list[dict]:
@@ -91,10 +107,13 @@ def run(target, unit: str, symbol: str, source: bytes, limit: int = 6) -> dict:
     if il is None or evaluation.object is None:
         raise RuntimeError(f"the unit did not compile: {evaluation.error[-2000:]}")
     raw = evaluation.object.with_name("capture.raw.obj")
-    order = list(coff.functions((raw if raw.exists() else evaluation.object).read_bytes()))
-    if symbol not in order:
-        raise KeyError(f"{symbol} is not a function of {unit}'s object")
-    stop = order.index(symbol) + 1
+    count = len(list(coff.functions((raw if raw.exists() else evaluation.object).read_bytes())))
+    started = names(target.peek(unit, il, 2 * count + 2, []))
+    if symbol not in started:
+        raise KeyError(f"code generation never starts {symbol} in {unit}")
+    # global colouring runs right after the function starts and its ranges live until the next function
+    # starts, so they are read there; a function started twice is read after its last start
+    stop = len(started) - started[::-1].index(symbol) + 1
     words = memory(target.peek(unit, il, stop, [(TABLE, BUCKETS)]))
     heads = [words[TABLE + 4 * i] for i in range(BUCKETS) if words.get(TABLE + 4 * i)]
     for _ in range(limit):

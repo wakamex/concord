@@ -1,6 +1,6 @@
 import unittest
 
-from concord.colour import TABLE, memory, ranges, register, signed, wanted
+from concord.colour import TABLE, memory, names, ranges, register, signed, wanted
 
 LOG = """Stopped on breakpoint 1 at 0x0000000042a90e c2+0x2a90e
  00cff82c
@@ -19,6 +19,14 @@ class Memory(unittest.TestCase):
         words = memory(LOG)
         self.assertEqual(words[0x493244], 0xF795A8)
         self.assertEqual(words[0xF795A8 + 12], 0x6D)
+
+
+class Names(unittest.TestCase):
+    def test_each_start_names_its_function_on_the_next_line(self):
+        log = ("Breakpoint 1 at 0x42a90e\nStopped on breakpoint 1 at 0x0000000042a90e c2+0x2a90e\n?Tick@C@@QAEHXZ\n"
+               "Stopped on breakpoint 1 at 0x0000000042a90e c2+0x2a90e\n_cfunction\n"
+               "Stopped on breakpoint 1 at 0x0000000042a90e c2+0x2a90e\nProcess of pid=0108 has terminated\n")
+        self.assertEqual(names(log), ["?Tick@C@@QAEHXZ", "_cfunction"])
 
 
 class Fields(unittest.TestCase):

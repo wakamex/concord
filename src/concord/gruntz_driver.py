@@ -443,12 +443,17 @@ def regtrace(unit: Unit, out: Path, path: Path) -> dict:
 
 def peek(unit: Unit, out: Path, il: Path, stop: int, dumps: list[list[int]]) -> dict:
     """Run c2.exe on a capture under winedbg, stop where its code generator starts the `stop`th function
-    (counting from 1), and dump each [address, words] range of memory there; reply with winedbg's log."""
+    (counting from 1), and dump each [address, words] range of memory there; reply with winedbg's log.
+    With no ranges, print the name of each of the first `stop` functions in the order code generation starts
+    them, which differs from the object's order and can start one function twice."""
     c2 = out / "c2.exe"
     shutil.copy(wine.era_tool("c2.exe"), c2)
     commands = out / "peek.cmd"
-    commands.write_text("\n".join([f"break *{REGTRACE_RESET:#x}", *(["cont"] * stop), f"x/1x {REGTRACE_FUNCTION:#x}",
-                                   *(f"x/{words}x {address:#x}" for address, words in dumps), "quit", ""]))  # fmt: skip
+    if dumps:
+        steps = [*(["cont"] * stop), f"x/1x {REGTRACE_FUNCTION:#x}", *(f"x/{words}x {address:#x}" for address, words in dumps)]
+    else:  # the name of every function in code-generation order, at +0x18 in c2's function record
+        steps = ["cont", f"x/s *(int*)(*(int*)({REGTRACE_FUNCTION:#x}) + 0x18)"] * stop
+    commands.write_text("\n".join([f"break *{REGTRACE_RESET:#x}", *steps, "quit", ""]))
     prefix = next(il.glob("*ex")).name[:-2]
     flags = (il / "flags.txt").read_text()
     flags = re.sub(r"-il \S+", lambda _: f"-il {winepath(il)}\\{prefix}", flags)
@@ -458,7 +463,7 @@ def peek(unit: Unit, out: Path, il: Path, stop: int, dumps: list[list[int]]) -> 
         subprocess.run(["winedbg", "--file", str(commands), str(c2)], cwd=out, stdout=stream, stderr=subprocess.STDOUT,
                        timeout=TIMEOUT * 4, check=False)  # fmt: skip
     text = log.read_text(errors="replace")
-    return {"log": text[text.rfind("Stopped on breakpoint"):]}
+    return {"log": text if not dumps else text[text.rfind("Stopped on breakpoint"):]}
 
 
 def regforce(unit: Unit, out: Path, il: Path, force: dict[int, int]) -> dict:
