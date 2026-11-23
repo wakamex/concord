@@ -30,6 +30,7 @@ from concord import (
     first_differences,
     flag_audit,
     frames,
+    header_impact,
     history,
     il_search,
     initialization,
@@ -52,6 +53,7 @@ from concord import (
     symbol_audit,
     symbol_table,
 )
+from concord import lost as lost_search
 from concord.complete import TYPES, absent, complete, settle, state
 from concord.diff import diff_code, read_function
 from concord.finish import finish
@@ -531,6 +533,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_at.add_argument("--unit", required=True, help="unit name or source path")
     p_at.add_argument("--symbol", action="append", help="print these functions' scores (default: the unit's exact count only)")
 
+    p_lost = sub.add_parser("lost", help="find open gruntz-decomp functions scoring below their recorded high, and the changes behind each drop")
+    p_lost.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`, clean")
+    p_lost.add_argument("--min-gap", type=float, default=0.5, help="lowest gap between a function's high and its score now (default: 0.5)")
+    p_lost.add_argument("--limit", type=int, help="describe only the N largest functions")
+    p_lost.add_argument("--save", type=Path, help="write the report as JSON")
+
+    p_impact = sub.add_parser("header-impact", help="compile every unit a shared header reaches from the working tree and report regressions")
+    p_impact.add_argument("headers", nargs="+", help="headers, as paths in the checkout or relative to include/")
+    p_impact.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_impact.add_argument("--save", type=Path, help="write the report as JSON")
+
     p_colour = sub.add_parser("colour", help="read MSVC 5.0's global register colouring of a gruntz-decomp function from c2.exe's memory")
     p_colour.add_argument("symbol", help="the function's symbol")
     p_colour.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
@@ -723,6 +736,27 @@ def _dispatch(argv: list[str] | None = None) -> int:
             exact = sum(function["exact"] for function in row["functions"])
             print(f"{row['commit']}: {scores}  {exact}/{len(row['functions'])} exact".replace(":  ", ": "))
         return 0
+
+    if args.command == "lost":
+        target = Gruntz(args.gruntz)
+        result = lost_search.run(target, args.min_gap, args.limit, lambda unit, n, total: print(f"{unit}: {n}/{total}", file=sys.stderr, flush=True))
+        print(lost_search.table(result["functions"]))
+        print(json.dumps(result["summary"]))
+        if args.save:
+            args.save.write_text(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.command == "header-impact":
+        target = Gruntz(args.gruntz)
+        result = header_impact.run(target, args.headers, lambda unit, n, total: print(f"{unit}: {n}/{total}", file=sys.stderr, flush=True))
+        for unit, message in result["errors"].items():
+            print(f"{unit}: does not compile: {message.splitlines()[-1] if message.strip() else 'no message'}")
+        if result["functions"]:
+            print(header_impact.table(result["functions"]))
+        print(json.dumps(result["summary"]))
+        if args.save:
+            args.save.write_text(json.dumps(result, indent=2) + "\n")
+        return 1 if result["summary"]["regressions"] or result["errors"] else 0
 
     if args.command == "regtrace":
         target = Gruntz(args.gruntz)
