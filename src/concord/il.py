@@ -141,12 +141,17 @@ def read_token(body: bytes, i: int, symbols: Symbols) -> Token:
         value = at(n - 1)
         if at(n - 2) in TYPES and value is not None and value < 0x80:
             return Token("const", body[i : i + n], value=value)
+        if at(n - 2) in TYPES and value == 0x80 and i + n + 4 <= len(body):  # a wider constant: the 80 byte, then 32 bits
+            raw = body[i : i + n + 4]
+            return Token("const", raw, value=int.from_bytes(raw[n:], "little", signed=True))
     elif c in (0x30, 0x5A, 0x32):
         n = 3 if at(1) == 0xA0 else 2
         if at(n - 1) in TYPES:
             return Token({0x30: "load", 0x5A: "this", 0x32: "assign"}[c], body[i : i + n])
     elif c == 0x27 and at(1) in TYPES:
         return Token("off", body[i : i + 2])
+    elif c == 0x27 and at(1) == 0xA0 and at(2) in TYPES:
+        return Token("off", body[i : i + 3])
     elif c in (0x02, 0x04, 0x24):
         return Token({0x02: "add", 0x04: "mul", 0x24: "gt"}[c], body[i : i + 1])
     elif c == 0x28 and body[i : i + 3] == b"\x28\x00\x00":
@@ -160,8 +165,10 @@ def read_token(body: bytes, i: int, symbols: Symbols) -> Token:
         if i + n <= len(body):
             value = int.from_bytes(body[i + 3 : i + 5], "little") if n == 5 else body[i + 2]
             return Token("line", body[i : i + n], value=value)
-    elif c == 0x99 and at(1) in TYPES and at(2) == 0x3E and at(3) in TYPES and at(4) == 0x14:
+    elif c == 0x99 and at(1) in TYPES and at(2) == 0x3E and at(3) is not None and at(4) == 0x14:  # the return type is any byte
         return Token("callopen", body[i : i + 5])
+    elif c == 0x99 and at(1) in TYPES and at(2) == 0x46:  # a call whose argument list is written with 46
+        return Token("callopen", body[i : i + 3])
     return Token("bad", body[i : i + 1])
 
 

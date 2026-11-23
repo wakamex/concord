@@ -132,6 +132,14 @@ class SyntheticTests(unittest.TestCase):
         moves = [e.text for e, _ in neighbours(parse(by_address + x_five, SYMBOLS), SYMBOLS) if e.kind == "move"]
         self.assertFalse(any("`x = 5`" in t and "before" in t for t in moves), moves)
 
+    def test_a_wide_constant_and_a_call_written_with_46_parse_and_round_trip(self) -> None:
+        wide = ref(X) + b"\x33\x41\x80\xc4\x01\x00\x00" + b"\x32\x41\x4b"  # x = 452;
+        call46 = ref(X) + ref(FN) + ref(A) + b"\x30\x43" + b"\x99\x43\x46" + b"\x4c" + b"\x32\x41\x4b"  # x = f(this) written 46
+        for body in (wide, call46):
+            items = parse(body, SYMBOLS)
+            self.assertEqual(emit_body(items), body)
+            self.assertEqual(sum(isinstance(item, Statement) for item in items), 1)
+
     def test_an_undecoded_byte_is_never_moved_or_edited(self) -> None:
         body = A_ASSIGN_1 + b"\x55" + C_ASSIGN_2
         items = parse(body, SYMBOLS)
