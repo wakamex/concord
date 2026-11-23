@@ -9,6 +9,7 @@ with the command's defaults.
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -79,6 +80,26 @@ class CheckoutTests(unittest.TestCase):
         self.assertIsNotNone(il, evaluation.error[-500:])
         return il_search.Capture(il)
 
+    def test_every_body_of_every_unit_gives_back_its_bytes(self) -> None:
+        # Every unit of the checkout, or the comma-separated CONCORD_IL_UNITS, for runs in pieces. Each capture is
+        # compiled without scoring, which the IL does not need. The count of units and bodies is reported on stderr.
+        selected = os.environ.get("CONCORD_IL_UNITS")
+        units = sorted(selected.split(",") if selected else self.gruntz.sources)
+        accessors = il_search.trivial_accessors(self.root)
+        bodies = 0
+        for unit in units:
+            il, evaluation = self.gruntz.capture_il(unit, self.gruntz.source_path(unit).read_bytes(), score=False)
+            self.assertIsNotNone(il, f"{unit}: {evaluation.error[-500:]}")
+            capture = il_search.Capture(il)
+            symbols = capture.symbols(accessors)
+            ex = capture.read("ex")
+            for name, start, end in capture.bodies():
+                body = ex[start:end]
+                with self.subTest(unit=unit, symbol=name):
+                    self.assertEqual(emit_body(parse(body, symbols)), body)
+                bodies += 1
+        print(f"round trip: {len(units)} units, {bodies} bodies", file=sys.stderr)
+
     def test_every_body_of_three_units_gives_back_its_bytes(self) -> None:
         accessors = il_search.trivial_accessors(self.root)
         for unit in ("tileswitchlogic", "brickz", "namerecord"):
@@ -107,7 +128,7 @@ class CheckoutTests(unittest.TestCase):
         self.assertIn("move `tileY = *((this + 12))` (line 1008) after `layer = ", move["text"])
         self.assertIn("(line 1010)", move["text"])
         self.assertLessEqual(report["replays"], 400)
-        self.assertEqual(report["accessors_used"], ["GetLevel", "World"])  # the calls the layer statement makes
+        self.assertEqual(report["accessors_used"], ["GetLevel", "GetTileGrid", "World"])  # the trivial accessors the decoded statements call
         self.assertGreater(report["coverage"], 0.6)  # the prologue and epilogue stay opaque
 
 

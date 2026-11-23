@@ -8,7 +8,7 @@ import re
 import unittest
 from pathlib import Path
 
-from concord.il import Scope, Statement, Symbols, emit_body, neighbours, parse
+from concord.il import Statement, Symbols, accessors_used, emit_body, neighbours, parse
 
 FIXTURE = Path(__file__).parent / "fixtures" / "il" / "switchdown.json"
 
@@ -63,9 +63,11 @@ class FixtureTests(unittest.TestCase):
     def test_round_trip(self) -> None:
         self.assertEqual(emit_body(self.items), self.body)
 
-    def test_statements_are_decoded(self) -> None:
-        self.assertEqual(sum(isinstance(item, Statement) for item in self.items), 9)
-        self.assertEqual(sum(isinstance(item, Scope) for item in self.items), 1)  # the block begin in the prologue
+    def test_every_byte_of_the_body_is_decoded(self) -> None:
+        # The fixture's 12 statements are the assignments and returns of SwitchDown, its base-class call, and the
+        # markers (headers, labels, block ends) around them; no byte is opaque.
+        self.assertEqual(sum(isinstance(item, Statement) for item in self.items), 12)
+        self.assertFalse([item for item in self.items if type(item) is bytes])
 
     def test_the_known_fix_is_generated_as_two_legal_edits(self) -> None:
         # The two IL edits that make SwitchDown byte-identical to retail (REGISTER-PATHS.md): the use of tileY at line
@@ -141,13 +143,44 @@ class SyntheticTests(unittest.TestCase):
             self.assertEqual(sum(isinstance(item, Statement) for item in items), 1)
 
     def test_an_undecoded_byte_is_never_moved_or_edited(self) -> None:
-        body = A_ASSIGN_1 + b"\x55" + C_ASSIGN_2
+        body = A_ASSIGN_1 + b"\x7f" + C_ASSIGN_2  # 7f is not an opcode the catalog decodes
         items = parse(body, SYMBOLS)
         self.assertEqual(emit_body(items), body)
         self.assertEqual(sum(isinstance(item, Statement) for item in items), 2)
         for edit, new in neighbours(items, SYMBOLS):
-            self.assertIn(b"\x55", emit_body(new))
-            self.assertEqual(emit_body(new).count(b"\x55"), 1, edit.text)
+            self.assertIn(b"\x7f", emit_body(new))
+            self.assertEqual(emit_body(new).count(b"\x7f"), 1, edit.text)
+
+    def test_a_branch_is_a_barrier_that_no_statement_crosses(self) -> None:
+        branch = ref(C) + b"\x30\x41" + b"\x38\x0f\x00"  # if (c) goto 0x0f
+        items = parse(branch + C_ASSIGN_2, SYMBOLS)
+        self.assertEqual(sum(isinstance(item, Statement) for item in items), 2)
+        self.assertEqual([e.text for e, _ in neighbours(items, SYMBOLS) if e.kind == "move"], [])
+
+    def test_a_call_with_no_4b_ends_at_the_next_marker(self) -> None:
+        # A base constructor's call in an initializer list: 4c, then a line marker, with no statement end.
+        call = ref(FN) + ref(A) + b"\x30\x43" + b"\x99\x43\x3e\x41\x14" + b"\x4c"
+        body = call + b"\x4f\x01\x05" + C_ASSIGN_2
+        items = parse(body, SYMBOLS)
+        self.assertEqual(emit_body(items), body)
+        self.assertEqual(sum(isinstance(item, Statement) for item in items), 2)
+        self.assertFalse([item for item in items if type(item) is bytes])
+
+    def test_a_call_through_a_pointer_is_a_barrier_and_names_no_accessor(self) -> None:
+        through = ref(A) + b"\x30\x43" + b"\x3e\x41\x00" + b"\x33\x41\x01" + b"\x55\x41" + b"\x4c" + b"\x4b"  # (a)(1);
+        items = parse(through, SYMBOLS)
+        self.assertEqual(emit_body(items), through)
+        self.assertEqual(sum(isinstance(item, Statement) for item in items), 1)
+        self.assertEqual(accessors_used(items, SYMBOLS), [])
+        self.assertTrue(all(e.kind != "move" for e, _ in neighbours(items, SYMBOLS)))
+
+    def test_a_declaration_label_and_return_are_markers(self) -> None:
+        declaration = ref(FN) + b"\x46" + b"\x2d\x0a\x00" + b"\x4c"  # f(a): the function's own symbol, its parameter
+        body = declaration + b"\x29\x0b\x00" + b"\x47"  # label 0x0b, then return
+        items = parse(body, SYMBOLS)
+        self.assertEqual(emit_body(items), body)
+        self.assertEqual(sum(isinstance(item, Statement) for item in items), 0)
+        self.assertFalse([item for item in items if type(item) is bytes])
 
     def test_commutative_operands_swap_only_when_neither_writes(self) -> None:
         pure = ref(X) + ref(A) + b"\x30\x41" + b"\x33\x41\x01" + b"\x02" + b"\x32\x41\x4b"  # x = a + 1;
