@@ -374,8 +374,9 @@ class environ:
                 os.environ[name] = value
 
 
-def capture(unit: Unit, out: Path, path: Path) -> dict:
-    """Compile the source through c2wrap, keeping the code generator's input in out/il."""
+def capture(unit: Unit, out: Path, path: Path, score: bool = True) -> dict:
+    """Compile the source through c2wrap, keeping the code generator's input in out/il. With `score` false the
+    object is not compared with retail, so a snippet that defines none of the unit's functions still gives its IL."""
     il = out / "il"
     il.mkdir(parents=True, exist_ok=True)
     sibling = unit.source.with_name(f".{unit.source.stem}.concord{os.getpid()}-capture{unit.source.suffix}")
@@ -390,6 +391,8 @@ def capture(unit: Unit, out: Path, path: Path) -> dict:
         sibling.unlink(missing_ok=True)
     if not raw.exists() or not (il / "flags.txt").exists():
         return {"error": output.replace(sibling.name, unit.source.name)[-4000:] or "cl wrote no object"}
+    if not score:
+        return {"il": str(il), "object": str(raw)}
     candidate, rows = scored(unit, raw, out, "capture")
     if isinstance(rows, str):
         return {"error": rows}
@@ -674,7 +677,7 @@ def serve() -> None:
                 print(json.dumps({"ok": line_object(unit, out, Path(request["lines"]))}), flush=True)
                 continue
             if "capture" in request:
-                print(json.dumps({"ok": capture(unit, out, Path(request["capture"]))}), flush=True)
+                print(json.dumps({"ok": capture(unit, out, Path(request["capture"]), not request.get("unscored"))}), flush=True)
                 continue
             if "regtrace" in request:
                 print(json.dumps({"ok": regtrace(unit, out, Path(request["regtrace"]))}), flush=True)

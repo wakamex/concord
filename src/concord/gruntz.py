@@ -407,15 +407,19 @@ class Gruntz:
             )
         return evaluations
 
-    def capture_il(self, unit: str, source: bytes) -> tuple[Path | None, Evaluation]:
+    def capture_il(self, unit: str, source: bytes, score: bool = True) -> tuple[Path | None, Evaluation]:
         """Compile `source` as the unit and keep the intermediate-language files cl hands its code
-        generator, c2.exe: the directory holding them (None when the compile fails) and the evaluation."""
+        generator, c2.exe: the directory holding them (None when the compile fails) and the evaluation.
+        With `score` false the object is not compared with retail, for snippets that define none of the unit's functions."""
         slug = self.slug(unit)
         out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
         out.mkdir(parents=True)
         path = out / f"capture{Path(self.sources[slug]).suffix}"
         path.write_bytes(source)
-        row = self._driver({"unit": slug, "out": str(out), "capture": str(path), "wibo": self._wibo()})
+        request = {"unit": slug, "out": str(out), "capture": str(path), "wibo": self._wibo()}
+        if not score:
+            request["unscored"] = True
+        row = self._driver(request)
         return (Path(row["il"]) if "il" in row else None), self._evaluation("capture", slug, out, row)
 
     def edited_il(self, unit: str, il: Path, replacements: list[tuple[str, str]]) -> Path:
