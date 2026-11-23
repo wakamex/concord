@@ -49,6 +49,7 @@ from concord import (
     second_use,
     signedness,
     split_lever,
+    state_triage,
     statics,
     symbol_audit,
     symbol_table,
@@ -544,6 +545,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_impact.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
     p_impact.add_argument("--save", type=Path, help="write the report as JSON")
 
+    p_triage = sub.add_parser("state-triage", help="sort open gruntz-decomp functions into those their unit's state decides and those their source decides")
+    p_triage.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`, clean")
+    p_triage.add_argument("--unit", action="append", help="unit name or source path (repeatable; default: every unit with an open function)")
+    p_triage.add_argument("--headers", action="store_true", help="also cut before the first line of code of each project header the unit reaches")
+    p_triage.add_argument("--offsets", type=state_triage.offset_range, default=list(range(1, 8)), help="pad sizes, LOW-HIGH (default: 1-7; 0 is always the baseline)")
+    p_triage.add_argument("--save", type=Path, help="JSON file of compiled scores; a rerun with the same file resumes and reprints the result")
+
     p_colour = sub.add_parser("colour", help="read MSVC 5.0's global register colouring of a gruntz-decomp function from c2.exe's memory")
     p_colour.add_argument("symbol", help="the function's symbol")
     p_colour.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
@@ -757,6 +765,18 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if args.save:
             args.save.write_text(json.dumps(result, indent=2) + "\n")
         return 1 if result["summary"]["regressions"] or result["errors"] else 0
+
+    if args.command == "state-triage":
+        target = Gruntz(args.gruntz)
+        result = state_triage.run(target, args.unit, args.headers, args.offsets, args.save,
+                                  lambda message: print(message, file=sys.stderr, flush=True))  # fmt: skip
+        for unit, data in result["units"].items():
+            if data["error"]:
+                print(f"{unit}: does not compile: {data['error'].splitlines()[-1] if data['error'].strip() else 'no message'}")
+        if any(data["functions"] for data in result["units"].values()):
+            print(state_triage.table(result["units"]))
+        print(json.dumps(result["summary"]))
+        return 0
 
     if args.command == "regtrace":
         target = Gruntz(args.gruntz)
