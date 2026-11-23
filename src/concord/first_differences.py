@@ -9,7 +9,7 @@ header, where a body rewrite of each caller would not reach it.
 from __future__ import annotations
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from concord import coff
 
@@ -57,6 +57,8 @@ def describe(target, verdict, data: bytes, lines: list[bytes]) -> dict:
         "size": verdict.row.get("size", 0),
         "best": verdict.row.get("best"),
         "cause": first.cause.value if first else None,
+        # every difference's cause, not only the first's: a function closes only when all of them do
+        "causes": dict(Counter(finding.cause.value for finding in diff.findings)),
         "first_line": first_line,
         "first_text": lines[first_line - 1].decode(errors="replace").strip() if first_line and first_line <= len(lines) else None,
         "first_callees": called([first_line] if first_line else []),
@@ -77,6 +79,22 @@ def rank(functions: list[dict], key: str) -> list[dict]:
         for name, group in found.items()
     ]
     return sorted(rows, key=lambda row: (-row["functions"], -row["bytes"], row["callee"]))
+
+
+def every_cause(functions: list[dict]) -> dict:
+    """For each cause, the open functions with at least one difference of it, their bytes, and how many of
+    them have no other cause, so closing that cause alone would close them."""
+    found = defaultdict(lambda: {"functions": 0, "bytes": 0, "differences": 0, "only_cause": 0, "only_cause_bytes": 0})
+    for function in functions:
+        for cause, count in function.get("causes", {}).items():
+            row = found[cause]
+            row["functions"] += 1
+            row["bytes"] += function["size"]
+            row["differences"] += count
+            if len(function["causes"]) == 1:
+                row["only_cause"] += 1
+                row["only_cause_bytes"] += function["size"]
+    return dict(sorted(found.items(), key=lambda item: -item[1]["bytes"]))
 
 
 def run(target, progress=None) -> dict:
@@ -105,6 +123,7 @@ def run(target, progress=None) -> dict:
         causes[function["cause"]][0] += 1
         causes[function["cause"]][1] += function["size"]
     return {
+        "every_cause": every_cause(functions),
         "functions": functions,
         "failed": failed,
         "causes": {cause: {"functions": n, "bytes": size} for cause, (n, size) in sorted(causes.items(), key=lambda item: -item[1][0])},

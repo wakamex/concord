@@ -688,6 +688,10 @@ def _dispatch(argv: list[str] | None = None) -> int:
         print(f"{len(report['functions'])} open functions; {len(report['failed'])} not described")
         for cause, row in report["causes"].items():
             print(f"  {cause}: {row['functions']} functions, {row['bytes']} bytes")
+        print("\nevery difference, by the bytes of the functions that have it:")
+        for cause, row in report["every_cause"].items():
+            print(f"  {cause}: {row['differences']} differences in {row['functions']} functions ({row['bytes']} bytes); "
+                  f"the only cause in {row['only_cause']} ({row['only_cause_bytes']} bytes)")
         for title, key in (("callees on any differing line", "by_callee"), ("callees on the first differing line", "by_first_callee")):
             print(f"\n{title}:")
             for row in report[key][: args.top]:

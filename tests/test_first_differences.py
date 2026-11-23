@@ -1,6 +1,6 @@
 import unittest
 
-from concord.first_differences import at, callees, rank
+from concord.first_differences import at, callees, every_cause, rank
 
 
 class Callees(unittest.TestCase):
@@ -34,3 +34,15 @@ class Rank(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EveryCauseTests(unittest.TestCase):
+    def test_counts_every_cause_and_functions_it_alone_blocks(self):
+        functions = [
+            {"size": 100, "causes": {"register-allocation": 3}},
+            {"size": 40, "causes": {"register-allocation": 1, "stack-layout": 2}},
+        ]
+        found = every_cause(functions)
+        self.assertEqual(found["register-allocation"], {"functions": 2, "bytes": 140, "differences": 4, "only_cause": 1, "only_cause_bytes": 100})
+        self.assertEqual(found["stack-layout"]["only_cause"], 0)
+        self.assertEqual(list(found), ["register-allocation", "stack-layout"])
