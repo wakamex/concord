@@ -50,10 +50,13 @@ class EveryCauseTests(unittest.TestCase):
 
 class BelowTests(unittest.TestCase):
     def test_a_dip_is_open_though_the_project_counts_it_exact(self):
-        from types import SimpleNamespace
+        from concord.harvest import FunctionVerdict
 
         def verdict(fuzzy, best):
-            return SimpleNamespace(row={"fuzzy": fuzzy, "best": best, "exact": 100.0 in (fuzzy, best)})
+            return FunctionVerdict("unit", "f", {"fuzzy": fuzzy, "best": best, "exact": 100.0 in (fuzzy, best)}, {})
 
         exact, dip, open_ = verdict(100.0, 100.0), verdict(99.85, 100.0), verdict(97.0, 97.0)
-        self.assertEqual(below([exact, dip, open_]), [dip, open_])
+        found = below([exact, dip, open_])
+        self.assertEqual([v.row["fuzzy"] for v in found], [99.85, 97.0])
+        self.assertEqual([v.row["exact"] for v in found], [False, False])  # a dip is diffed, not taken as exact
+        self.assertEqual(found[0].row["best"], 100.0)

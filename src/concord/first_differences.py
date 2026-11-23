@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from dataclasses import replace
 
 from concord import coff
 
@@ -83,8 +84,9 @@ def rank(functions: list[dict], key: str) -> list[dict]:
 
 
 def below(verdicts):
-    """The functions under 100% in this build, whatever their banked best."""
-    return [verdict for verdict in verdicts if verdict.row["fuzzy"] < 100.0]
+    """The functions under 100% in this build, whatever their banked best. A dip is passed on as open, so the
+    target diffs it instead of taking its banked 100 as exact."""
+    return [replace(verdict, row={**verdict.row, "exact": False}) for verdict in verdicts if verdict.row["fuzzy"] < 100.0]
 
 
 def every_cause(functions: list[dict]) -> dict:
