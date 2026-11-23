@@ -11,14 +11,14 @@ The audit used the checkout's own driver and its [objdiff](https://github.com/en
 - 26 unit and variant pairs gain an exact function or raise an open function by 1 point or more, across 18 units. An exact function is one whose code and relocations match the retail object, under the checkout's exact rule.
 - 22 of the 26 lose at least one exact function. A unit compiled with other options would be expected to gain several exact functions without losing any, so these pairs are trades, not evidence.
 - Four pairs lose no exact function: `statusbartabbuilders` with `no-gx`, `sbi_image` with `no-gx`, and `wwdgameobjectrender` with `gr` each gain one exact function, and `lightfxrender` with `no-gr` raises one open function. Each changes one function's score and no other function's score in its unit.
-- No variant gains more than two exact functions in any unit. The largest gain is `triggermgr` with `ox`, which gains two and loses eight.
+- No variant gains more than two exact functions in any unit. Two variants gain two: `ox` in `triggermgr` also loses eight exact functions, and `no-gx` in `rezcoll` also loses five.
 - 127 of the 145 units have no variant that gains or raises any function.
 - No variant failed to compile in any unit.
 - All 145 unedited replays of the captured intermediate language reproduce the configured compile. In every unit, the variant that replaces the code generator's -G5 with -G6 gives the same result as the variant that adds /G6.
 
 ## Conclusion
 
-No evidence shows a unit compiled with other options. The largest gain in exact functions is two, from `ox` in `triggermgr`, which loses eight. Removing /GX, where the configured flags have it, changes at least one function's score in each of the 96 units whose report lists exception-handling (EH) funclets, and it costs exact functions in 81 of them, so the flag matters where those units use it. The four pairs that gain or raise without loss are discussed below. None is a whole-unit signal, and none establishes a different option set. The audit covers 15 variants per unit, so it can miss an option outside them (see Limits).
+No evidence shows a unit compiled with other options. The largest gain in exact functions is two, by `ox` in `triggermgr` (which loses eight) and `no-gx` in `rezcoll` (which loses five). Removing /GX, where the configured flags have it, changes at least one function's score in each of the 96 units whose report lists exception-handling (EH) funclets, and it costs exact functions in 81 of them, so the flag matters where those units use it. The four pairs that gain or raise without loss are discussed below. None is a whole-unit signal, and none establishes a different option set. The audit covers 15 variants per unit, so it can miss an option outside them (see Limits).
 
 ## Four single-function signals
 
