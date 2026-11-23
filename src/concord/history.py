@@ -8,6 +8,7 @@ records a score when it is banked; this measures whether a commit's source reall
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -33,9 +34,20 @@ def tree_at(root: Path, commit: str, paths: list[str]) -> dict[str, bytes]:
     return files
 
 
-def at_commit(target, unit: str, commits: list[str]) -> list[dict]:
+def rename_words(files: dict[str, bytes], renames: list[tuple[str, str]], commit: str) -> dict[str, bytes]:
+    """The files with each identifier `old` replaced by `new` as a whole word. Raises ValueError when `new`
+    already occurs in them, since the two names would merge."""
+    for old, new in renames:
+        if any(re.search(rb"\b" + new.encode() + rb"\b", text) for text in files.values()):
+            raise ValueError(f"{new} already occurs at {commit}, so {old} cannot be renamed to it")
+        files = {path: re.sub(rb"\b" + old.encode() + rb"\b", new.encode(), text) for path, text in files.items()}
+    return files
+
+
+def at_commit(target, unit: str, commits: list[str], renames: list[tuple[str, str]] = ()) -> list[dict]:
     """For each commit, the unit's function rows compiled from that commit's source and headers,
-    or the compiler's complaint."""
+    or the compiler's complaint. `renames` (old, new) pairs rename identifiers in the unit and its headers
+    first, so a function the commit named differently is scored under the retail symbol's name."""
     source_path = target.source(unit)
     results = []
     for commit in commits:
@@ -43,6 +55,7 @@ def at_commit(target, unit: str, commits: list[str]) -> list[dict]:
         if source_path not in files:
             results.append({"commit": commit, "error": f"{source_path} does not exist at {commit}"})
             continue
+        files = rename_words(files, list(renames), commit)
         source = files.pop(source_path)
         evaluation = target.evaluate(unit, {"at": source}, files)["at"]
         if evaluation.error:

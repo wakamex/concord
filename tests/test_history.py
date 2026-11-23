@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from concord.harvest import Evaluation
-from concord.history import at_commit, tree_at
+from concord.history import at_commit, rename_words, tree_at
 
 
 def git(root, *args):
@@ -56,6 +56,15 @@ class Repository(unittest.TestCase):
         results = at_commit(Target(), "a", [self.first])
         self.assertEqual(calls, [({"at": b"#include <Gruntz/State.h>\n"}, {"include/Gruntz/State.h": b"old\n"})])
         self.assertEqual(results[0]["functions"][0]["symbol"], "f")
+
+
+    def test_rename_words_renames_whole_words_in_every_file_and_refuses_a_merge(self):
+        files = {"src/a.cpp": b"LoadTable(1);\nLoadTableAll();\n", "include/a.h": b"void LoadTable(int);\n"}
+        renamed = rename_words(files, [("LoadTable", "ApplyPickup")], "c1")
+        self.assertEqual(renamed["src/a.cpp"], b"ApplyPickup(1);\nLoadTableAll();\n")
+        self.assertEqual(renamed["include/a.h"], b"void ApplyPickup(int);\n")
+        with self.assertRaises(ValueError):
+            rename_words({"src/a.cpp": b"LoadTable(); ApplyPickup();\n"}, [("LoadTable", "ApplyPickup")], "c1")
 
 
 if __name__ == "__main__":

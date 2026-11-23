@@ -137,6 +137,27 @@ def _ensure_container(name: str, root: Path, wait: float = 30) -> None:
     raise RuntimeError(f"the dev shell container {name} did not start")
 
 
+def function_at(source: bytes, address: int, label: str = "") -> Node:
+    """The function definition that follows the `RVA(address, size)` label of `address` in the source.
+    `label` names the function in the errors; the address is used when it is empty."""
+    name = label or f"{address:#x}"
+    marker = source.find(f"RVA(0x{address:08x},".encode())
+    if marker < 0:
+        raise KeyError(f"no RVA label for {name} in the source")
+    tree = Parser(CPP).parse(source)  # held by name while its nodes are read
+    stack = [tree.root_node]
+    found = []
+    while stack:
+        node = stack.pop()
+        if node.type == "function_definition" and node.start_byte > marker:
+            found.append(node)
+        elif node.end_byte > marker:
+            stack.extend(node.children)
+    if not found:
+        raise KeyError(f"no function definition follows the RVA label for {name}")
+    return min(found, key=lambda node: node.start_byte)
+
+
 def _install(source: Path, destination: Path) -> None:
     """Copy a file into the checkout unless it is already there. The copy keeps
     the source's time, so the driver rebuilds the reader only when it changed, and
@@ -256,20 +277,7 @@ class Gruntz:
         label in the source."""
         if symbol not in self.addresses:
             raise KeyError(f"{symbol} has no address in build/gen/bindings.tsv")
-        marker = source.find(f"RVA(0x{self.addresses[symbol]:08x},".encode())
-        if marker < 0:
-            raise KeyError(f"no RVA label for {symbol} in the source")
-        stack = [Parser(CPP).parse(source).root_node]
-        found = []
-        while stack:
-            node = stack.pop()
-            if node.type == "function_definition" and node.start_byte > marker:
-                found.append(node)
-            elif node.end_byte > marker:
-                stack.extend(node.children)
-        if not found:
-            raise KeyError(f"no function definition follows the RVA label for {symbol}")
-        return min(found, key=lambda node: node.start_byte)
+        return function_at(source, self.addresses[symbol], symbol)
 
     def name_typed_temporaries(self, source: bytes, scope: Node) -> Iterator[Rewrite]:
         """name_temporaries with each temporary declared by its type, `i32 tmp = E;`
