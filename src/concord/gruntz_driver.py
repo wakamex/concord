@@ -535,8 +535,11 @@ def expression_types(root: Path, unit: Unit, path: Path, start: int, end: int) -
 def layouts(root: Path, unit: Unit) -> dict[str, dict]:
     """Every complete record the unit's source defines, by name: its size and where its pointer fields are,
     with the type each points to (a record's name, or "*" before a pointer's target), base classes, embedded
-    records and arrays laid out in place, as libclang computes them for the target. A union's storage is
-    described by its first member; a pointer to anything else (numbers, functions, void) is left out."""
+    records and arrays laid out in place, as libclang computes them for the target, and "?vtable:CLASS" where a
+    polymorphic class keeps its vtable pointer, whose "vtable" lists the decorated names of its virtual
+    functions by slot. The entry "$globals" maps each global that points to a record, by decorated name, to the
+    record's type. A union's storage is described by its first member; a pointer
+    to anything else (numbers, functions, void) is left out."""
     import clang.cindex as ci
     from gruntz.permute.generate_ast_variants import clang_args, configure_libclang
 
@@ -574,8 +577,46 @@ def layouts(root: Path, unit: Unit) -> dict[str, dict]:
         elif kind.kind == ci.TypeKind.RECORD and kind.spelling in definitions:
             members(definitions[kind.spelling], at, pointers)
 
+    def polymorphic(cursor, depth=0):
+        for child in cursor.get_children():
+            if child.kind in (ci.CursorKind.CXX_METHOD, ci.CursorKind.DESTRUCTOR) and child.is_virtual_method():
+                return True
+            base = child.type.get_canonical().spelling if child.kind == ci.CursorKind.CXX_BASE_SPECIFIER else None
+            if base in definitions and depth < 16 and polymorphic(definitions[base], depth + 1):
+                return True
+        return False
+
+    def slots(cursor, depth=0):
+        """The class's vtable in MSVC's order, as (name, type, decorated name): its first polymorphic base's
+        slots, with overrides in place, then its own new virtual functions in declaration order. The
+        destructor's slot holds the scalar deleting destructor, ??_G."""
+        found = []
+        for child in cursor.get_children():
+            base = child.type.get_canonical().spelling if child.kind == ci.CursorKind.CXX_BASE_SPECIFIER else None
+            if base in definitions and depth < 16 and polymorphic(definitions[base]):
+                found = slots(definitions[base], depth + 1)
+                break
+        for child in cursor.get_children():
+            if child.kind not in (ci.CursorKind.CXX_METHOD, ci.CursorKind.DESTRUCTOR) or not child.is_virtual_method():
+                continue
+            if child.kind == ci.CursorKind.DESTRUCTOR:
+                scope = child.mangled_name[4:].split("@@")[0]
+                entry = ("~", "", f"??_G{scope}@@UAEPAXI@Z")
+                same = [i for i, slot in enumerate(found) if slot[0] == "~"]
+            else:
+                entry = (child.spelling, child.type.spelling, child.mangled_name)
+                same = [i for i, slot in enumerate(found) if slot[:2] == entry[:2]]
+            if same:
+                found[same[0]] = entry
+            else:
+                found.append(entry)
+        return found
+
     def members(cursor, at, pointers):
         record = cursor.type.get_canonical()
+        if polymorphic(cursor):
+            # MSVC puts a polymorphic class's vtable pointer first; the outermost class names the vtable
+            pointers.setdefault(at, "?vtable:" + record.spelling)
         for child in cursor.get_children():
             if child.kind == ci.CursorKind.CXX_BASE_SPECIFIER and child.type.get_canonical().spelling in definitions:
                 members(definitions[child.type.get_canonical().spelling], at + base_offset(cursor, child) // 8, pointers)
@@ -594,6 +635,18 @@ def layouts(root: Path, unit: Unit) -> dict[str, dict]:
         pointers: dict[int, str] = {}
         members(cursor, 0, pointers)
         found[name] = {"size": cursor.type.get_size(), "pointers": sorted(pointers.items())}
+        if polymorphic(cursor):
+            found[name]["vtable"] = [decorated for _, _, decorated in slots(cursor)]
+    # a global or static member that points to a record, by decorated name: the type of what it points to
+    globals_ = {}
+    for cursor in parsed.cursor.walk_preorder():
+        if cursor.kind == ci.CursorKind.VAR_DECL and cursor.semantic_parent.kind in (
+                ci.CursorKind.TRANSLATION_UNIT, ci.CursorKind.NAMESPACE, ci.CursorKind.CLASS_DECL, ci.CursorKind.STRUCT_DECL):
+            kind = cursor.type.get_canonical()
+            pointee = target(kind.get_pointee()) if kind.kind == ci.TypeKind.POINTER else None
+            if pointee and cursor.mangled_name:
+                globals_[cursor.mangled_name] = pointee
+    found["$globals"] = {"size": 0, "pointers": [], "globals": globals_}
     return found
 
 

@@ -407,6 +407,7 @@ class Gruntz:
         field, from gruntz_driver's layouts request; written once per unit source and state of the headers."""
         slug = self.slug(unit)
         digest = hashlib.sha256((self.root / self.sources[slug]).read_bytes())
+        digest.update(Path(__file__).with_name("gruntz_driver.py").read_bytes())  # the code that reads them
         for header in sorted((self.root / "include").rglob("*.h")):
             stat = header.stat()
             digest.update(f"{header}:{stat.st_mtime_ns}:{stat.st_size}".encode())
