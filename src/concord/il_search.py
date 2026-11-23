@@ -90,8 +90,10 @@ class Capture:
 def trivial_accessors(root: Path) -> frozenset[str]:
     """The names of trivial accessors in the checkout's headers, `Name() const { return m_member; }`, that no other
     definition in the headers or sources gives a different body. A call of one only reads memory."""
-    texts = [path.read_bytes() for path in sorted((root / "include").rglob("*.h"))]
-    texts += [path.read_bytes() for path in sorted((root / "src").rglob("*")) if path.suffix in (".h", ".cpp", ".hpp")]
+    # Files whose names start with a dot are concord's temporary copies of sources, which other runs create and remove.
+    paths = [path for path in sorted((root / "include").rglob("*.h")) if not path.name.startswith(".")]
+    paths += [path for path in sorted((root / "src").rglob("*")) if path.suffix in (".h", ".cpp", ".hpp") and not path.name.startswith(".")]
+    texts = [path.read_bytes() for path in paths]
     trivial: dict[bytes, int] = {}
     for text in texts:
         for match in ACCESSOR.finditer(text):
