@@ -736,7 +736,9 @@ def gather(harvest: Harvest, units: Iterable[str] = ()) -> dict:
 def _demangle_all(names: set[str]) -> dict[str, str]:
     """One c++filt run for every name the report will print."""
     plain = sorted(n for n in names if n and not n.startswith(("sub_", "<", ".")))
-    done = subprocess.run(["c++filt", *plain], capture_output=True, text=True, check=False)
+    if not plain:
+        return {n: n for n in names}  # c++filt with no names would read them from standard input
+    done = subprocess.run(["c++filt", *plain], capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
     pretty = dict(zip(plain, done.stdout.splitlines()))
     return {n: pretty.get(n, n) for n in names}
 

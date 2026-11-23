@@ -519,3 +519,14 @@ extern "C" int f(int *p) {
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DemangleTests(unittest.TestCase):
+    def test_no_names_runs_nothing(self):
+        # with no names c++filt reads standard input, which hung the suite when a terminal held it open
+        from unittest.mock import patch
+
+        from concord.calls_constants import _demangle_all
+
+        with patch("concord.calls_constants.subprocess.run", side_effect=AssertionError("c++filt ran")):
+            self.assertEqual(_demangle_all({"sub_401000", ""}), {"sub_401000": "sub_401000", "": ""})
