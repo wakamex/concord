@@ -17,7 +17,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from concord.gruntz import Gruntz
-from concord.il import Edit, Item, Symbols, emit_body, neighbours, parse
+from concord.il import (
+    Edit,
+    Item,
+    Statement,
+    Symbols,
+    accessors_used,
+    emit_body,
+    neighbours,
+    parse,
+)
 from concord.transforms import ACCESSOR
 
 WORKERS = 4  # replays run at once; CONCORD_JOBS lowers it
@@ -120,7 +129,8 @@ def search(
     items = parse(original, symbols)
     if emit_body(items) != original:
         raise RuntimeError("the parser does not give back the captured body's bytes")
-    statements = sum(1 for item in items if not isinstance(item, bytes))
+    statements = sum(1 for item in items if isinstance(item, Statement))
+    statement_bytes = sum(len(item.emit()) for item in items if isinstance(item, Statement))
     workroot = gruntz.root / "build" / "concord" / gruntz.slug(unit) / f"ilsearch-{uuid.uuid4().hex}"
     workroot.mkdir(parents=True)
 
@@ -197,7 +207,9 @@ def search(
         "statements": statements,
         "opaque_items": sum(1 for item in items if isinstance(item, bytes)),
         "body_bytes": len(original),
-        "accessors": sorted(accessors),
+        "statement_bytes": statement_bytes,
+        "coverage": round(statement_bytes / len(original), 3),
+        "accessors_used": accessors_used(items, symbols),
         "baseline": {"fuzzy": baseline["fuzzy"], "exact": baseline["exact"]},
         "exact": exact,
         "found_exact": bool(exact),

@@ -373,6 +373,18 @@ class Edit:
     lines: tuple[int | None, ...]
 
 
+def accessors_used(items: tuple[Item, ...], symbols: Symbols) -> list[str]:
+    """The trivial accessors the statements call, by name, sorted."""
+    names: set[str] = set()
+    stack = [item.root for item in items if isinstance(item, Statement)]
+    while stack:
+        node = stack.pop()
+        if node.kind == "call" and symbols.is_accessor(node.children[0].symbol):
+            names.add(node.children[0].symbol.short)
+        stack.extend(node.children)
+    return sorted(names)
+
+
 def _runs(items: tuple[Item, ...]) -> list[list[int]]:
     """Maximal runs of consecutive statements: a statement moves only within its run."""
     runs: list[list[int]] = []

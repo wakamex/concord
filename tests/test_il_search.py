@@ -107,6 +107,8 @@ class CheckoutTests(unittest.TestCase):
         self.assertIn("move `tileY = *((this + 12))` (line 1008) after `layer = ", move["text"])
         self.assertIn("(line 1010)", move["text"])
         self.assertLessEqual(report["replays"], 400)
+        self.assertEqual(report["accessors_used"], ["GetLevel", "World"])  # the calls the layer statement makes
+        self.assertGreater(report["coverage"], 0.6)  # the prologue and epilogue stay opaque
 
 
 if __name__ == "__main__":
