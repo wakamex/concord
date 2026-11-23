@@ -1,71 +1,92 @@
 # IL search results: 20 open register-allocation functions
 
-This run applies `concord il-search` with its defaults (depth 2, budget 400 replays, beam 8, four replays at once) to 20 open functions of gruntz-decomp at 95 percent or more, whose first difference the census classifies as register allocation. Each row is one search. The search captures the unit from its unmodified source, splits the function's intermediate language (IL) into statements, replays the legal edits through the unmodified code generator, and scores each variant against retail. A variant is exact when the target's matcher proves it byte-identical.
+This run asks how much of each register-allocation near miss `concord il-search` can edit, and whether any edit gives retail's bytes. Before the parser decoded the constructs these functions use, statements covered 0.8 to 19.9 percent of each body (median 12.9 percent), and 13 of the 20 functions had no legal edit. The parser now covers 50.9 to 89.8 percent (median 70.7 percent), and every function has between 1 and 51 legal single edits (median 20). One function, `?StartResourceGrinderDrop@CStatusBarMgr@@QAEHHHH@Z`, has an exact variant: one statement moved, found with five replays. The other 19 have no exact variant at the default depth, beam and budget.
 
-Result: no function reached an exact variant in this run. Thirteen of the 20 searches generated no legal edit at all, six generated edits that did not raise the score, and one raised it without becoming exact. The table gives the reason: the parser covers too little of most bodies (see the section on edit counts). SwitchDown, which is not in this table, is found exact with two edits by the same command on the same checkout (see Method).
+The search ran with its defaults (depth 2, budget 400 replays, beam 8) on the gruntz-decomp checkout at `/code/gruntz-match-3`, at commit 8c3a113ca, with no tracked changes at the start or the end. Every body of all 289 units gives back its own bytes through the parser (102,524 bodies).
+
+## Coverage and legal edits before and after
+
+Before is the parser as it stood before the decoder grew, rerun on the same captures. Coverage is the share of body bytes that lie in statements. Legal edits are the distinct bodies one legal single edit away from the unedited body. Best is the highest score any variant reached, the unedited body included.
+
+| # | Unit | Function | Parse coverage before | Parse coverage after | Legal edits before | Legal edits after | Best before | Best after | Exact IL after |
+| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | behindcandy | `??0CBehindCandy@@QAE@PAUCGameObject@@@Z` | 13.2% | 58.6% | 0 | 5 | 99.829 | 99.829 | no |
+| 2 | behindcandyani | `??0CBehindCandyAni@@QAE@PAUCGameObject@@@Z` | 14.4% | 64.3% | 0 | 6 | 99.851 | 99.851 | no |
+| 3 | donothing | `??0CDoNothing@@QAE@PAUCGameObject@@@Z` | 10.1% | 57.7% | 0 | 4 | 99.829 | 99.829 | no |
+| 4 | eyecandy | `??0CEyeCandy@@QAE@PAUCGameObject@@@Z` | 17.7% | 62.7% | 2 | 8 | 98.722 | 98.722 | no |
+| 5 | eyecandyani | `??0CEyeCandyAni@@QAE@PAUCGameObject@@@Z` | 18.3% | 66.4% | 2 | 9 | 98.874 | 98.874 | no |
+| 6 | frontcandy | `??0CFrontCandy@@QAE@PAUCGameObject@@@Z` | 13.2% | 58.8% | 0 | 5 | 99.831 | 99.831 | no |
+| 7 | grunt | `?CreateHealthSprite@CGrunt@@QAEHXZ` | 3.8% | 83.6% | 0 | 20 | 99.655 | 99.655 | no |
+| 8 | grunt | `?CreateStaminaSprite@CGrunt@@QAEHXZ` | 3.8% | 83.6% | 0 | 20 | 99.649 | 99.649 | no |
+| 9 | grunt | `?CreateToyTimeSprite@CGrunt@@QAEHXZ` | 8.1% | 83.7% | 0 | 20 | 99.722 | 99.722 | no |
+| 10 | grunt | `?CreateWingzTimeSprite@CGrunt@@QAEHXZ` | 6.0% | 84.2% | 0 | 20 | 99.706 | 99.706 | no |
+| 11 | grunt | `?CreatePowerupSprite@CGrunt@@QAEHH@Z` | 4.1% | 83.1% | 0 | 20 | 99.630 | 99.630 | no |
+| 12 | statichazard | `??0CStaticHazard@@QAE@PAUCGameObject@@@Z` | 15.5% | 77.5% | 0 | 12 | 95.251 | 95.251 | no |
+| 13 | sbi_sidetab | `?UpdateSampleIcon@CSBI_SideTab@@QAEHXZ` | 17.7% | 75.3% | 0 | 3 | 96.162 | 96.162 | no |
+| 14 | gamelevel | `?LoadWwd@CGameLevel@@UAEHPAUWwdHeader@@@Z` | 19.8% | 71.0% | 14 | 49 | 97.493 | 97.498 | no |
+| 15 | fontconfig | `?DrawCenteredText@CGameText@@QAEHPBVCString@@PAUHDC__@@PAUtagRECT@@HHHHHHH@Z` | 0.8% | 50.9% | 0 | 48 | 97.245 | 97.250 | no |
+| 16 | sbi_rectonly | `?StartResourceGrinderDrop@CStatusBarMgr@@QAEHHHH@Z` | 19.9% | 89.8% | 3 | 31 | 97.909 | 100.000 | yes |
+| 17 | ddrawshadeblit | `?BuildRle@CDDrawShadeBlit@@QAEHPAEHHHHPAUtagPALETTEENTRY@@@Z` | 12.6% | 74.0% | 3 | 26 | 98.579 | 98.579 | no |
+| 18 | imagepolyclip | `?WarpTextureBlit@@YAHPAUClipVtx@@HPAVCDDSurface@@1HH@Z` | 16.6% | 56.4% | 10 | 69 | 99.160 | 99.160 | no |
+| 19 | multistartdlg | `?RefreshWorldControls@CMultiStartDlg@@QAEHXZ` | 3.6% | 63.8% | 0 | 1 | 99.724 | 99.724 | no |
+| 20 | triggermgrgrid | `?ApplySwitch@CTriggerMgr@@QAEHPAVCGrunt@@HH@Z` | 9.4% | 70.4% | 5 | 51 | 94.697 | 94.774 | no |
+
+## Rerun with the decoder
+
+| # | Unit | Function | Group | Statements | Body bytes | Statement bytes | Parse coverage | Baseline | Best | Exact IL | Edits in best | Legal edits | Replays | Seconds | Source clean |
+| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |
+| 1 | behindcandy | `??0CBehindCandy@@QAE@PAUCGameObject@@@Z` | named | 14 | 960 | 563 | 58.6% | 99.829 | 99.829 | no | 0 | 5 | 16 | 13.8 | yes |
+| 2 | behindcandyani | `??0CBehindCandyAni@@QAE@PAUCGameObject@@@Z` | named | 18 | 1164 | 748 | 64.3% | 99.851 | 99.851 | no | 0 | 6 | 22 | 14.6 | yes |
+| 3 | donothing | `??0CDoNothing@@QAE@PAUCGameObject@@@Z` | named | 13 | 938 | 541 | 57.7% | 99.829 | 99.829 | no | 0 | 4 | 11 | 12.9 | yes |
+| 4 | eyecandy | `??0CEyeCandy@@QAE@PAUCGameObject@@@Z` | named | 17 | 1149 | 720 | 62.7% | 98.722 | 98.722 | no | 0 | 8 | 41 | 16.6 | yes |
+| 5 | eyecandyani | `??0CEyeCandyAni@@QAE@PAUCGameObject@@@Z` | named | 21 | 1334 | 886 | 66.4% | 98.874 | 98.874 | no | 0 | 9 | 50 | 18.6 | yes |
+| 6 | frontcandy | `??0CFrontCandy@@QAE@PAUCGameObject@@@Z` | named | 14 | 964 | 567 | 58.8% | 99.831 | 99.831 | no | 0 | 5 | 16 | 13.9 | yes |
+| 7 | grunt | `?CreateHealthSprite@CGrunt@@QAEHXZ` | named | 13 | 865 | 723 | 83.6% | 99.655 | 99.655 | no | 0 | 20 | 142 | 44.1 | yes |
+| 8 | grunt | `?CreateStaminaSprite@CGrunt@@QAEHXZ` | named | 13 | 865 | 723 | 83.6% | 99.649 | 99.649 | no | 0 | 20 | 142 | 44.0 | yes |
+| 9 | grunt | `?CreateToyTimeSprite@CGrunt@@QAEHXZ` | named | 19 | 1105 | 925 | 83.7% | 99.722 | 99.722 | no | 0 | 20 | 142 | 45.4 | yes |
+| 10 | grunt | `?CreateWingzTimeSprite@CGrunt@@QAEHXZ` | named | 17 | 1018 | 857 | 84.2% | 99.706 | 99.706 | no | 0 | 20 | 142 | 45.6 | yes |
+| 11 | grunt | `?CreatePowerupSprite@CGrunt@@QAEHH@Z` | named | 12 | 811 | 674 | 83.1% | 99.630 | 99.630 | no | 0 | 20 | 142 | 44.2 | yes |
+| 12 | statichazard | `??0CStaticHazard@@QAE@PAUCGameObject@@@Z` | spread | 39 | 2147 | 1663 | 77.5% | 95.251 | 95.251 | no | 0 | 12 | 72 | 22.3 | yes |
+| 13 | sbi_sidetab | `?UpdateSampleIcon@CSBI_SideTab@@QAEHXZ` | spread | 25 | 1116 | 840 | 75.3% | 96.162 | 96.162 | no | 0 | 3 | 7 | 14.1 | yes |
+| 14 | gamelevel | `?LoadWwd@CGameLevel@@UAEHPAUWwdHeader@@@Z` | spread | 63 | 3017 | 2142 | 71.0% | 96.833 | 97.498 | no | 2 | 49 | 398 | 78.4 | yes |
+| 15 | fontconfig | `?DrawCenteredText@CGameText@@QAEHPBVCString@@PAUHDC__@@PAUtagRECT@@HHHHHHH@Z` | spread | 32 | 1943 | 989 | 50.9% | 97.245 | 97.250 | no | 1 | 48 | 382 | 67.0 | yes |
+| 16 | sbi_rectonly | `?StartResourceGrinderDrop@CStatusBarMgr@@QAEHHHH@Z` | spread | 23 | 1007 | 904 | 89.8% | 97.909 | 100.000 | yes | 1 | 31 | 5 | 13.7 | yes |
+| 17 | ddrawshadeblit | `?BuildRle@CDDrawShadeBlit@@QAEHPAEHHHHPAUtagPALETTEENTRY@@@Z` | spread | 53 | 2253 | 1667 | 74.0% | 98.579 | 98.579 | no | 0 | 26 | 199 | 47.0 | yes |
+| 18 | imagepolyclip | `?WarpTextureBlit@@YAHPAUClipVtx@@HPAVCDDSurface@@1HH@Z` | spread | 102 | 5800 | 3269 | 56.4% | 99.160 | 99.160 | no | 0 | 69 | 400 | 64.3 | yes |
+| 19 | multistartdlg | `?RefreshWorldControls@CMultiStartDlg@@QAEHXZ` | spread | 42 | 2169 | 1383 | 63.8% | 99.724 | 99.724 | no | 0 | 1 | 2 | 12.1 | yes |
+| 20 | triggermgrgrid | `?ApplySwitch@CTriggerMgr@@QAEHPAVCGrunt@@HH@Z` | spread | 131 | 5901 | 4154 | 70.4% | 94.697 | 94.774 | no | 2 | 51 | 400 | 69.4 | yes |
+
+Group is the selection rule from the earlier run: named (the sprite and constructor functions the register notes discuss) or spread (evenly spaced positions in the census list). Edits in best counts the edits of the best variant. Replays include the baseline, and seconds include the capture. Source clean is yes when the checkout's tracked files were unchanged across the row's search.
+
+## The exact variant
+
+The exact variant is one statement move in `?StartResourceGrinderDrop@CStatusBarMgr@@QAEHHHH@Z` (unit `sbi_rectonly`). It takes the statement at line 3179, `grinderImage = *((this + 1280))`, and places it after the statement at line 3183, `itemBottom = barY + 12`. The unedited capture scores 97.909. The variant scores 100.000.
+
+In source, the declaration `CSBI_ImageSet* grinderImage = m_grinderItemDisplay;` in `src/Gruntz/SBI_RectOnly.cpp` moves from before `i32 itemLeft` to after `i32 itemBottom = barY + 0xc;`, before `SET_RECT_COMPONENTS`. Its readers, the `if (grinderImage)` test and the `SetBounds` call inside it, both come after the new position.
+
+The variant was checked twice. Replayed on its own, outside the batched search, it is byte-exact, and the unedited capture replays to 97.909 and is not exact. A scratch compile of the source form, written to a candidate and not into the checkout, scores 100.0 and exact against 97.909 for the original. This is a function-level verdict. It has not passed the whole-build gate, and no source change has been committed to the checkout or upstream.
+
+## What the parser still leaves opaque
+
+Of the 36,526 body bytes in the 20 functions, 5,670 (15.5 percent) stay opaque. An opaque byte ends the statement it sits in, so no edit touches it. Four causes account for the opaque bytes that remain:
+
+- The vtable record `5c`: 30 occurrences in 12 units. The captures show three operand shapes (`5c 43 01 4b`, `5c 06 34 01 4b`, and `5c 43 03` followed by a load), and none fixes the operand's width, so the record stays undecoded.
+- Records beginning `4f 16` and `4f 19`: 67 occurrences, all in `WarpTextureBlit` (unit `imagepolyclip`). Their operands are not identified.
+- Constants whose first value byte has its high bit set and is not the `80` four-byte marker: 6 occurrences, one in each of six functions (for example `33 a0 41 f9 17` in `behindcandy`). The one-byte constants with the `a0` type prefix are decoded.
+- Symbol references: 48 of 1,660 handles name no symbol in the capture's `sy` and `gl` tables. A handle with no name is treated as memory, which removes edits around it but cannot produce a wrong one. Requiring `01 00` in the bytes of a four-byte table handle would recover 2 of the 50 unresolved references in these functions. That is too few to justify rerunning the searches, so the table reader is unchanged.
 
 ## Method
 
-Checkout: `/code/gruntz-match-3` at commit `8c3a113ca`, with no tracked changes at the start or end of the run. Each row records whether its unit's source was clean before and after its search (column "Source clean"); all 20 were. Untracked concord temporaries in `src/Image/` and `src/Gruntz/` appeared during the run from other concord processes and were not read as sources.
+Each unit is compiled through the checkout's own route (the dev shell, Wine, the unit's `cl.exe` flags, and `c2.exe` under `c2wrap`). Each body is parsed against its capture's symbol tables. A replay runs `c2.exe` alone on a variant and scores it with the function's matcher. The search runs four replays at once.
 
-Concord: `776615d`, the commit with which the batch ran. The batch is `/tmp` tooling and is not committed; its per-function JSON reports are the source of this table.
+Coverage counts statement bytes only. Markers (labels, branches, switch dispatches and cases, returns, declarations, headers) and block and line markers are not statements and are not counted.
 
-Selection: the census in `concord first-differences` was regenerated on the checkout (358 functions, 143 at 95 to 99.99 percent with cause register allocation). Eleven functions were chosen by name: the five `CGrunt::Create*Sprite` functions, including `?CreateHealthSprite@CGrunt@@QAEHXZ`, and the constructors of the macro family that `REGISTER-PATHS.md` discusses, as far as they are open at 95 percent or more here (six of them, by the census). The other nine are the candidates at evenly spaced positions in the rest of the list by score, so the sample is not only the nearly exact functions. Group "named" and "spread" in the table say which rule chose a row.
+The round-trip test compiles each of the 289 units without scoring (`capture_il(..., score=False)`) and checks that `emit_body(parse(body))` equals the captured body. It takes about 14 minutes for all units. It was run in three pieces of 100, 100 and 89 units with `CONCORD_IL_UNITS`, and reported 102,524 bodies.
 
-Columns: Statements is the number of statements the parser decoded. Body bytes is the size of the function's IL body. Statement bytes is how many of those bytes lie in decoded statements, and Parse coverage is their ratio. Baseline is the score of the unedited capture, replayed. Best is the highest score any variant reached, the baseline included. Replays counts c2.exe runs, the baseline included. Seconds is the wall time of the search.
-
-Census scores and current scores differ for one function. The census reports the banked best from `config/match_baseline.tsv`. For `?ApplySwitch@CTriggerMgr@@QAEHPAVCGrunt@@HH@Z` the banked best is 99.9548, but the current build of its source scores 94.6968, below the 95 percent criterion. The row is kept, because the selection was made on the census value, and the Baseline column shows the current score.
-
-## Results
-
-| # | Unit | Function | Group | Statements | Body bytes | Statement bytes | Parse coverage | Baseline | Best | Exact IL | Edits in best | Replays | Seconds | Source clean |
-| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |
-| 1 | behindcandy | `??0CBehindCandy@@QAE@PAUCGameObject@@@Z` | named | 4 | 960 | 127 | 13.2% | 99.829 | 99.829 | no | 0 | 1 | 11.3 | yes |
-| 2 | behindcandyani | `??0CBehindCandyAni@@QAE@PAUCGameObject@@@Z` | named | 5 | 1164 | 168 | 14.4% | 99.851 | 99.851 | no | 0 | 1 | 11.1 | yes |
-| 3 | donothing | `??0CDoNothing@@QAE@PAUCGameObject@@@Z` | named | 3 | 938 | 95 | 10.1% | 99.829 | 99.829 | no | 0 | 1 | 11.2 | yes |
-| 4 | eyecandy | `??0CEyeCandy@@QAE@PAUCGameObject@@@Z` | named | 5 | 1149 | 203 | 17.7% | 98.722 | 98.722 | no | 0 | 4 | 12.0 | yes |
-| 5 | eyecandyani | `??0CEyeCandyAni@@QAE@PAUCGameObject@@@Z` | named | 6 | 1334 | 244 | 18.3% | 98.874 | 98.874 | no | 0 | 4 | 11.6 | yes |
-| 6 | frontcandy | `??0CFrontCandy@@QAE@PAUCGameObject@@@Z` | named | 4 | 964 | 127 | 13.2% | 99.831 | 99.831 | no | 0 | 1 | 10.7 | yes |
-| 7 | grunt | `?CreateHealthSprite@CGrunt@@QAEHXZ` | named | 1 | 865 | 33 | 3.8% | 99.655 | 99.655 | no | 0 | 1 | 11.1 | yes |
-| 8 | grunt | `?CreateStaminaSprite@CGrunt@@QAEHXZ` | named | 1 | 865 | 33 | 3.8% | 99.649 | 99.649 | no | 0 | 1 | 11.2 | yes |
-| 9 | grunt | `?CreateToyTimeSprite@CGrunt@@QAEHXZ` | named | 3 | 1105 | 89 | 8.1% | 99.722 | 99.722 | no | 0 | 1 | 11.0 | yes |
-| 10 | grunt | `?CreateWingzTimeSprite@CGrunt@@QAEHXZ` | named | 2 | 1018 | 61 | 6.0% | 99.706 | 99.706 | no | 0 | 1 | 11.1 | yes |
-| 11 | grunt | `?CreatePowerupSprite@CGrunt@@QAEHH@Z` | named | 1 | 811 | 33 | 4.1% | 99.630 | 99.630 | no | 0 | 1 | 11.1 | yes |
-| 12 | statichazard | `??0CStaticHazard@@QAE@PAUCGameObject@@@Z` | spread | 9 | 2147 | 333 | 15.5% | 95.251 | 95.251 | no | 0 | 1 | 10.8 | yes |
-| 13 | sbi_sidetab | `?UpdateSampleIcon@CSBI_SideTab@@QAEHXZ` | spread | 6 | 1116 | 198 | 17.7% | 96.162 | 96.162 | no | 0 | 1 | 10.9 | yes |
-| 14 | gamelevel | `?LoadWwd@CGameLevel@@UAEHPAUWwdHeader@@@Z` | spread | 19 | 3017 | 598 | 19.8% | 96.833 | 97.493 | no | 2 | 83 | 24.0 | yes |
-| 15 | fontconfig | `?DrawCenteredText@CGameText@@QAEHPBVCString@@PAUHDC__@@PAUtagRECT@@HHHHHHH@Z` | spread | 1 | 1943 | 16 | 0.8% | 97.245 | 97.245 | no | 0 | 1 | 10.6 | yes |
-| 16 | sbi_rectonly | `?StartResourceGrinderDrop@CStatusBarMgr@@QAEHHHH@Z` | spread | 6 | 1007 | 200 | 19.9% | 97.909 | 97.909 | no | 0 | 7 | 13.3 | yes |
-| 17 | ddrawshadeblit | `?BuildRle@CDDrawShadeBlit@@QAEHPAEHHHHPAUtagPALETTEENTRY@@@Z` | spread | 14 | 2253 | 285 | 12.6% | 98.579 | 98.579 | no | 0 | 9 | 12.6 | yes |
-| 18 | imagepolyclip | `?WarpTextureBlit@@YAHPAUClipVtx@@HPAVCDDSurface@@1HH@Z` | spread | 33 | 5800 | 960 | 16.6% | 99.160 | 99.160 | no | 0 | 58 | 18.0 | yes |
-| 19 | multistartdlg | `?RefreshWorldControls@CMultiStartDlg@@QAEHXZ` | spread | 2 | 2169 | 77 | 3.6% | 99.724 | 99.724 | no | 0 | 1 | 10.8 | yes |
-| 20 | triggermgrgrid | `?ApplySwitch@CTriggerMgr@@QAEHPAVCGrunt@@HH@Z` | spread | 19 | 5901 | 555 | 9.4% | 94.697 | 94.697 | no | 0 | 16 | 13.7 | yes |
-
-Exact IL found: 0 of 20.
-
-## Edits that improved a score
-
-Only one function had a variant better than its baseline. `?LoadWwd@CGameLevel@@UAEHPAUWwdHeader@@@Z` (row 14) went from 96.833 to 97.493 with two moves, one for each of the two statements that read the header fields. Neither edit is exact, and its search used 83 replays.
-
-- Row 14 (`gamelevel`, `?LoadWwd@CGameLevel@@UAEHPAUWwdHeader@@@Z`), move at lines 208, 210: move `startX = *((source + 720))` (line 208) after `mp = *((this + 92))` (line 210)
-- Row 14 (`gamelevel`, `?LoadWwd@CGameLevel@@UAEHPAUWwdHeader@@@Z`), move at lines 209, 210: move `startY = *((source + 724))` (line 209) after `mp = *((this + 92))` (line 210)
-
-## Why most functions had few or no legal edits
-
-The search can only move, swap or replace what the parser decodes as a statement. Parse coverage, the share of the body in decoded statements, is between 0.8 and 19.9 percent for all 20 functions. SwitchDown, which the parser covers at 68.9 percent, is the one function where the command found its fix. Four things account for the rest:
-
-1. Prologue and epilogue. The function entry (`4f 1f 80 00 08 a0 00 ...`), the parameter list and the exit sequence (`54 ...`) are the largest undecoded runs in most bodies. They are opaque by design and no edit reaches them.
-
-2. Undecoded operators. The operators `16`, `03`, `29` and `2c` are followed by `a7 01 00`-style operands in the constructors and in `CreateHealthSprite`. They are probably declaration or initialisation forms, but the parser has not decoded them. Each one ends the statement it is in.
-
-3. Call argument lists. In the bodies examined, `55` appears between the arguments of a call, and the parser does not decode it. A call with more than one argument therefore breaks its statement, which is why `CreateHealthSprite` decodes to a single 33-byte statement. The argument swap that the register notes describe for that function cannot be reached until these lists are decoded.
-
-4. Block markers. `53` and `54` open and close scopes. The parser does not decode them as operators, so a block marker ends the statement before it. Only runs made of block markers and line markers are kept as scope bytes.
-
-The undecoded bytes that begin a bad token, counted across the 20 bodies, are `00` and `01` in prologues, `53` and `54` markers, `43` and `41` inside argument lists and declarations, and `55`, `29` and `2c`. Decoding `55` and the operators above is the next step. This document then needs regenerating.
-
-A search with no legal edit is a bound on what the decoded statements allow. It is not evidence that no front-end output matches retail.
+The decoding catalog has 103 snippet functions in `tests/fixtures/il/catalog/`, compiled with the flags of the unit `grunt`, and their decodings are in `tests/fixtures/il/catalog.json`. `tests/test_il_catalog.py` checks each decoding, checks that only the vtable record keeps opaque bytes, and, with a checkout, checks that the compiler still gives the recorded bytes.
 
 ## Limits
 
-Introducing a local for a repeated expression is not generated. c2.exe rejected each `sy` symbol record added by hand in the attempts made so far, with internal compiler errors. The edit kinds generated are statement moves, operand and argument swaps, and replacement of a local by its single assignment's value.
+Legal means allowed by the edit rules in `src/concord/il.py`. The exact verdict is the matcher's byte comparison and does not depend on those rules. A rule that is too loose spends replays, and a rule that is too tight hides edits.
+
+An exact IL variant is a statement order, not a source change. The source form above was checked by compiling it, not by `concord scores --base`.

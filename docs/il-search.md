@@ -1,5 +1,7 @@
 # Searching MSVC 5.0's intermediate language for register-allocation fixes
 
+Status: built. This proposal is kept as the design it was reviewed as; the README's IL search section and `docs/il-search-results.md` describe what is now true.
+
 This proposes a deterministic search for the near misses that differ from retail only in register choices: search the intermediate language (IL) that MSVC 5.0's front end hands its code generator, find the IL that compiles to retail's code, then find the C++ that produces that IL. It is written for review before it is built.
 
 ## The problem
@@ -23,7 +25,7 @@ Every search so far mutates C++ and hopes the front end emits IL that moves the 
 
 ## Proposal
 
-1. An IL parser. Today about 30 opcodes are decoded from small corpora (loads, constants, arithmetic, comparisons, branches, member offsets, assignments, calls, line markers, returns), enough for hand edits. The parser turns a function's `ex` bytes into an expression tree per statement, with operand arity per opcode, and writes the tree back; `gl`'s offsets are shifted for a body whose length changes, which is already done and checked (deleting a store at the IL level reproduces the matching source variant exactly).
+1. An IL parser. Built: the decoder covers the constructs in the decoding catalog (see the README's IL search section), and the measured results are in il-search-results.md. The parser turns a function's `ex` bytes into an expression tree per statement, with operand arity per opcode, and writes the tree back; `gl`'s offsets are shifted for a body whose length changes, which is already done and checked (deleting a store at the IL level reproduces the matching source variant exactly).
 2. A structured IL mutator over the function's trees: swap independent sibling subtrees (call arguments, commutative operands, independent statements), introduce or remove a temporary, and swap adjacent statements. Each variant is replayed (about a second) and compared with retail; a variant that matches retail is the target IL.
 3. An inverse lookup. Given the target IL's difference from ours (for example two call arguments' subtrees in the other order), compile small C++ variants and compare their IL, as the corpora already do, to find the construct the front end turns into it.
 
