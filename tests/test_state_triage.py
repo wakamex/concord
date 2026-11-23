@@ -204,6 +204,14 @@ class Triage(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)  # the baseline, then one batch of six sources (3 cuts x 2 offsets)
         self.assertEqual(len(self.calls[1][1]), 6)
 
+    def test_source_states_are_compiled_in_groups_with_the_same_result(self):
+        whole = self.run_triage(units=["a"], offsets=[1, 2])
+        self.calls.clear()
+        with patch.object(state_triage, "SOURCES_PER_REQUEST", 2):
+            grouped = self.run_triage(units=["a"], offsets=[1, 2])
+        self.assertEqual([len(names) for _, names, _, _ in self.calls], [1, 2, 2, 2])  # the baseline, then three groups of the six sources
+        self.assertEqual(grouped["units"], whole["units"])
+
     def test_every_compile_stays_within_four_jobs_and_no_pad_reaches_the_checkout(self):
         with patch.dict(os.environ, {"CONCORD_JOBS": "8"}):
             self.run_triage(units=["a"], headers=True, offsets=[1, 5])

@@ -38,6 +38,7 @@ from concord.includes import Tree, closure
 EXACT = 100.0
 RISE = 0.5  # the smallest gain over the baseline that makes a function "improves"
 MAX_JOBS = 4  # compiles in parallel, however high CONCORD_JOBS is
+SOURCES_PER_REQUEST = 40  # a request's compiles are saved together, so an interrupted run loses at most one group
 # A typedef, not an enumerator: cl 5.0 counts the two differently, and only the typedef (like an extern variable) moves the
 # palette builders the way the declaration count does. An enumerator pad leaves them as they are.
 PAD = "typedef int concord_state_pad_{k}_{i};\n"
@@ -247,12 +248,13 @@ def triage_unit(target: Gruntz, unit: str, headers: bool, offsets: list[int], st
                 for k in offsets:
                     wanted[State(Cut(path, line).label(), k)] = None
 
-    todo = {state: body for state, body in wanted.items() if body is not None and store.get(unit, state.key()) is None}
-    if todo:
-        names = {state: f"v{index}" for index, state in enumerate(todo)}
-        evaluations = target.evaluate(unit, {names[state]: body for state, body in todo.items()}, jobs=jobs)
-        for state in todo:
-            store.put(unit, state.key(), scores_of(evaluations[names[state]], symbols))
+    todo = [(state, body) for state, body in wanted.items() if body is not None and store.get(unit, state.key()) is None]
+    for start in range(0, len(todo), SOURCES_PER_REQUEST):
+        group = todo[start : start + SOURCES_PER_REQUEST]
+        names = [f"v{index}" for index in range(len(group))]
+        evaluations = target.evaluate(unit, {name: body for name, (_, body) in zip(names, group)}, jobs=jobs)
+        for name, (state, _) in zip(names, group):
+            store.put(unit, state.key(), scores_of(evaluations[name], symbols))
             progress(f"{unit}: {state.key()}")
         discard(evaluations.values())
     for state, body in wanted.items():
