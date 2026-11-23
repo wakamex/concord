@@ -29,6 +29,7 @@ from concord import (
     flag_audit,
     frames,
     history,
+    il_search,
     initialization,
     inline_budget,
     inlines,
@@ -546,6 +547,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_regtrace.add_argument("--save", type=Path, help="write the rows as JSON")
     p_regtrace.add_argument("--trace-only", action="store_true", help="list the grants without tying them to instructions (one c2 run)")
 
+    p_ilsearch = sub.add_parser("il-search", help="search legal edits of a function's captured IL for the variant that compiles to retail's code")
+    p_ilsearch.add_argument("symbol", help="the function's symbol")
+    p_ilsearch.add_argument("--gruntz", type=Path, required=True, help="gruntz-decomp checkout after `gruntz build`")
+    p_ilsearch.add_argument("--unit", required=True, help="unit name or source path")
+    p_ilsearch.add_argument("--depth", type=int, default=2, help="most edits combined in one variant (default 2)")
+    p_ilsearch.add_argument("--budget", type=int, default=400, help="replays of c2.exe, including the baseline (default 400)")
+    p_ilsearch.add_argument("--beam", type=int, default=8, help="best variants whose edits are extended at each depth (default 8)")
+    p_ilsearch.add_argument("--save", type=Path, help="write the report as JSON to this file")
+
     p_il = sub.add_parser("il", help="capture or replay the intermediate language MSVC 5.0's cl hands its code generator")
     il_sub = p_il.add_subparsers(dest="il_command", required=True)
     p_capture = il_sub.add_parser("capture", help="compile a unit and keep the code generator's input files")
@@ -763,6 +773,12 @@ def _dispatch(argv: list[str] | None = None) -> int:
                 with args.results.open("a") as stream:
                     stream.write(json.dumps(result) + "\n")
         return 0
+
+    if args.command == "il-search":
+        report = il_search.run(args.gruntz, args.unit, args.symbol, args.depth, args.budget, args.beam, args.save,
+                               log=lambda line: print(line, file=sys.stderr, flush=True))  # fmt: skip
+        print(json.dumps(report, indent=2))
+        return 0 if report["found_exact"] else 1
 
     if args.command == "il":
         target = Gruntz(args.gruntz)
