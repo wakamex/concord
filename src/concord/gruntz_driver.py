@@ -68,7 +68,9 @@ One with `"regforce": DIRECTORY` and `"force": {N: REGISTER}` runs c2.exe on a c
 overwrites the register of the Nth register grant (counting from 1) with c2's number for REGISTER
 before c2 records it, and replies with the object and its function rows: what c2 would have emitted
 had its allocator chosen so. c2.exe is a deterministic
-function of those files: a replay of an unedited capture gives the capture's object.
+function of those files: a replay of an unedited capture gives the capture's object. One with
+`"replays": {NAME: {"out": DIRECTORY, "replay": DIRECTORY}}` runs that replay for each NAME in the request's pool of
+"jobs" workers and replies `{"ok": {NAME: {"object": PATH, "functions": [...]} or {"error": TEXT}}}`.
 
 A precompiled header would halve the compile and is not used: cl 5.0 generates
 different code for some functions after one.
@@ -690,6 +692,16 @@ def serve() -> None:
                 if pool:
                     pool.shutdown()
                 pool, workers = ProcessPoolExecutor(jobs, multiprocessing.get_context("fork")), jobs
+            if "replays" in request:  # {NAME: {"out": DIRECTORY, "replay": DIRECTORY}}, each run as concord.il_search asks
+                futures = {n: pool.submit(replay, unit, Path(r["out"]), Path(r["replay"])) for n, r in request["replays"].items()}
+                done = {}
+                for n, future in futures.items():
+                    try:
+                        done[n] = future.result()
+                    except Exception:  # noqa: BLE001 (the variant reports its own failure)
+                        done[n] = {"error": traceback.format_exc()}
+                print(json.dumps({"ok": done, "using": []}), flush=True)
+                continue
             include = Path(request["include"]) if request.get("include") else None
             futures = {n: pool.submit(evaluate, unit, out, n, Path(p), include) for n, p in request["candidates"].items()}
             using = [name for name, used in (("objdiff_scores", unit.reader), ("wibo", unit.wibo)) if used]

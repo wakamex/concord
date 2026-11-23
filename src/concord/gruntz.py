@@ -390,6 +390,32 @@ class Gruntz:
         reply = self._driver({"unit": slug, "out": str(out), "replay": str(out / "il"), "wibo": self._wibo()})
         return self._evaluation("replay", slug, out, reply)
 
+    def replay_many(self, unit: str, il_dirs: dict[str, Path], jobs: int) -> dict[str, Evaluation]:
+        """replay_il for several directories in one driver request: up to `jobs` c2.exe runs at once, each in its
+        own copy of its directory, so one run's files never meet another's. Returns each name's evaluation; the
+        copies and objects are removed once the scores are read, so each evaluation's object is None."""
+        slug = self.slug(unit)
+        base = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+        base.mkdir(parents=True)
+        replays, outs = {}, []
+        try:
+            for name, il in il_dirs.items():
+                out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+                out.mkdir(parents=True)
+                outs.append(out)
+                shutil.copytree(il, out / "il")
+                replays[name] = {"out": str(out), "replay": str(out / "il")}
+            reply = self._driver({"unit": slug, "out": str(base), "replays": replays, "jobs": jobs, "wibo": self._wibo()})
+        finally:
+            for out in [*outs, base]:
+                shutil.rmtree(out, ignore_errors=True)
+        evaluations = {}
+        for name, row in reply.items():
+            evaluation = self._evaluation("replay", slug, base, row)
+            evaluation.object = None
+            evaluations[name] = evaluation
+        return evaluations
+
     def regtrace(self, unit: str, source: bytes) -> tuple[str, Evaluation, Path | None]:
         """Compile `source` as the unit, then run c2.exe on its captured input under winedbg: the debugger's
         log of function starts and register grants (see concord.regtrace), the captured compile's evaluation,
