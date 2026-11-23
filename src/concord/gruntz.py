@@ -176,6 +176,7 @@ class Gruntz:
             raise FileNotFoundError(f"{self.root / REPORT} is missing; run `gruntz build` in {root}")
         manifest = tomllib.loads((self.root / "config/units.toml").read_text())
         self.sources = {unit["unit"]: unit["source"] for unit in manifest["unit"]}
+        self.configured = {unit["unit"]: list(manifest["flags"][unit["flags"]]) for unit in manifest["unit"]}
         with (self.root / "build/gen/bindings.tsv").open(newline="") as stream:
             rows = [row for row in csv.DictReader((line for line in stream if not line.startswith("#")), delimiter="\t")
                     if row["space"] == "text" and row["name"]]  # fmt: skip
@@ -202,6 +203,23 @@ class Gruntz:
 
     def source_path(self, unit: str) -> Path:
         return self.root / self.source(unit)
+
+    def configured_flags(self, unit: str) -> list[str]:
+        """The flags the unit is compiled with, from its profile in config/units.toml."""
+        return list(self.configured[self.slug(unit)])
+
+    def open_units(self) -> list[str]:
+        """Every unit with a function below 100 in the checkout's report, sorted. Exception funclets are not counted."""
+        found = set()
+        for entry in json.loads((self.root / REPORT).read_text()).get("units", []):
+            rows = [row for row in entry.get("functions", []) if not row["name"].startswith(FUNCLETS)]
+            if any(float(row.get("fuzzy_match_percent") or 0.0) < 100.0 for row in rows):
+                found.add(entry["name"].split("/")[-1])
+        return sorted(found)
+
+    def report_exact(self, unit: str) -> set[str]:
+        """The functions the project counts as exact in the unit, as verdicts gives them."""
+        return {verdict.symbol for verdict in self.verdicts(unit) if verdict.row["exact"]}
 
     def verdicts(self, unit: str | None = None) -> Iterator[FunctionVerdict]:
         """Every function the last `gruntz build` scored. A function is exact when
@@ -337,11 +355,20 @@ class Gruntz:
         self.using = tuple(reply.get("using", self.using))
         return reply["ok"]
 
-    def evaluate(self, unit: str, sources: dict[str, bytes], headers: dict[str, bytes] | None = None) -> dict[str, Evaluation]:
+    def evaluate(
+        self,
+        unit: str,
+        sources: dict[str, bytes],
+        headers: dict[str, bytes] | None = None,
+        flags: dict[str, list[str]] | None = None,
+        jobs: int | None = None,
+    ) -> dict[str, Evaluation]:
         """Compile each candidate source of the unit with the checkout's compiler,
         in one batch, and compare it with the retail object. `headers` replaces
         headers under include/ (path under the checkout -> new bytes) for every
-        candidate, without touching the checkout. Work files go under build/concord/."""
+        candidate, without touching the checkout. `flags` gives a candidate its own
+        flags in place of the unit's, and `jobs` caps the workers (CONCORD_JOBS by
+        default). Work files go under build/concord/."""
         slug = self.slug(unit)
         out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
         out.mkdir(parents=True)
@@ -350,7 +377,9 @@ class Gruntz:
             paths[name] = out / f"{name}{Path(self.sources[slug]).suffix}"
             paths[name].write_bytes(text)
         request = {"unit": slug, "out": str(out), "candidates": {n: str(p) for n, p in paths.items()},
-                   "jobs": int(os.environ.get("CONCORD_JOBS", "8")), "wibo": self._wibo()}  # fmt: skip
+                   "jobs": jobs or int(os.environ.get("CONCORD_JOBS", "8")), "wibo": self._wibo()}  # fmt: skip
+        if flags is not None:
+            request["flags"] = flags
         if headers:
             for path, text in headers.items():
                 relative = Path(path).relative_to("include")  # raises for a header outside include/
@@ -380,6 +409,29 @@ class Gruntz:
         path.write_bytes(source)
         row = self._driver({"unit": slug, "out": str(out), "capture": str(path), "wibo": self._wibo()})
         return (Path(row["il"]) if "il" in row else None), self._evaluation("capture", slug, out, row)
+
+    def edited_il(self, unit: str, il: Path, replacements: list[tuple[str, str]]) -> Path:
+        """A copy of a capture_il directory, its flags.txt with each old c2.exe option replaced by its new one,
+        and the copy's intermediate-language directory returned. Each old option must occur exactly once. The
+        copy's parent is the work directory; discard it when the replay is done."""
+        slug = self.slug(unit)
+        out = self.root / "build" / "concord" / slug / uuid.uuid4().hex
+        out.mkdir(parents=True)
+        shutil.copytree(il, out / "il")
+        flags = out / "il" / "flags.txt"
+        tokens = flags.read_text().split(" ")
+        for old, new in replacements:
+            if tokens.count(old) != 1:
+                raise ValueError(f"c2's flags hold {old} {tokens.count(old)} times, not once: {flags.read_text()!r}")
+            tokens[tokens.index(old)] = new
+        flags.write_text(" ".join(tokens))
+        return out / "il"
+
+    def discard(self, work: Path) -> None:
+        """Remove a work directory this client made under build/concord."""
+        if not work.resolve().is_relative_to((self.root / "build" / "concord").resolve()):
+            raise ValueError(f"{work} is not under the checkout's build/concord")
+        shutil.rmtree(work, ignore_errors=True)
 
     def replay_il(self, unit: str, il: Path) -> Evaluation:
         """Run c2.exe alone on a directory from capture_il, edited or not, and compare its object with retail.

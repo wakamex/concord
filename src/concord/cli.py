@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import random
 import shlex
 import shutil
@@ -53,7 +55,7 @@ from concord import (
 from concord.complete import TYPES, absent, complete, settle, state
 from concord.diff import diff_code, read_function
 from concord.finish import finish
-from concord.gruntz import Gruntz
+from concord.gruntz import REPORT, Gruntz
 from concord.harvest import BUILD, Harvest
 from concord.irrlicht import helper_names, name_helpers
 from concord.lines import editable, inline_chains
@@ -204,10 +206,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_scores.add_argument("--against", type=Path, help="compare with a snapshot saved earlier")
 
     p_flags = sub.add_parser("flag-audit", help="measure flag variations on unchanged units")
-    p_flags.add_argument("--harvest", type=Path, required=True, help="Harvest checkout after hv match")
-    p_flags.add_argument("--unit", action="append", required=True, help="source path under src/ (repeatable)")
-    p_flags.add_argument("--variant", action="append", required=True, metavar="NAME=FLAGS", help="named extra flags (repeatable)")
-    p_flags.add_argument("--save", type=Path, required=True, help="write scores and exact-function changes as JSON")
+    p_targets = p_flags.add_mutually_exclusive_group(required=True)
+    p_targets.add_argument("--harvest", type=Path, help="Harvest checkout after hv match")
+    p_targets.add_argument("--gruntz", type=Path, help="gruntz-decomp checkout after gruntz build")
+    p_flags.add_argument("--unit", action="append", help="source path under src/, or with --gruntz a unit name (repeatable)")
+    p_flags.add_argument("--all-open", action="store_true", help="with --gruntz, every unit with a function below 100 in the report")
+    p_flags.add_argument("--variant", action="append", metavar="NAME=FLAGS",
+                         help="named flag change (repeatable); with --gruntz the default variants apply when none is given")
+    p_flags.add_argument("--save", type=Path, required=True,
+                         help="write scores and exact-function changes as JSON; with --gruntz a later run resumes from it")
+    p_flags.add_argument("--budget", type=float, metavar="SECONDS",
+                         help="with --gruntz, start no unit after this many seconds, leaving the rest for a later run")
 
     p_audit = sub.add_parser("symbols-check", help="audit weak symbol names using emitted copies and target return-value evidence")
     p_audit.add_argument('--harvest', type=Path, required=True)
@@ -581,6 +590,10 @@ def _dispatch(argv: list[str] | None = None) -> int:
     if args.command == "seed":
         return _seed(args)
     if args.command == "flag-audit":
+        if args.gruntz:
+            return _gruntz_flag_audit(parser, args)
+        if not args.unit or not args.variant or args.all_open or args.budget is not None:
+            parser.error("--harvest needs --unit and --variant, and takes neither --all-open nor --budget")
         variants = {}
         for specification in args.variant:
             name, separator, flags = specification.partition("=")
@@ -1333,6 +1346,48 @@ def _print_result(result: DiffResult, compiler: str | None) -> None:
         print(f"\nknown {compiler} idioms for these causes:")
     for i in idioms:
         print(f"  {i.id} ({i.cause.value}, {i.status}): {i.fix}")
+
+
+def _gruntz_flag_audit(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    """flag-audit on a gruntz-decomp checkout, for --unit or every open unit, saving after each unit. A save file from
+    the same report resumes the run: its finished units are kept when they had the same variants."""
+    if bool(args.unit) == args.all_open:
+        parser.error("--gruntz needs --unit or --all-open, not both")
+    try:
+        variants = [flag_audit.parse_variant(specification) for specification in args.variant or []]
+    except ValueError as error:
+        parser.error(str(error))
+    if len({variant.name for variant in variants}) != len(variants):
+        parser.error("each --variant needs a unique name")
+    target = Gruntz(args.gruntz)
+    units = [target.slug(unit) for unit in args.unit] if args.unit else target.open_units()
+    report_sha = hashlib.sha256((target.root / REPORT).read_bytes()).hexdigest()
+    finished = {}
+    if args.save.exists():
+        previous = json.loads(args.save.read_text())
+        if previous.get("report_sha256") == report_sha:
+            finished = {entry["unit"]: entry for entry in previous["units"]}
+    kept = dict(finished)
+
+    def save() -> None:
+        ordered = [kept[unit] for unit in units if unit in kept]
+        args.save.write_text(json.dumps({"gruntz": str(target.root), "report_sha256": report_sha, "units": ordered}, indent=2) + "\n")
+
+    def record(entry: dict) -> None:
+        kept[entry["unit"]] = entry
+        save()
+        print(flag_audit.summary(entry), flush=True)
+
+    def variants_for(configured: list[str]) -> list[flag_audit.Variant]:
+        return variants or flag_audit.default_variants(configured)
+
+    jobs = min(flag_audit.GRUNTZ_JOBS, int(os.environ.get("CONCORD_JOBS", flag_audit.GRUNTZ_JOBS)))
+    result = flag_audit.gruntz_audit(target, units, variants_for, jobs=jobs, budget=args.budget, finished=finished, record=record)
+    save()
+    print(f"{len(result['units'])} of {len(units)} units in {args.save}; {result['elapsed_seconds']} seconds this run")
+    if result["remaining"]:
+        print(f"{len(result['remaining'])} units not started (budget); rerun with the same --save to resume")
+    return 0
 
 
 def _diff(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:

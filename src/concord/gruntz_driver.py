@@ -10,7 +10,11 @@ first line `{"ready": true}`:
     {"unit": UNIT, "out": DIRECTORY, "candidates": {NAME: SOURCE_PATH}, "jobs": N, "wibo": PATH}
 
 Each candidate is compiled as a sibling of the unit's source, so its includes
-resolve as the unit's do, and the sibling is removed afterwards. The reply is
+resolve as the unit's do, and the sibling is removed afterwards. A request with
+`"flags": {NAME: [FLAG, ...]}` compiles each named candidate with those flags in place
+of the unit's configured ones (flag audits), scores it with objdiff_scores, and skips the
+reader and wibo proofs, so a candidate whose flags do not compile is an error for that
+candidate alone. The reply is
 `{"ok": {NAME: RESULT}, "using": [...]}`, where `using` names the shortcuts
 below that held for the unit and a result is `{"object": PATH, "functions":
 [...]}` or `{"error": TEXT}`. A request with `"lines": SOURCE_PATH` in place of
@@ -279,11 +283,13 @@ def exact(rows: list[dict]) -> frozenset[str]:
     return frozenset(row["symbol"] for row in rows if row["exact"])
 
 
-def build(unit: Unit, source: Path, out: Path, name: str, wibo: str | None, include: Path | None = None) -> tuple[Path | None, list[dict] | str]:
+def build(
+    unit: Unit, source: Path, out: Path, name: str, wibo: str | None, include: Path | None = None, flags: list[str] | None = None
+) -> tuple[Path | None, list[dict] | str]:
     """Compile a source and score its object: the canonical object and one row per
-    function it emits, or None and what went wrong."""
+    function it emits, or None and what went wrong. `flags` replaces the unit's flags."""
     raw = out / f"{name}.raw.obj"
-    error = compile(source, raw, unit.flags, wibo, include)
+    error = compile(source, raw, unit.flags if flags is None else flags, wibo, include)
     if error:
         return None, error
     return scored(unit, raw, out, name)
@@ -308,14 +314,14 @@ def scored(unit: Unit, raw: Path, out: Path, name: str) -> tuple[Path | None, li
     return candidate, rows
 
 
-def evaluate(unit: Unit, out: Path, name: str, path: Path, include: Path | None = None) -> dict:
+def evaluate(unit: Unit, out: Path, name: str, path: Path, include: Path | None = None, flags: list[str] | None = None) -> dict:
     _windows.update(unit.windows)
     sibling = unit.source.with_name(f".{unit.source.stem}.concord{os.getpid()}-{name}{unit.source.suffix}")
     sibling.write_bytes(path.read_bytes())
     try:
-        candidate, rows = build(unit, sibling, out, name, unit.wibo, include)
+        candidate, rows = build(unit, sibling, out, name, unit.wibo, include, flags)
         if unit.wibo and isinstance(rows, list) and exact(rows) != unit.exact:
-            candidate, rows = build(unit, sibling, out, name, None, include)
+            candidate, rows = build(unit, sibling, out, name, None, include, flags)
     finally:
         sibling.unlink(missing_ok=True)
     if isinstance(rows, str):
@@ -661,7 +667,9 @@ def serve() -> None:
         try:
             request = json.loads(line)
             out = Path(request["out"])
-            unit = Unit(root, request["unit"], out, request.get("wibo"), reader)
+            # a flag audit's candidates carry their own flags and skip the proofs that check the reader and wibo
+            audit = "flags" in request
+            unit = Unit(root, request["unit"], out, None if audit else request.get("wibo"), reader and not audit)
             if "lines" in request:
                 print(json.dumps({"ok": line_object(unit, out, Path(request["lines"]))}), flush=True)
                 continue
@@ -703,7 +711,8 @@ def serve() -> None:
                 print(json.dumps({"ok": done, "using": []}), flush=True)
                 continue
             include = Path(request["include"]) if request.get("include") else None
-            futures = {n: pool.submit(evaluate, unit, out, n, Path(p), include) for n, p in request["candidates"].items()}
+            flags = request.get("flags", {})
+            futures = {n: pool.submit(evaluate, unit, out, n, Path(p), include, flags.get(n)) for n, p in request["candidates"].items()}
             using = [name for name, used in (("objdiff_scores", unit.reader), ("wibo", unit.wibo)) if used]
             reply = {"ok": {n: future.result() for n, future in futures.items()}, "using": using}
         except Exception:  # noqa: BLE001 (the client reports it and decides)
