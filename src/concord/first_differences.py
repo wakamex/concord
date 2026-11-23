@@ -56,6 +56,7 @@ def describe(target, verdict, data: bytes, lines: list[bytes]) -> dict:
         "address": verdict.row.get("address"),
         "size": verdict.row.get("size", 0),
         "best": verdict.row.get("best"),
+        "dip": verdict.row.get("best") == 100.0,  # exact by the project's count, below 100 in this build
         "cause": first.cause.value if first else None,
         # every difference's cause, not only the first's: a function closes only when all of them do
         "causes": dict(Counter(finding.cause.value for finding in diff.findings)),
@@ -81,6 +82,11 @@ def rank(functions: list[dict], key: str) -> list[dict]:
     return sorted(rows, key=lambda row: (-row["functions"], -row["bytes"], row["callee"]))
 
 
+def below(verdicts):
+    """The functions under 100% in this build, whatever their banked best."""
+    return [verdict for verdict in verdicts if verdict.row["fuzzy"] < 100.0]
+
+
 def every_cause(functions: list[dict]) -> dict:
     """For each cause, the open functions with at least one difference of it, their bytes, and how many of
     them have no other cause, so closing that cause alone would close them."""
@@ -98,11 +104,12 @@ def every_cause(functions: list[dict]) -> dict:
 
 
 def run(target, progress=None) -> dict:
-    """Describe every open function of the checkout's last build, one line-record compile per unit."""
+    """Describe every function below 100% in the checkout's last build, one line-record compile per unit. That
+    includes a function the project counts as exact because its present source once scored 100 (a dip, when
+    the rest of its unit has since moved its code), since the binary matches only when every function does."""
     open_ = defaultdict(list)
-    for verdict in target.verdicts():
-        if not verdict.row["exact"]:
-            open_[verdict.unit].append(verdict)
+    for verdict in below(target.verdicts()):
+        open_[verdict.unit].append(verdict)
     functions, failed = [], []
     for unit, verdicts in sorted(open_.items()):
         source = target.source_path(unit).read_bytes()
@@ -123,6 +130,7 @@ def run(target, progress=None) -> dict:
         causes[function["cause"]][0] += 1
         causes[function["cause"]][1] += function["size"]
     return {
+        "dips": sum(function["dip"] for function in functions),
         "every_cause": every_cause(functions),
         "functions": functions,
         "failed": failed,

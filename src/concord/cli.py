@@ -685,7 +685,8 @@ def _dispatch(argv: list[str] | None = None) -> int:
         report = first_differences.run(Gruntz(args.gruntz), lambda unit, n: print(f"{unit}: {n} functions", flush=True))
         if args.save:
             args.save.write_text(json.dumps(report, indent=2) + "\n")
-        print(f"{len(report['functions'])} open functions; {len(report['failed'])} not described")
+        print(f"{len(report['functions'])} functions below 100%, {report['dips']} of them dips the project counts as exact; "
+              f"{len(report['failed'])} not described")
         for cause, row in report["causes"].items():
             print(f"  {cause}: {row['functions']} functions, {row['bytes']} bytes")
         print("\nevery difference, by the bytes of the functions that have it:")

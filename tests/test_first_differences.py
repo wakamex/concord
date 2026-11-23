@@ -1,6 +1,6 @@
 import unittest
 
-from concord.first_differences import at, callees, every_cause, rank
+from concord.first_differences import at, below, callees, every_cause, rank
 
 
 class Callees(unittest.TestCase):
@@ -46,3 +46,14 @@ class EveryCauseTests(unittest.TestCase):
         self.assertEqual(found["register-allocation"], {"functions": 2, "bytes": 140, "differences": 4, "only_cause": 1, "only_cause_bytes": 100})
         self.assertEqual(found["stack-layout"]["only_cause"], 0)
         self.assertEqual(list(found), ["register-allocation", "stack-layout"])
+
+
+class BelowTests(unittest.TestCase):
+    def test_a_dip_is_open_though_the_project_counts_it_exact(self):
+        from types import SimpleNamespace
+
+        def verdict(fuzzy, best):
+            return SimpleNamespace(row={"fuzzy": fuzzy, "best": best, "exact": 100.0 in (fuzzy, best)})
+
+        exact, dip, open_ = verdict(100.0, 100.0), verdict(99.85, 100.0), verdict(97.0, 97.0)
+        self.assertEqual(below([exact, dip, open_]), [dip, open_])
