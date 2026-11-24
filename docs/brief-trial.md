@@ -1,6 +1,6 @@
 # Author trial of concord brief
 
-Status: stopped after 3 of the 38 functions, to change the brief; see the results below. A new run needs a new registered sample.
+Status: the first run stopped after 3 of its 38 functions to change the brief; a 12-function pilot with the changed brief is registered below.
 
 Question: does `concord brief` help whoever writes a function's source reach a byte match, compared with concord's plain diff? The brief lists the sites of a function's primary causes, most causes first, with the source around each and the known idioms; on real fixes from both targets' histories its first site held the fix in about three cases of four where something structural differs ([causes.md](causes.md)). This trial measures whether an author working from it matches more functions, or with fewer compiles.
 
@@ -66,3 +66,22 @@ The sample below was drawn at random (seed 20261124) from the open functions of 
 | 3 | brief | unchanged | 2 | Site 1 was the right call: the differing stores are the inlined body of `Build`, whose order is set in a header only this unit includes. Two reorderings there scored lower. |
 
 Every function needed the instructions around the differing rows, which the brief quoted only as the rows themselves, and four of the sixteen gruntz-decomp functions in the sample are dips, functions whose source compiled to the original before. The trial was stopped so that the brief would show both sides' instructions around each site and flag a dip; a run of the old brief would have measured a version already known to change. The diff arm also exposed that `concord diff` reported a dip as exact; it now shows its differences.
+
+## Pilot with the changed brief
+
+Registered before any of its functions was opened. Twelve open functions with a single source site, drawn at random (seed 20261125) from the same checkouts, three per target over 500 bytes and three at or under; left out besides the first run's exclusions are dips (functions whose banked best score is 100) and the first run's sample. The arms alternate down the table. The protocol and pass bars are the first run's, with the brief that now shows both sides' instructions around each site and flags a dip.
+
+| # | Target | Stratum | Function | Bytes | Score | Arm |
+| ---: | --- | --- | --- | ---: | ---: | --- |
+| 1 | gruntz | single site, over 500 bytes | `??0CKitchenSlime@@QAE@PAUCGameObject@@@Z` | 1,016 | 99.70 | brief |
+| 2 | gruntz | single site, over 500 bytes | `?HandleCombatContact@CGrunt@@QAEHHHHHH@Z` | 1,094 | 97.41 | diff |
+| 3 | gruntz | single site, over 500 bytes | `?PlayMovieEntry@CGruntzMgr@@QAEHH@Z` | 792 | 98.21 | brief |
+| 4 | gruntz | single site, 500 bytes or less | `?CreateSession@CMulti@@QAEHXZ` | 440 | 97.62 | diff |
+| 5 | gruntz | single site, 500 bytes or less | `??0CSingleFrameMessage@@QAE@PAUCGameObject@@@Z` | 397 | 96.99 | brief |
+| 6 | gruntz | single site, 500 bytes or less | `?UpdateFreezeAnimation@CGrunt@@QAEHXZ` | 481 | 97.07 | diff |
+| 7 | harvest | single site, over 500 bytes | `harvest::gui::CHighscoreScreen::parseSummaryPage` | 3,109 | - | brief |
+| 8 | harvest | single site, over 500 bytes | `daisy::gui::CGUIEnvironment::getFont` | 1,110 | - | diff |
+| 9 | harvest | single site, over 500 bytes | `harvest::entity::CAlienEntity::updateLogic` | 2,928 | - | brief |
+| 10 | harvest | single site, 500 bytes or less | `daisy::gui::CGUIDetachableFrame::lockToItemInside` | 261 | - | diff |
+| 11 | harvest | single site, 500 bytes or less | `daisy::video::CVideoNull::makeColorKeyTexture` | 491 | - | brief |
+| 12 | harvest | single site, 500 bytes or less | `harvest::gui::CStatisticsScreen::renderGraph` | 162 | - | diff |
