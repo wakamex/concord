@@ -13,7 +13,9 @@ from concord.transforms import (
     address_arithmetic,
     comparisons,
     compress_assignment,
+    early_continue,
     expand_assignment,
+    explicit_else,
     find_function,
     flip_nan_sense,
     for_loop,
@@ -29,6 +31,7 @@ from concord.transforms import (
     swap_commutative,
     swap_operands,
     swap_statements,
+    ternary_return,
     value_at_use,
     while_loop,
 )
@@ -378,6 +381,27 @@ class FlipNanSense(unittest.TestCase):
         self.assertNotIn("line 7: moved before line 5", moves)
         self.assertNotIn("line 4: moved after line 5", moves)
         self.assertIn("line 6: moved before line 4", moves)
+
+    def test_a_returned_ternary_and_an_if_return_turn_into_each_other(self):
+        source = b"int f(int a, int b)\n{\n    return a > b ? a : b;\n}\n"
+        [rewrite] = ternary_return(source, Parser(CPP).parse(source).root_node)
+        self.assertIn(b"    if (a > b)\n        return a;\n    return b;\n}", rewrite.source)
+        [back] = ternary_return(rewrite.source, Parser(CPP).parse(rewrite.source).root_node)
+        self.assertEqual(back.source, source)
+
+    def test_an_else_after_a_leaving_branch_comes_and_goes(self):
+        source = b"int f(int a)\n{\n    if (a == 0) {\n        return 1;\n    }\n    use(a);\n    return a;\n}\n"
+        [rewrite] = explicit_else(source, Parser(CPP).parse(source).root_node)
+        self.assertIn(b"    if (a == 0) {\n        return 1;\n    } else {\n        use(a);\n        return a;\n    }\n}", rewrite.source)
+        back = [r.source for r in explicit_else(rewrite.source, Parser(CPP).parse(rewrite.source).root_node) if b"else" not in r.source]
+        self.assertEqual(back, [source])
+        kept = b"int f(int a)\n{\n    if (a == 0)\n        return 1;\n    int b = a;\n    return b;\n}\n"
+        self.assertEqual(list(explicit_else(kept, Parser(CPP).parse(kept).root_node)), [])  # b's scope would shrink
+
+    def test_a_loops_last_combined_test_splits_into_an_early_continue(self):
+        source = b"void f(int n)\n{\n    for (int i = 0; i < n; ++i) {\n        if (p[i] && q(i)) {\n            use(i);\n        }\n    }\n}\n"
+        [rewrite] = early_continue(source, Parser(CPP).parse(source).root_node)
+        self.assertIn(b"        if (!p[i])\n            continue;\n        if (q(i)) {\n            use(i);\n        }", rewrite.source)
 
     def test_inlining_undoes_naming(self):
         source = b"void f(int a, int b)\n{\n    use(a + b);\n}\n"
