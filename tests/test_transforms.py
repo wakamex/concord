@@ -351,11 +351,19 @@ class FlipNanSense(unittest.TestCase):
         scope = Parser(CPP).parse(source).root_node
         rewrites = {r.description: r.source for r in value_at_use(source, scope)}
         self.assertIn(b"    use(m_world->GetLevel());\n    use(level);\n", rewrites["line 4: level read as its value m_world->GetLevel()"])
-        self.assertIn(b"    if ((flags & 8)) {\n", rewrites["line 7: wrap read as its value flags & 8"])
+        self.assertIn(b"    if (flags & 8) {\n", rewrites["line 7: wrap read as its value flags & 8"])  # the condition delimits it
         # after the if writes flags, the value flags & 8 may have changed; and n is written inside its loop
         self.assertEqual(sorted(rewrites), ["line 4: level read as its value m_world->GetLevel()",
                                             "line 5: level read as its value m_world->GetLevel()",
                                             "line 7: wrap read as its value flags & 8"])
+
+    def test_a_value_is_parenthesized_only_where_precedence_needs_it(self):
+        source = b"void f(int h, int w)\n{\n    int n = h * w;\n    m = new B[n];\n    g(n);\n    k = n + 1;\n    a[n] = n;\n    use(n);\n}\n"
+        texts = [r.source for r in value_at_use(source, Parser(CPP).parse(source).root_node)]
+        self.assertIn(b"    m = new B[h * w];\n", b"".join(texts))
+        self.assertIn(b"    k = (h * w) + 1;\n", b"".join(texts))
+        self.assertIn(b"    a[h * w] = n;\n", b"".join(texts))
+        self.assertIn(b"    a[n] = h * w;\n", b"".join(texts))
 
     def test_a_statement_moves_past_several_independent_ones(self):
         # CStatusBarMgr::StartResourceGrinderDrop became exact with its image read moved below the rectangle's corners

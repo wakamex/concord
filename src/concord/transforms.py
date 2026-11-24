@@ -813,6 +813,9 @@ def inline_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
 
 
 LOOPS = {"for_statement", "while_statement", "do_statement", "for_range_loop"}
+# where an expression needs no parentheses of its own: the syntax around it already delimits it
+DELIMITED = {"argument_list", "init_declarator", "return_statement", "condition_clause", "subscript_argument_list",
+             "new_declarator", "parenthesized_expression", "expression_statement"}
 
 
 def _definition(statement: Node) -> tuple[Node, Node] | None:
@@ -834,6 +837,19 @@ def _definition(statement: Node) -> tuple[Node, Node] | None:
     if name is None or value is None or name.type != "identifier" or value.type in ("initializer_list", "argument_list"):
         return None
     return name, value
+
+
+def _base(target: Node) -> set[bytes]:
+    """The variable a write goes to: `a` for `a`, `a[i]`, `a.b`, `*a` or `a->b`, not the index or other names in it."""
+    while target.type in ("subscript_expression", "field_expression", "pointer_expression", "parenthesized_expression",
+                          "pointer_declarator", "reference_declarator"):
+        inner = target.child_by_field_name("argument") or target.child_by_field_name("declarator")
+        if inner is None:
+            inner = next((c for c in target.named_children), None)
+        if inner is None:
+            return set()
+        target = inner
+    return {target.text} if target.type == "identifier" else set()
 
 
 def _assigned(node: Node) -> bool:
@@ -865,7 +881,7 @@ def value_at_use(source: bytes, scope: Node) -> Iterator[Rewrite]:
             for later in statements[index + 1 :]:
                 writes = [(w, n) for kind in (*WRITES, "init_declarator") for n in _descendants(later, kind)
                           for w in [n.child_by_field_name("left") or n.child_by_field_name("argument") or n.child_by_field_name("declarator")]
-                          if w is not None and ({i.text for i in _descendants(w, "identifier")} | {w.text}) & watched]
+                          if w is not None and _base(w) & watched]
                 for use in _descendants(later, "identifier"):
                     if use.text != name.text or _assigned(use) or use.parent.type in ("init_declarator", "declaration"):
                         continue
@@ -873,7 +889,9 @@ def value_at_use(source: bytes, scope: Node) -> Iterator[Rewrite]:
                         continue
                     if writes and any(a.type in LOOPS for a in _ancestors(use, later)) or writes and later.type in LOOPS:
                         continue
-                    wrapped = value.text if value.type in TIGHT or use.parent.type in ("argument_list", "init_declarator", "return_statement") else b"(" + value.text + b")"
+                    delimited = use.parent.type in DELIMITED or (
+                        use.parent.type == "assignment_expression" and use.parent.child_by_field_name("right") == use)
+                    wrapped = value.text if value.type in TIGHT or delimited else b"(" + value.text + b")"
                     line = source.count(b"\n", 0, use.start_byte) + 1
                     yield Rewrite(
                         "value-at-use",
