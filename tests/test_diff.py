@@ -127,6 +127,38 @@ class AssembledCauses(unittest.TestCase):
             {Cause.REGISTER_ALLOCATION},
         )
 
+    def test_aligned_jump_to_a_different_aligned_block_is_block_order(self):
+        target = read_function(
+            assemble(
+                self.directory,
+                "target",
+                "test eax, eax\nje 1f\nmov eax, [rsp + 8]\n1: test eax, eax\nje 2f\nor dword ptr [rax + 8], 1\n2: ret",
+            ),
+            "f",
+        )
+        candidate = read_function(
+            assemble(
+                self.directory,
+                "candidate",
+                "test eax, eax\nje 2f\nmov eax, [rsp + 8]\n1: test eax, eax\nje 2f\nor dword ptr [rax + 8], 1\n2: ret",
+            ),
+            "f",
+        )
+        result = diff_code(target, candidate)
+        self.assertFalse(result.exact)
+        self.assertLess(result.score, 100.0)
+        self.assertEqual([(f.cause, f.offset, f.candidate) for f in result.findings], [(Cause.BLOCK_ORDER, 2, 2)])
+
+    def test_swapped_elf_relocation_targets_are_reference(self):
+        target = read_function(assemble(self.directory, "target_rel", "call g\ncall h\nret"), "f")
+        candidate = read_function(assemble(self.directory, "cand_rel", "call h\ncall g\nret"), "f")
+        result = diff_code(target, candidate)
+        self.assertFalse(result.exact)
+        self.assertEqual(
+            [(f.cause, f.offset, f.candidate) for f in result.findings],
+            [(Cause.REFERENCE, 0, 0), (Cause.REFERENCE, 5, 5)],
+        )
+
 
 HARVEST = Path(os.environ.get("CONCORD_HARVEST", "../harvest"))
 

@@ -9,6 +9,7 @@ section to 16 bytes, and a delinked object keeps the padding between functions.
 
 from __future__ import annotations
 
+import bisect
 import struct
 from dataclasses import dataclass
 
@@ -24,6 +25,7 @@ class CoffFunction:
     start: int  # offset of the function in its section
     code: bytes
     relocations: frozenset[int]  # offsets, from the function's start, of its relocation fields
+    targets: tuple[tuple[int, str], ...] = ()  # (offset, symbol) in offset order
 
 
 def is_i386(data: bytes) -> bool:
@@ -83,8 +85,9 @@ def functions(data: bytes) -> dict[str, CoffFunction]:
         at = _HEADER + struct.unpack_from("<H", data, 16)[0] + _SECTION * index
         size, raw, relocations = struct.unpack_from("<III", data, at + 16)
         count = struct.unpack_from("<H", data, at + 32)[0]
-        fields = [struct.unpack_from("<I", data, relocations + _RELOCATION * n)[0] for n in range(count)]
-        sections.append((_name(data, at), data[raw : raw + size] if raw else b"", fields))
+        entries = sorted(struct.unpack_from("<II", data, relocations + _RELOCATION * n) for n in range(count))
+        offsets = [offset for offset, _ in entries]
+        sections.append((_name(data, at), data[raw : raw + size] if raw else b"", entries, offsets))
 
     defined: dict[int, list[tuple[int, str]]] = {}  # section index -> (value, name) of its function symbols
     index = 0
@@ -95,13 +98,32 @@ def functions(data: bytes) -> dict[str, CoffFunction]:
             defined.setdefault(section, []).append((value, _name(data, at)))
         index += 1 + auxiliary
 
+    names: dict[int, str] = {}
+
+    def symbol_name(sym_index: int) -> str:
+        if sym_index not in names:
+            names[sym_index] = _name(data, symbol_table + _SYMBOL * sym_index)
+        return names[sym_index]
+
     found: dict[str, CoffFunction] = {}
     for section, symbols in defined.items():
-        name, body, fields = sections[section - 1]
+        name, body, entries, offsets = sections[section - 1]
         starts = sorted({value for value, _ in symbols})
         for value, symbol in symbols:
-            later = [start for start in starts if start > value]
-            code = body[value : later[0] if later else len(body)].rstrip(b"\x90\xcc")
-            relocations = frozenset(f - value for f in fields if value <= f < value + len(code))
-            found.setdefault(symbol, CoffFunction(symbol, f"{name}#{section}", value, code, relocations))
+            if symbol in found:
+                continue
+            after = bisect.bisect_right(starts, value)
+            end = starts[after] if after < len(starts) else len(body)
+            code = body[value:end].rstrip(b"\x90\xcc")
+            lo = bisect.bisect_left(offsets, value)
+            hi = bisect.bisect_left(offsets, value + len(code))
+            in_function = entries[lo:hi]
+            relocations = frozenset(offset - value for offset, _ in in_function)
+            targets = []
+            for offset, sym_index in in_function:
+                rel_offset = offset - value
+                target = symbol_name(sym_index)
+                disp = struct.unpack_from("<i", code, rel_offset)[0] if rel_offset + 4 <= len(code) else 0
+                targets.append((rel_offset, f"{target}{disp:+d}" if disp else target))
+            found[symbol] = CoffFunction(symbol, f"{name}#{section}", value, code, relocations, tuple(targets))
     return found

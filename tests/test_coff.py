@@ -72,6 +72,35 @@ class CoffFunctions(unittest.TestCase):
         obj = assemble(self.directory, "plain", {"_f": "xor eax, eax\nret"})
         self.assertEqual(coff.lines(obj.read_bytes(), "_f"), [])
 
+    def test_swapped_relocation_symbols_are_attributed_at_their_instructions(self):
+        target = assemble(
+            self.directory,
+            "target",
+            {"_f": "xor eax, eax\nfld qword ptr [_a]\nfmul qword ptr [_b]\nret"},
+        )
+        candidate = assemble(
+            self.directory,
+            "candidate",
+            {"_f": "xor eax, eax\nfld qword ptr [_b]\nfmul qword ptr [_a]\nret"},
+        )
+        result = diff_code(read_function(target, "_f"), read_function(candidate, "_f"))
+        self.assertFalse(result.exact)
+        self.assertLess(result.score, 100.0)
+        self.assertEqual(
+            [(f.cause, f.offset, f.candidate, f.detail) for f in result.findings],
+            [
+                (Cause.REFERENCE, 2, 2, "_a  vs  _b"),
+                (Cause.REFERENCE, 8, 8, "_b  vs  _a"),
+            ],
+        )
+
+    def test_relocation_inline_addend_difference_is_reference(self):
+        target = assemble(self.directory, "target_add", {"_f": "mov eax, dword ptr [_v + 4]\nret"})
+        candidate = assemble(self.directory, "cand_add", {"_f": "mov eax, dword ptr [_v + 8]\nret"})
+        result = diff_code(read_function(target, "_f"), read_function(candidate, "_f"))
+        self.assertFalse(result.exact)
+        self.assertEqual([(f.cause, f.offset, f.candidate) for f in result.findings], [(Cause.REFERENCE, 0, 0)])
+
     def test_an_elf_object_is_not_coff(self):
         self.assertFalse(coff.is_i386(b"\x7fELF" + bytes(16)))
         with self.assertRaises(ValueError):

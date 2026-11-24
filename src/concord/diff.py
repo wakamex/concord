@@ -13,6 +13,7 @@ or a moved branch does not break the alignment of everything after it.
 
 from __future__ import annotations
 
+import bisect
 import difflib
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -38,6 +39,7 @@ class ObjectFunction:
     code: bytes
     relocations: frozenset[int]
     bits: int = 64  # 32 for i386 code
+    targets: tuple[tuple[int, str], ...] = ()  # (offset, target symbol/addend) in offset order
 
 
 def read_function(path: Path, symbol: str) -> ObjectFunction:
@@ -56,24 +58,30 @@ def read_functions(path: Path, symbols: Iterable[str]) -> dict[str, ObjectFuncti
         if coff.is_i386(stream.read(20)):
             stream.seek(0)
             return {
-                name: ObjectFunction(name, f.section, f.start, f.code, f.relocations, 32)
+                name: ObjectFunction(name, f.section, f.start, f.code, f.relocations, 32, f.targets)
                 for name, f in coff.functions(stream.read()).items()
                 if name in wanted
             }
         stream.seek(0)
         elf = ELFFile(stream)
+        bits = 32 if elf.elfclass == 32 else 64
         table = elf.get_section_by_name(".symtab")
         found = {}
         for item in table.iter_symbols():
             if item.name in wanted and item["st_info"]["type"] == "STT_FUNC":
                 found.setdefault(item.name, item)
         sections = list(elf.iter_sections())
-        relocations: dict[int, list[int]] = {}
+        relocations: dict[int, list[tuple[int, str]]] = {}
         for relocs in sections:
             if isinstance(relocs, RelocationSection):
-                relocations.setdefault(relocs["sh_info"], []).extend(
-                    row["r_offset"] for row in relocs.iter_relocations()
-                )
+                symtab = sections[relocs["sh_link"]]
+                rows = []
+                for row in relocs.iter_relocations():
+                    sym = symtab.get_symbol(row["r_info_sym"])
+                    addend = row["r_addend"] if relocs.is_RELA() else 0
+                    label = f"{sym.name}{addend:+d}" if sym.name and addend else sym.name
+                    rows.append((row["r_offset"], label))
+                relocations.setdefault(relocs["sh_info"], []).extend(rows)
         data = {}
         results = {}
         for name, item in found.items():
@@ -83,8 +91,14 @@ def read_functions(path: Path, symbols: Iterable[str]) -> dict[str, ObjectFuncti
                 data[index] = section.data()
             section_data = data[index]
             code = section_data[start : start + size]
-            fields = {offset - start for offset in relocations.get(index, []) if start <= offset < start + size}
-            results[name] = ObjectFunction(name, section.name, start, code, frozenset(fields))
+            in_function = sorted(
+                (offset - start, label)
+                for offset, label in relocations.get(index, [])
+                if start <= offset < start + size
+            )
+            fields = frozenset(rel_offset for rel_offset, _ in in_function)
+            targets = tuple((rel_offset, label) for rel_offset, label in in_function if label)
+            results[name] = ObjectFunction(name, section.name, start, code, fields, bits, targets)
     return results
 
 
@@ -120,6 +134,7 @@ class Instruction:
     operands: tuple  # ("reg", family) | ("imm", value) | ("mem", base, index, scale, disp, size) | ("sym",) | ("label",)
     text: str
     size: int
+    branch_target: int | None = None
 
     @property
     def is_call(self) -> bool:
@@ -138,11 +153,14 @@ def disassemble(function: ObjectFunction) -> list[Instruction]:
         relocated = any(i.address <= f < i.address + i.size for f in function.relocations)
         branch = i.group(x86.X86_GRP_JUMP) or i.group(x86.X86_GRP_CALL)
         operands = []
+        branch_target = None
         for o in i.operands:
             if o.type == x86.X86_OP_REG:
                 operands.append(("reg", _family(i.reg_name(o.reg))))
             elif o.type == x86.X86_OP_IMM:
                 operands.append(("sym",) if relocated else ("label",) if branch else ("imm", o.imm))
+                if not relocated and branch:
+                    branch_target = o.imm
             elif o.type == x86.X86_OP_MEM:
                 base = _family(i.reg_name(o.mem.base)) if o.mem.base else None
                 index = _family(i.reg_name(o.mem.index)) if o.mem.index else None
@@ -151,7 +169,7 @@ def disassemble(function: ObjectFunction) -> list[Instruction]:
                 else:
                     operands.append(("mem", base, index, o.mem.scale, o.mem.disp, o.size))
         text = f"{i.mnemonic} {i.op_str}".strip()
-        out.append(Instruction(i.address, i.mnemonic, tuple(operands), text, i.size))
+        out.append(Instruction(i.address, i.mnemonic, tuple(operands), text, i.size, branch_target))
     return out
 
 
@@ -296,9 +314,28 @@ def _run(instructions: list[Instruction]) -> str:
     return "; ".join(i.text for i in instructions)
 
 
+def _instruction_targets(
+    targets: tuple[tuple[int, str], ...],
+    offsets: list[int],
+    instruction: Instruction,
+) -> tuple[str, ...]:
+    lo = bisect.bisect_left(offsets, instruction.offset)
+    hi = bisect.bisect_left(offsets, instruction.offset + instruction.size)
+    return tuple(label for _, label in targets[lo:hi])
+
+
+def _real_offset(offsets: list[int], end: int, dest: int) -> int:
+    index = bisect.bisect_left(offsets, dest)
+    return offsets[index] if index < len(offsets) else end
+
+
 def diff_code(target: ObjectFunction, candidate: ObjectFunction) -> DiffResult:
     """Align the two functions' instructions and attribute every mismatch."""
-    if target.code == candidate.code and target.relocations == candidate.relocations:
+    if (
+        target.code == candidate.code
+        and target.relocations == candidate.relocations
+        and target.targets == candidate.targets
+    ):
         return DiffResult(score=100.0, exact=True)
     # Padding follows from where code lands, so it is excluded from instruction
     # alignment and counted at the boundaries between aligned instructions.
@@ -306,20 +343,71 @@ def diff_code(target: ObjectFunction, candidate: ObjectFunction) -> DiffResult:
     findings: list[DiffFinding] = _padding_findings(target, candidate, target_code, candidate_code)
     t = [i for i in target_code if not _padding(i)]
     c = [i for i in candidate_code if not _padding(i)]
+    t_offsets = [i.offset for i in t]
+    c_offsets = [i.offset for i in c]
+    t_end = t[-1].offset + t[-1].size if t else 0
+    c_end = c[-1].offset + c[-1].size if c else 0
+    t_rel_offsets = [offset for offset, _ in target.targets]
+    c_rel_offsets = [offset for offset, _ in candidate.targets]
     matcher = difflib.SequenceMatcher(None, [shape(i) for i in t], [shape(i) for i in c], autojunk=False)
+    opcodes = matcher.get_opcodes()
+    aligned_offsets = {t_end: c_end}
+    for tag, i1, i2, j1, j2 in opcodes:
+        if tag == "equal":
+            for a, b in zip(t[i1:i2], c[j1:j2], strict=True):
+                aligned_offsets[a.offset] = b.offset
+    aligned_candidate_offsets = set(aligned_offsets.values())
+
     same = 0
     mismatched: list[tuple[list[Instruction], list[Instruction]]] = []
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+    for tag, i1, i2, j1, j2 in opcodes:
         if tag == "equal":
             aligned_target, aligned_candidate = t[i1:i2], c[j1:j2]
             start = 0
             while start < len(aligned_target):
-                if aligned_target[start].operands == aligned_candidate[start].operands:
+                a, b = aligned_target[start], aligned_candidate[start]
+                if a.operands == b.operands:
+                    t_rel = _instruction_targets(target.targets, t_rel_offsets, a)
+                    c_rel = _instruction_targets(candidate.targets, c_rel_offsets, b)
+                    if t_rel and c_rel and t_rel != c_rel:
+                        findings.append(
+                            DiffFinding(
+                                Cause.REFERENCE,
+                                a.offset,
+                                f"{', '.join(t_rel)}  vs  {', '.join(c_rel)}",
+                                b.offset,
+                                1,
+                                (a.offset,),
+                                (b.offset,),
+                            )
+                        )
+                        start += 1
+                        continue
+                    if a.branch_target is not None and b.branch_target is not None:
+                        t_dest = _real_offset(t_offsets, t_end, a.branch_target)
+                        c_dest = _real_offset(c_offsets, c_end, b.branch_target)
+                        if (
+                            t_dest in aligned_offsets
+                            and c_dest in aligned_candidate_offsets
+                            and aligned_offsets[t_dest] != c_dest
+                        ):
+                            findings.append(
+                                DiffFinding(
+                                    Cause.BLOCK_ORDER,
+                                    a.offset,
+                                    f"{a.text}  vs  {b.text}",
+                                    b.offset,
+                                    1,
+                                    (a.offset,),
+                                    (b.offset,),
+                                )
+                            )
+                            start += 1
+                            continue
                     same += 1
                     start += 1
                     continue
-                if _swapped(aligned_target[start], aligned_candidate[start]):
-                    a, b = aligned_target[start], aligned_candidate[start]
+                if _swapped(a, b):
                     findings.append(
                         DiffFinding(
                             Cause.OPERAND_ORDER,
@@ -340,6 +428,21 @@ def diff_code(target: ObjectFunction, candidate: ObjectFunction) -> DiffResult:
                         break
                     end += 1
                 target_run, candidate_run = aligned_target[start:end], aligned_candidate[start:end]
+                for x_ins, y_ins in zip(target_run, candidate_run, strict=True):
+                    t_rel = _instruction_targets(target.targets, t_rel_offsets, x_ins)
+                    c_rel = _instruction_targets(candidate.targets, c_rel_offsets, y_ins)
+                    if t_rel and c_rel and t_rel != c_rel:
+                        findings.append(
+                            DiffFinding(
+                                Cause.REFERENCE,
+                                x_ins.offset,
+                                f"{', '.join(t_rel)}  vs  {', '.join(c_rel)}",
+                                y_ins.offset,
+                                1,
+                                (x_ins.offset,),
+                                (y_ins.offset,),
+                            )
+                        )
                 target_keys = [(i.mnemonic, i.operands) for i in target_run]
                 candidate_keys = [(i.mnemonic, i.operands) for i in candidate_run]
                 if len(target_run) == len(candidate_run) and sorted(target_keys, key=repr) == sorted(candidate_keys, key=repr):
