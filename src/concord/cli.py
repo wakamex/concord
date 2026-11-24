@@ -19,6 +19,7 @@ from concord import (
     authored,
     bench,
     blockers,
+    brief,
     calls,
     calls_constants,
     causal,
@@ -522,6 +523,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_residual.add_argument("--harvest", type=Path, required=True, help="Harvest checkout after `hv match`")
     p_residual.add_argument("--save", type=Path, help="write the census as JSON")
 
+    p_brief = sub.add_parser(
+        "brief", help="one open function's causes by source site, with the source around each, for whoever writes it"
+    )
+    p_brief.add_argument("--harvest", type=Path, help="Harvest checkout")
+    p_brief.add_argument("--gruntz", type=Path, help="gruntz-decomp checkout after `gruntz build`")
+    p_brief.add_argument("--unit", required=True, help="the function's unit")
+    p_brief.add_argument("symbol", help="the function's symbol")
+    p_brief.add_argument("--context", type=int, default=3, help="source lines to show around each site")
+
     p_causes = sub.add_parser(
         "causes",
         help="separate each open function's primary differences from their fallout and say what to change first",
@@ -739,6 +749,15 @@ def _dispatch(argv: list[str] | None = None) -> int:
                     f"changed bytes target [{target_offsets}] candidate [{candidate_offsets}]; {location}"
                 )
         return 0
+    if args.command == "brief":
+        target = _target(parser, args)
+        flag = f"--gruntz {args.gruntz}" if args.gruntz else f"--harvest {args.harvest}"
+        try:
+            print(brief.brief(target, args.unit, args.symbol, target.compiler, flag, args.context), end="")
+        except KeyError as error:
+            parser.error(str(error))
+        return 0
+
     if args.command == "causes":
         target = _target(parser, args)
         if args.symbol:
