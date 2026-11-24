@@ -656,8 +656,10 @@ def _replace_at(node: Node, path: tuple[int, ...], new: Node) -> Node:
 
 
 def _swaps(items: tuple[Item, ...], symbols: Symbols, index: int, addressed: frozenset[bytes]) -> list[tuple[Edit, tuple[Item, ...]]]:
-    """Each add or multiply whose two operands write nothing, and each pair of call arguments that write nothing,
-    swapped in place: operands that write nothing can run in either order."""
+    """Each add or multiply whose two operands write nothing, swapped in place: operands that write nothing can run
+    in either order. Call arguments are not swapped: their order in the IL is their parameter position, so a swap
+    passes the callee other values (swapping `CellFlagsAt(x, y)`'s arguments in the IL and in C++ gives the same
+    code)."""
     statement = items[index]
     out: list[tuple[Edit, tuple[Item, ...]]] = []
 
@@ -673,17 +675,6 @@ def _swaps(items: tuple[Item, ...], symbols: Symbols, index: int, addressed: fro
             swapped = Node(node.raw, node.kind, (right, left))
             text = f"swap the operands of `{pretty(node)}` (line {statement.line}): `{pretty(left)}` and `{pretty(right)}`"
             out.append((Edit("swap", text, (statement.line,)), _with_root(items, index, _replace_at(statement.root, path, swapped))))
-        elif node.kind == "call":
-            for i in range(node.fixed, len(node.children)):
-                for j in range(i + 1, len(node.children)):
-                    a, b = node.children[i], node.children[j]
-                    if a.emit() == b.emit() or not (pure(a) and pure(b)):
-                        continue
-                    new_children = list(node.children)
-                    new_children[i], new_children[j] = b, a
-                    swapped = Node(node.raw, "call", tuple(new_children), fixed=node.fixed)
-                    text = f"swap arguments {i - node.fixed} and {j - node.fixed} of `{pretty(node)}` (line {statement.line})"
-                    out.append((Edit("swap", text, (statement.line,)), _with_root(items, index, _replace_at(statement.root, path, swapped))))
     return out
 
 

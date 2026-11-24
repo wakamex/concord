@@ -187,10 +187,11 @@ class SyntheticTests(unittest.TestCase):
         swaps = [e.text for e, _ in neighbours(parse(pure, SYMBOLS), SYMBOLS) if e.kind == "swap"]
         self.assertEqual(len(swaps), 1, swaps)
 
-    def test_call_arguments_swap_when_both_are_pure(self) -> None:
+    def test_call_arguments_never_swap(self) -> None:
+        # an argument's place in the IL is its parameter position, so a swap would change what the call passes
         call = ref(X) + ref(FN) + ref(A) + b"\x30\x43" + b"\x99\x43\x3e\x41\x14" + ref(A) + b"\x30\x41" + ref(C) + b"\x30\x41" + b"\x4c" + b"\x32\x41\x4b"  # x = f(this)(a, c)
         swaps = [e.text for e, _ in neighbours(parse(call, SYMBOLS), SYMBOLS) if e.kind == "swap"]
-        self.assertEqual(sum("arguments" in t for t in swaps), 1, swaps)
+        self.assertEqual(sum("arguments" in t for t in swaps), 0, swaps)
 
 
 if __name__ == "__main__":

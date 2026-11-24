@@ -26,10 +26,10 @@ Every search so far mutates C++ and hopes the front end emits IL that moves the 
 ## Proposal
 
 1. An IL parser. Built: the decoder covers the constructs in the decoding catalog (see the README's IL search section), and the measured results are in il-search-results.md. The parser turns a function's `ex` bytes into an expression tree per statement, with operand arity per opcode, and writes the tree back; `gl`'s offsets are shifted for a body whose length changes, which is already done and checked (deleting a store at the IL level reproduces the matching source variant exactly).
-2. A structured IL mutator over the function's trees: swap independent sibling subtrees (call arguments, commutative operands, independent statements), introduce or remove a temporary, and swap adjacent statements. Each variant is replayed (about a second) and compared with retail; a variant that matches retail is the target IL.
+2. A structured IL mutator over the function's trees: swap commutative operands and independent statements, introduce or remove a temporary, and move statements. Call arguments are not swapped: an argument's place in the IL is its parameter position, so swapping two passes the callee other values. A sweep that allowed it improved 41 functions with a single argument swap and made none exact, and on `CBattlezAiController::IsCoordOccupied` the IL swap and the same swap written in C++ (`CellFlagsAt(y, x)`) scored the same, 96.68367. Each variant is replayed (about a second) and compared with retail; a variant that matches retail is the target IL.
 3. An inverse lookup. Given the target IL's difference from ours (for example two call arguments' subtrees in the other order), compile small C++ variants and compare their IL, as the corpora already do, to find the construct the front end turns into it.
 
-Run on CreateHealthSprite first: its target is two argument loads in the other order, so the first mutation to try is swapping those argument subtrees.
+CreateHealthSprite's two argument loads in the other order are not reachable by swapping the argument subtrees, since that swaps the parameters they are passed as.
 
 ## What it can and cannot conclude
 
