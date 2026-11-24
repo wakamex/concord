@@ -435,6 +435,51 @@ def swap_statements(source: bytes, scope: Node) -> Iterator[Rewrite]:
             )
 
 
+def _own_line(source: bytes, node: Node) -> bool:
+    """Whether the node is the only code on the lines it spans."""
+    start, end = _line_start(source, node.start_byte), source.find(b"\n", node.end_byte)
+    return not source[start : node.start_byte].strip() and not source[node.end_byte : end if end >= 0 else len(source)].strip()
+
+
+def move_statements(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per place two or more statements later or earlier in its block
+    that a declaration or expression statement can move to, passing only
+    declarations and expression statements that share no written variable with it.
+    swap_statements makes the one-place moves; a longer move would take several
+    swaps, each of which may score worse on its own."""
+    for block in _descendants(scope, "compound_statement"):
+        statements = [c for c in block.named_children if c.type != "comment"]
+        names = [_names(s) if s.type in SIMPLE else None for s in statements]
+        for index, mover in enumerate(statements):
+            if names[index] is None:
+                continue
+            writes, mentions = names[index]
+            if not _own_line(source, mover):
+                continue
+            for step in (1, -1):
+                passed = index + step
+                while 0 <= passed < len(statements) and names[passed] is not None:
+                    other_writes, other_mentions = names[passed]
+                    if writes & other_mentions or other_writes & mentions:
+                        break
+                    if abs(passed - index) >= 2 and _own_line(source, statements[passed]):
+                        first, last = (statements[index + 1], statements[passed]) if step == 1 else (statements[passed], statements[index - 1])
+                        start, end = _line_start(source, mover.start_byte), source.find(b"\n", mover.end_byte) + 1
+                        line_text = source[start:end]
+                        if step == 1:
+                            at = source.find(b"\n", last.end_byte) + 1
+                            text = source[:start] + source[end:at] + line_text + source[at:]
+                        else:
+                            at = _line_start(source, first.start_byte)
+                            text = source[:at] + line_text + source[at:start] + source[end:]
+                        where = "after" if step == 1 else "before"
+                        line = source.count(b"\n", 0, mover.start_byte) + 1
+                        target_line = source.count(b"\n", 0, statements[passed].start_byte) + 1
+                        yield Rewrite("statement-order", Cause.REGISTER_ALLOCATION,
+                                      f"line {line}: moved {where} line {target_line}", text)
+                    passed += step
+
+
 def _line_start(source: bytes, offset: int) -> int:
     return source.rfind(b"\n", 0, offset) + 1
 
@@ -767,6 +812,79 @@ def inline_temporaries(source: bytes, scope: Node) -> Iterator[Rewrite]:
             )
 
 
+LOOPS = {"for_statement", "while_statement", "do_statement", "for_range_loop"}
+
+
+def _definition(statement: Node) -> tuple[Node, Node] | None:
+    """The name and value of `T x = e;` or `x = e;`, for a plain local x."""
+    if statement.type == "declaration":
+        declarators = [c for c in statement.named_children if c.type == "init_declarator"]
+        if len(declarators) != 1 or len([c for c in statement.named_children if c.type.endswith("declarator")]) != 1:
+            return None
+        name, value = declarators[0].child_by_field_name("declarator"), declarators[0].child_by_field_name("value")
+        while name is not None and name.type == "pointer_declarator":
+            name = name.child_by_field_name("declarator")
+    elif statement.type == "expression_statement" and statement.named_child_count == 1:
+        assignment = statement.named_children[0]
+        if assignment.type != "assignment_expression" or assignment.child_by_field_name("operator").type != "=":
+            return None
+        name, value = assignment.child_by_field_name("left"), assignment.child_by_field_name("right")
+    else:
+        return None
+    if name is None or value is None or name.type != "identifier" or value.type in ("initializer_list", "argument_list"):
+        return None
+    return name, value
+
+
+def _assigned(node: Node) -> bool:
+    """Whether the name itself is assigned, incremented or has its address taken.
+    A value passed where a non-const reference is expected fails to compile."""
+    parent = node.parent
+    if parent.type == "assignment_expression" and parent.child_by_field_name("left") == node:
+        return True
+    return parent.type == "update_expression" or parent.type == "pointer_expression" and parent.child_by_field_name("operator").type == "&"
+
+
+def value_at_use(source: bytes, scope: Node) -> Iterator[Rewrite]:
+    """One rewrite per later read of a local that is written as the value the local
+    was last given there, keeping the local for its other uses: `x = e; f(x); g(x);`
+    becomes `x = e; f(e); g(x);`. The read must come before anything in its block
+    writes the local or a name `e` mentions. cl 5.0 gives such a reread value a
+    temporary of its own, which moves register choices and spills; inline_temporaries
+    covers a local with a single use, which it also removes."""
+    for block in _descendants(scope, "compound_statement"):
+        statements = [c for c in block.named_children if c.type != "comment"]
+        for index, statement in enumerate(statements):
+            found = _definition(statement)
+            if found is None:
+                continue
+            name, value = found
+            watched = {name.text} | {i.text for i in _descendants(value, "identifier")}
+            if name.text in {i.text for i in _descendants(value, "identifier")}:
+                continue
+            for later in statements[index + 1 :]:
+                writes = [(w, n) for kind in (*WRITES, "init_declarator") for n in _descendants(later, kind)
+                          for w in [n.child_by_field_name("left") or n.child_by_field_name("argument") or n.child_by_field_name("declarator")]
+                          if w is not None and ({i.text for i in _descendants(w, "identifier")} | {w.text}) & watched]
+                for use in _descendants(later, "identifier"):
+                    if use.text != name.text or _assigned(use) or use.parent.type in ("init_declarator", "declaration"):
+                        continue
+                    if any(w.start_byte < use.start_byte for w, _ in writes):
+                        continue
+                    if writes and any(a.type in LOOPS for a in _ancestors(use, later)) or writes and later.type in LOOPS:
+                        continue
+                    wrapped = value.text if value.type in TIGHT or use.parent.type in ("argument_list", "init_declarator", "return_statement") else b"(" + value.text + b")"
+                    line = source.count(b"\n", 0, use.start_byte) + 1
+                    yield Rewrite(
+                        "value-at-use",
+                        Cause.REGISTER_ALLOCATION,
+                        f"line {line}: {name.text.decode()} read as its value {value.text.decode()}",
+                        source[: use.start_byte] + wrapped + source[use.end_byte :],
+                    )
+                if writes:
+                    break
+
+
 PLAIN = {"identifier", "field_expression", "number_literal"}
 
 
@@ -1031,6 +1149,7 @@ ALL = [
     swap_commutative,
     swap_branches,
     swap_statements,
+    move_statements,
     move_declarations,
     narrow_declaration,
     widen_declaration,
@@ -1038,6 +1157,7 @@ ALL = [
     join_declaration,
     name_temporaries,
     inline_temporaries,
+    value_at_use,
     while_loop,
     for_loop,
     expand_assignment,

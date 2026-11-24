@@ -21,6 +21,7 @@ from concord.transforms import (
     join_declaration,
     merge_conditions,
     move_declarations,
+    move_statements,
     name_temporaries,
     nest_condition,
     split_declaration,
@@ -28,6 +29,7 @@ from concord.transforms import (
     swap_commutative,
     swap_operands,
     swap_statements,
+    value_at_use,
     while_loop,
 )
 
@@ -338,6 +340,36 @@ class FlipNanSense(unittest.TestCase):
         self.assertNotIn("other->Lost() named", named)
         self.assertNotIn("other->Busy() named", named)
         self.assertNotIn("other->Restore() named", named)  # the else-if's braceless branch, left alone as before
+
+    def test_a_local_is_read_as_its_value_at_one_use_and_kept_for_the_others(self):
+        # CTriggerMgr::SelectUnitsInRect, CLevelPlane::UpdatePlaneViewRect: cl 5.0 code became exact this way
+        source = (b"void f(int flags)\n{\n"
+                  b"    Level* level = m_world->GetLevel();\n    use(level);\n    use(level);\n"
+                  b"    wrap = flags & 8;\n    if (wrap) {\n        flags = 0;\n    }\n    if (wrap)\n        go();\n"
+                  b"    int n = count;\n    while (n > 0) {\n        n--;\n    }\n"
+                  b"}\n")
+        scope = Parser(CPP).parse(source).root_node
+        rewrites = {r.description: r.source for r in value_at_use(source, scope)}
+        self.assertIn(b"    use(m_world->GetLevel());\n    use(level);\n", rewrites["line 4: level read as its value m_world->GetLevel()"])
+        self.assertIn(b"    if ((flags & 8)) {\n", rewrites["line 7: wrap read as its value flags & 8"])
+        # after the if writes flags, the value flags & 8 may have changed; and n is written inside its loop
+        self.assertEqual(sorted(rewrites), ["line 4: level read as its value m_world->GetLevel()",
+                                            "line 5: level read as its value m_world->GetLevel()",
+                                            "line 7: wrap read as its value flags & 8"])
+
+    def test_a_statement_moves_past_several_independent_ones(self):
+        # CStatusBarMgr::StartResourceGrinderDrop became exact with its image read moved below the rectangle's corners
+        source = (b"void f(int x)\n{\n    start();\n    Image* image = m_image;\n    int left = x - 12;\n    int right = x + 12;\n"
+                  b"    int bottom = left + 1;\n    use(image, bottom);\n}\n")
+        scope = Parser(CPP).parse(source).root_node
+        moves = {r.description: r.source for r in move_statements(source, scope)}
+        self.assertIn(b"    int right = x + 12;\n    Image* image = m_image;\n    int bottom", moves["line 4: moved after line 6"])
+        self.assertIn(b"    int bottom = left + 1;\n    Image* image = m_image;\n    use(", moves["line 4: moved after line 7"])
+        # the use of image ends its moves, bottom cannot pass left, which it reads, and one-place moves are swap_statements'
+        self.assertNotIn("line 4: moved after line 8", moves)
+        self.assertNotIn("line 7: moved before line 5", moves)
+        self.assertNotIn("line 4: moved after line 5", moves)
+        self.assertIn("line 6: moved before line 4", moves)
 
     def test_inlining_undoes_naming(self):
         source = b"void f(int a, int b)\n{\n    use(a + b);\n}\n"
