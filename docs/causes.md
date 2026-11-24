@@ -22,36 +22,35 @@ Result: on both targets nearly two thirds of differing rows are fallout. Groupin
 
 The functions with no cause in the unit's own source are code from headers: on Harvest, 83 library template instances (`std::vector` and others) and inline methods emitted in many units, such as `IGUIElement::removeChild` in every GUI unit.
 
-## Checked against known changes
+## Checked against known fixes
 
-`concord bench --causes` takes exact functions, changes each with one of concord's own rewrites (or two, for the two-edit cases), keeps the cases where only that function stops matching, and asks whether the causes point at the changed lines. A cause counts as near when one of its source lines is within two lines of a changed line. Both runs used 120 sampled exact functions, at most 15 cases of each kind and up to 30 two-edit cases.
+`concord bench --causes` asks whether the causes point at a known change. A cause counts as near when one of its source lines is within two lines of a changed line, and sites are listed with the most causes first, so the first site is where concord sends an author first.
 
-| Measure | gruntz-decomp | Harvest |
+The first test uses real fixes. `concord bench --history 300` takes each function that is exact now and that one of the last 300 commits changed (and no later commit), and puts back its body from before that commit, so the change to find is the one a person made to match it. Cases where only that function stops matching are kept, at most 80. A fix made in a header or across several functions is replayed only in part.
+
+| Real fixes from history | gruntz-decomp | Harvest |
+| --- | ---: | ---: |
+| Cases | 57 | 80 |
+| Mean primary causes / sites per case | 2.3 / 1.5 | 4.0 / 2.0 |
+| First site near the fix | 37 | 62 |
+| Some cause near the fix | 39 | 65 |
+| Of them with a structural cause: cases, first site near | 41, 31 | 76, 60 |
+| Register allocation only: cases, first site near | 16, 6 | 4, 2 |
+
+Where something structural differs, the first site holds the fix in about three cases of four on both targets. Where only register allocation differs, the place the registers start to differ is not where the source changed: in the gruntz-decomp misses the fix (a temporary named or inlined) was 5 to 19 lines before or after it, since c2's choices shift over a stretch of code.
+
+The second test uses concord's own rewrites: it changes exact functions with one or two of them and keeps the cases where only that function stops matching. Both runs used 120 sampled exact functions, at most 15 cases of each kind and up to 30 two-edit cases.
+
+| Synthetic rewrites | gruntz-decomp | Harvest |
 | --- | ---: | ---: |
 | Cases | 68 | 42 |
 | Mean primary causes per case | 2.1 | 3.2 |
 | Mean sites per case | 1.5 | 1.7 |
 | Cases with no more sites than edits | 49 | 24 |
-| First cause listed is near the change | 46 | 29 |
-| Some cause is near the change | 58 | 37 |
+| First site near the change | 56 | 35 |
+| Some cause near the change | 58 | 37 |
 
-Placing call-count and register-allocation causes at their first differing row raised the cases whose first cause is near the change from 40 to 46 on gruntz-decomp and from 20 to 29 on Harvest, on the same cases; before, those two kinds had no place.
-
-## Primary causes by kind
-
-Functions that have at least one primary cause of the kind, and their bytes.
-
-| Kind | gruntz-decomp | Harvest |
-| --- | --- | --- |
-| operation | 339 (428,891 bytes) | 359 (502,570 bytes) |
-| control-flow | 98 (233,585 bytes) | 289 (482,794 bytes) |
-| instruction | 102 (198,984 bytes) | 107 (252,795 bytes) |
-| field | 83 (165,435 bytes) | 28 (62,419 bytes) |
-| frame | 51 (134,455 bytes) | 61 (115,918 bytes) |
-| calls | 41 (123,076 bytes) | 212 (249,624 bytes) |
-| slots | 75 (110,308 bytes) | 31 (78,050 bytes) |
-| register-allocation only | 73 (28,950 bytes) | 95 (94,886 bytes) |
-| constant | 9 (25,828 bytes) | 9 (26,629 bytes) |
+Three changes raised these numbers, measured on the same cases: placing call-count and register-allocation causes at their first differing row (before, they had no place), grouping causes into sites, and listing the site with the most causes first rather than the first cause in a fixed order of kinds. On the real Harvest fixes the first site holds the fix in 62 cases, the first cause in kind order in 39.
 
 ## Checked against hand diagnoses
 

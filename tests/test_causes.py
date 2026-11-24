@@ -97,6 +97,10 @@ class SourceSiteTests(unittest.TestCase):
         primaries = [{"line": 10}, {"line": 30}, {"line": 12}, {"line": None}, {"line": 14}, {"line": None}]
         self.assertEqual(sites(primaries), [[0, 2, 4], [1], [3, 5]])
 
+    def test_a_site_with_more_causes_comes_first(self):
+        primaries = [{"line": 5}, {"line": 40}, {"line": 41}, {"line": None}]
+        self.assertEqual(sites(primaries), [[1, 2], [0], [3]])
+
 
 class CensusTests(unittest.TestCase):
     def test_counts_kinds_by_bytes(self):

@@ -174,6 +174,74 @@ def cases(
     return kept
 
 
+HISTORY = "history"
+
+
+def _git(root, *args: str) -> str:
+    import subprocess
+
+    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True).stdout
+
+
+def _show(root, commit: str, path: str) -> bytes | None:
+    import subprocess
+
+    done = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=root, capture_output=True, check=False)
+    return done.stdout if done.returncode == 0 else None
+
+
+def history(harvest: Target, commits: int = 300, count: int | None = None, seed: int = 0) -> list[Case]:
+    """Cases from the target's own history: for each exact function whose body one
+    of the last `commits` commits changed, and that no later commit changed, the
+    unit's present source with that function's body from before the commit. The
+    changed lines are the fix a person made, so --causes measures localization on
+    real differences. Kept, as for mutations, when only that function stops
+    matching. A fix made in a header, or spread over several functions, is
+    replayed only in part, and a body that no longer compiles against the
+    present headers is dropped. At most `count` cases, chosen at random."""
+    root = harvest.root
+    exact: dict[str, set[str]] = {}
+    for unit, symbol in functions(harvest):
+        exact.setdefault(unit, set()).add(symbol)
+    sources = {unit: harvest.source_path(unit) for unit in exact}
+    paths = {str(path.relative_to(root)): unit for unit, path in sources.items()}
+    found: dict[str, dict[str, tuple[str, bytes]]] = {}  # unit -> symbol -> (commit, mutated source)
+    current = {unit: path.read_bytes() for unit, path in sources.items()}
+    log = _git(root, "log", f"-{commits}", "--format=%H", "--", *sorted(paths)).split()
+    for commit in log:  # newest first, so a function's latest change is the one kept
+        for path in _git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", commit).split():
+            unit = paths.get(path)
+            if unit is None:
+                continue
+            before, after = _show(root, f"{commit}^", path), _show(root, commit, path)
+            if before is None or after is None:
+                continue
+            for symbol in exact[unit]:
+                if symbol in found.get(unit, {}):
+                    continue
+                try:
+                    now = harvest.find_function(current[unit], symbol)
+                    old, new = harvest.find_function(before, symbol), harvest.find_function(after, symbol)
+                except (KeyError, ValueError):
+                    continue
+                if new.text != now.text or old.text == new.text:
+                    continue  # changed since, or not by this commit
+                mutated = current[unit][: now.start_byte] + old.text + current[unit][now.end_byte :]
+                found.setdefault(unit, {})[symbol] = (commit[:9], mutated)
+    cases_found = []
+    for unit, items in sorted(found.items()):
+        evaluations = harvest.evaluate(unit, {"base": current[unit], **{f"c{n}": text for n, (_, (_, text)) in enumerate(sorted(items.items()))}})
+        base = evaluations["base"].exact_functions()
+        for n, (symbol, (commit, text)) in enumerate(sorted(items.items())):
+            evaluation = evaluations[f"c{n}"]
+            if evaluation.error or symbol not in base or base - evaluation.exact_functions() != {symbol}:
+                continue
+            cases_found.append(Case(unit, symbol, HISTORY, f"before {commit}", text, evaluation.fuzzy.get(symbol, 0.0)))
+    if count is not None and len(cases_found) > count:
+        cases_found = random.Random(seed).sample(cases_found, count)
+    return cases_found
+
+
 TWO_EDITS = "two edits"
 
 
@@ -315,8 +383,11 @@ class CauseCase:
 
     @property
     def first_hit(self) -> bool:
-        """The primary cause concord lists first, the one to fix first, is within two lines of the change."""
-        return bool(self.kinds) and self.near(0)
+        """A cause of the site concord lists first, the one to fix first, is within two lines of the change."""
+        from concord.causes import sites
+
+        found = sites([{"line": min(lines) if lines else None} for lines in self.lines])
+        return bool(found) and any(self.near(i) for i in found[0])
 
     @property
     def sites(self) -> int:
@@ -368,7 +439,7 @@ def cause_table(found: list[CauseCase]) -> list[tuple[str, int, float, float, in
     change, cases where any is, mean precision of the placed primary causes), in
     MUTATIONS' order with two-edit cases last."""
     rows = []
-    for name in [*MUTATIONS, TWO_EDITS]:
+    for name in [*MUTATIONS, TWO_EDITS, HISTORY]:
         group = [item for item in found if item.case.mutation == name]
         if group:
             precisions = [item.precision for item in group if item.precision is not None]

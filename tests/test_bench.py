@@ -1,8 +1,10 @@
 """The benchmark's own mutations, its case filter and its table."""
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from concord.bench import (
     MUTATIONS,
@@ -15,6 +17,7 @@ from concord.bench import (
     changed_lines,
     commute,
     expand_assignment,
+    history,
     location_table,
     nest_condition,
     split_declaration,
@@ -131,6 +134,38 @@ class Cases(unittest.TestCase):
         self.assertEqual(sum(1 for _, known in MUTATIONS.values() if not known), 0)  # every mutation has an inverse rewrite
 
 
+class Recorded(FakeHarvest):
+    """FakeHarvest with a build report: both functions of a.cpp match."""
+
+    def verdicts(self):
+        return [SimpleNamespace(unit="a.cpp", symbol=s, row={"exact": True}) for s in (TOTAL, SKIP)]
+
+    def source(self, unit):
+        return unit
+
+
+class History(unittest.TestCase):
+    def test_a_commit_that_fixed_a_function_becomes_a_case_with_the_old_body(self):
+        before = SOURCE.replace(b"for (int i = 0; i < count; ++i)\n    {\n        sum", b"{ int i = 0; while (i < count) {\n        sum", 1)
+        before = before.replace(b"sum += values[i];\n    }\n    return sum * scale", b"sum += values[i];\n++i;\n} }\n    return sum * scale", 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src").mkdir()
+            git = lambda *a: subprocess.run(["git", *a], cwd=root, check=True, capture_output=True)
+            git("init", "-q")
+            git("config", "user.email", "t@example.com")
+            git("config", "user.name", "t")
+            (root / "src" / "a.cpp").write_bytes(before)
+            git("add", "src/a.cpp")
+            git("commit", "-q", "-m", "start")
+            (root / "src" / "a.cpp").write_bytes(SOURCE)
+            git("commit", "-q", "-am", "match total")
+            found = history(Recorded(root), commits=10)
+        self.assertEqual([(c.mutation, c.symbol) for c in found], [("history", TOTAL)])  # skip was never changed
+        self.assertIn(b"while (i < count)", found[0].source)
+        self.assertIn(b"int skip(int count)", found[0].source)
+
+
 class Location(unittest.TestCase):
     def test_changed_lines_are_numbered_in_the_mutated_source(self):
         self.assertEqual(changed_lines(b"a\nb\nc\n", b"a\nB\nc\n"), {2})
@@ -154,11 +189,11 @@ class Location(unittest.TestCase):
         first = item(["control-flow", "register-allocation"], [{5}, set()], {4})
         later = item(["frame", "operation"], [{20}, {6}], {4})
         miss = item(["operation"], [{30}], {4})
-        self.assertEqual([i.first_hit for i in (first, later, miss)], [True, False, False])
+        self.assertEqual([i.first_hit for i in (first, later, miss)], [True, True, False])  # equal sites: line order
         self.assertEqual([i.hit for i in (first, later, miss)], [True, True, False])
         self.assertEqual([i.precision for i in (first, later, miss)], [1.0, 0.5, 0.0])
         self.assertEqual([i.sites for i in (first, later, miss)], [2, 2, 1])  # a cause without a line is a site of its own
-        self.assertEqual(cause_table([first, later, miss]), [("swap if branches", 3, 5 / 3, 5 / 3, 1, 1, 2, 0.5)])
+        self.assertEqual(cause_table([first, later, miss]), [("swap if branches", 3, 5 / 3, 5 / 3, 1, 2, 2, 0.5)])
 
 if __name__ == "__main__":
     unittest.main()

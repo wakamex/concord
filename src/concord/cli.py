@@ -293,6 +293,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench.add_argument("--budget", type=int, default=128, help="candidate sources permute may compile per case")
     p_bench.add_argument("--seed", type=int, default=0)
     p_bench.add_argument("--two-edits", type=int, default=0, metavar="N", help="also take up to N cases two changes away from a match")
+    p_bench.add_argument(
+        "--history", type=int, metavar="COMMITS",
+        help="take cases from the target's last COMMITS commits instead: each exact function a commit changed, with its body from before the commit (--per-kind caps them)",
+    )
     p_bench.add_argument("--undirected", action="store_true", help="run permute without its single-edit stage and location ordering")
     p_bench.add_argument("--objective", choices=("score", "causes"), default="score", help="permute's ranking of candidates (see concord permute)")
     p_bench.add_argument(
@@ -1828,13 +1832,17 @@ def _blockers(args: argparse.Namespace) -> int:
 
 def _bench(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     harvest = _target(parser, args)
-    pool = bench.functions(harvest)
-    sample = random.Random(args.seed).sample(pool, min(args.functions, len(pool)))
     tally: dict = {}
-    found = bench.cases(harvest, sample, args.seed, args.per_kind, tally)
-    if args.two_edits:
-        found += bench.pairs(harvest, sample, args.seed, args.two_edits)
-    print(f"{len(found)} cases from {len(sample)} of {len(pool)} exact functions", flush=True)
+    if args.history:
+        found = bench.history(harvest, args.history, args.per_kind, args.seed)
+        print(f"{len(found)} cases from the last {args.history} commits", flush=True)
+    else:
+        pool = bench.functions(harvest)
+        sample = random.Random(args.seed).sample(pool, min(args.functions, len(pool)))
+        found = bench.cases(harvest, sample, args.seed, args.per_kind, tally)
+        if args.two_edits:
+            found += bench.pairs(harvest, sample, args.seed, args.two_edits)
+        print(f"{len(found)} cases from {len(sample)} of {len(pool)} exact functions", flush=True)
     print(f"{'what each applied change did':27} " + " ".join(f"{effect:>19}" for effect in bench.EFFECTS))
     for name in bench.MUTATIONS:
         if name in tally:
