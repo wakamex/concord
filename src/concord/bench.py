@@ -427,9 +427,10 @@ def locate_causes(harvest: Target, case: Case) -> CauseCase:
         raise KeyError(f"{case.symbol} is not a function in both objects")
     analysis = analyse(retail, ours, diff.findings)
     offsets = sorted({p.candidate_offset for p in analysis.primaries if p.candidate_offset is not None})
-    lines = harvest.line_map(case.unit, case.source, {case.symbol: offsets}).get(case.symbol, {}) if offsets else {}
+    places = harvest.line_map(case.unit, case.source, {case.symbol: offsets}).get(case.symbol, {}) if offsets else {}
+    own = harvest.unit_file(case.unit)
     result.kinds = [p.kind for p in analysis.primaries]
-    result.lines = [{n for n in lines.get(p.candidate_offset, set()) if first <= n <= last} for p in analysis.primaries]
+    result.lines = [{n for path, n in places.get(p.candidate_offset, []) if path == own and first <= n <= last} for p in analysis.primaries]
     return result
 
 

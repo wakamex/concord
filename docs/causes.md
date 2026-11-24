@@ -17,10 +17,11 @@ Result: on both targets nearly two thirds of differing rows are fallout. Groupin
 | 2 or 3 sites | 112 (68,457 bytes, 15%) | 89 (145,012 bytes, 27%) |
 | 4 to 9 sites | 89 (153,351 bytes, 34%) | 56 (140,023 bytes, 27%) |
 | 10 or more sites | 37 (152,687 bytes, 34%) | 12 (61,706 bytes, 12%) |
-| Functions with no cause in the unit's own source | 39 (19,925 bytes) | 270 (165,258 bytes) |
+| Defined outside the unit's source, in the project's headers | 39 open copies | 174 open copies of 46 functions (33,006 bytes) |
+| Defined outside the unit's source, in library headers | none | 82 open copies of 67 functions (62,317 bytes) |
 | Register allocation only | 73 (28,950 bytes) | 95 (94,886 bytes) |
 
-The functions with no cause in the unit's own source are code from headers: on Harvest, 83 library template instances (`std::vector` and others) and inline methods emitted in many units, such as `IGUIElement::removeChild` in every GUI unit.
+A function defined in a header is compiled again in every unit that uses it, so it can be open in many units at once. On Harvest each cause of such a function is placed at the line of the function's own body in its header, from the outermost frame of the debug information's inline chain. Its 174 open copies in project headers are 46 functions, and five `IGUIElement` methods compiled in up to 23 GUI units make up 106 of them; of the 15 functions with more than one copy, 11 have the same causes in every copy, so one change to the header would close all of their copies. The 82 copies in library headers are `std::` template instances in libstdc++'s headers under `/usr/include`, which the project cannot edit; their causes lie in the types they are instantiated with or in how the build compiles them. cl's line records name no file, so on gruntz-decomp the 39 copies of header functions keep no line.
 
 ## Checked against known fixes
 
@@ -65,5 +66,5 @@ Three changes raised these numbers, measured on the same cases: placing call-cou
 
 - `operation` is the largest kind, and a site counts as one whenever the two sides compute with a different multiset of non-copy instructions; around extra out-of-line calls some of these are still fallout (in `TmDeflectStep`, 36 of its 71 causes are operations near the extra calls). `instruction` holds what fits no other kind.
 - The frame rule treats any displacement or constant off by exactly the frame difference as fallout; a real difference of the same size would be missed.
-- A cause in code from a header has no line in the unit's own source, so a function made only of such code (a header inline method or a library template) gets no sites; these are reported separately above.
+- On gruntz-decomp a function defined in a header gets no line, since cl's line records do not name the file; 17 Harvest functions defined in their unit get none either, because their differing code comes only from inlined callees.
 - A site is a cluster of nearby lines, not a proven edit: in the benchmark one change still gives more than one site in 19 of 68 gruntz-decomp cases and 18 of 42 Harvest cases.

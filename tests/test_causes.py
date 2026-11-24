@@ -1,6 +1,6 @@
 import unittest
 
-from concord.causes import analyse, census, sites
+from concord.causes import Analysis, Primary, analyse, census, place, sites
 from concord.diff import ObjectFunction, diff_code
 
 
@@ -96,6 +96,25 @@ class SourceSiteTests(unittest.TestCase):
     def test_causes_within_two_lines_share_a_site_and_unplaced_ones_form_one(self):
         primaries = [{"line": 10}, {"line": 30}, {"line": 12}, {"line": None}, {"line": 14}, {"line": None}]
         self.assertEqual(sites(primaries), [[0, 2, 4], [1], [3, 5]])
+
+    def test_sites_in_different_files_stay_apart(self):
+        primaries = [{"file": "src/a.cpp", "line": 10}, {"file": "src/a.h", "line": 11}]
+        self.assertEqual(sites(primaries), [[0], [1]])
+
+    def test_a_cause_takes_the_unit_line_or_for_a_header_function_its_own_body(self):
+        def analysis():
+            return Analysis(primaries=[Primary("operation", "", 0, 4), Primary("calls", "", 0, 8)])
+
+        places = {4: [("src/u.cpp", 12), ("src/a.h", 30)], 8: [("src/a.h", 31)]}
+        inside = analysis()
+        place(inside, places, "src/u.cpp", (10, 20))
+        self.assertEqual([(p.file, p.line) for p in inside.primaries], [("src/u.cpp", 12), (None, None)])
+        header = analysis()
+        place(header, places, "src/u.cpp", None)  # defined outside the unit: the outermost frame, its own body
+        self.assertEqual([(p.file, p.line) for p in header.primaries], [("src/a.h", 30), ("src/a.h", 31)])
+        unnamed = analysis()  # line records that name no file are taken as the unit's, so a header function gets none
+        place(unnamed, {4: [("src/u.cpp", 30)], 8: []}, "src/u.cpp", None)
+        self.assertEqual([(p.file, p.line) for p in unnamed.primaries], [(None, None), (None, None)])
 
     def test_a_site_with_more_causes_comes_first(self):
         primaries = [{"line": 5}, {"line": 40}, {"line": 41}, {"line": None}]

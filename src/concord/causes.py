@@ -45,6 +45,7 @@ class Primary:
     candidate_offset: int | None = None
     rows: int = 1
     line: int | None = None
+    file: str | None = None  # the line's file, relative to the checkout
 
 
 @dataclass
@@ -315,14 +316,19 @@ def analyse(target: ObjectFunction, candidate: ObjectFunction, findings: list[Di
     return result
 
 
-def place(analysis: Analysis, lines: dict[int, set[int]], span: tuple[int, int] | None = None) -> None:
-    """Give each primary cause the first source line of its candidate offset, from the offsets' lines, keeping
-    only lines inside the function's span where it is known."""
+def place(analysis: Analysis, places: dict[int, list[tuple[str, int]]], own: str, span: tuple[int, int] | None) -> None:
+    """Give each primary cause the first line of its candidate offset in the unit's own file, inside the
+    function's span; or, for a function defined outside the unit's source (a header's inline method, a library
+    template), the line of its own body that the code comes from."""
     for primary in analysis.primaries:
-        found = lines.get(primary.candidate_offset, set()) if primary.candidate_offset is not None else set()
-        if span:
-            found = {n for n in found if span[0] <= n <= span[1]}
-        primary.line = min(found) if found else None
+        found = places.get(primary.candidate_offset, []) if primary.candidate_offset is not None else []
+        mine = [line for path, line in found if path == own and span and span[0] <= line <= span[1]]
+        if mine:
+            primary.file, primary.line = own, min(mine)
+        elif span is None and found and found[-1][0] != own:  # cl's line records name no file: no header lines on MSVC
+            primary.file, primary.line = found[-1]
+        else:
+            primary.file, primary.line = None, None
 
 
 def sites(primaries: list[dict], within: int = 2) -> list[list[int]]:
@@ -331,15 +337,15 @@ def sites(primaries: list[dict], within: int = 2) -> list[list[int]]:
     usually explains one site, so a function's sites estimate the edits it needs. Sites with more causes come
     first: on 80 fixes from Harvest's history the site with the most causes held the fix in 63, the first
     cause in concord's kind order in 39. Indexes into `primaries`."""
-    placed = sorted((p["line"], i) for i, p in enumerate(primaries) if p.get("line") is not None)
+    placed = sorted((p.get("file") or "", p["line"], i) for i, p in enumerate(primaries) if p.get("line") is not None)
     groups: list[list[int]] = []
     last = None
-    for line, index in placed:
-        if groups and line - last <= within:
+    for path, line, index in placed:
+        if groups and last[0] == path and line - last[1] <= within:
             groups[-1].append(index)
         else:
             groups.append([index])
-        last = line
+        last = (path, line)
     groups.sort(key=lambda group: -len(group))  # stable: equal sites stay in line order
     unplaced = [i for i, p in enumerate(primaries) if p.get("line") is None]
     return groups + ([unplaced] if unplaced else [])
@@ -350,6 +356,8 @@ def census(rows: list[dict]) -> dict:
     kinds: dict[str, list[int]] = {}
     counts, site_counts = Counter(), Counter()
     unplaced = [0, 0]
+    header_symbols: dict[str, list[int]] = {}  # symbol -> [open copies, bytes]
+    library_symbols: dict[str, list[int]] = {}
     register_only = [0, 0]
     differences = fallout = 0
     for row in rows:
@@ -359,6 +367,11 @@ def census(rows: list[dict]) -> dict:
             entry[0] += 1
             entry[1] += row["bytes"]
         counts[min(len(row["primaries"]), 10)] += 1
+        if row.get("header"):
+            files = {p.get("file") for p in row["primaries"] if p.get("file")}
+            library = bool(files) and all(f.startswith("/") for f in files)  # outside the checkout: a toolchain header
+            counts_into = library_symbols if library else header_symbols
+            counts_into.setdefault(row["symbol"], [0, row["bytes"]])[0] += 1
         if row["primaries"] and all(p.get("line") is None for p in row["primaries"]):
             unplaced[0] += 1  # no line in the unit's source: code from a header or a library template
             unplaced[1] += row["bytes"]
@@ -375,6 +388,10 @@ def census(rows: list[dict]) -> dict:
         "primaries_per_function": {("10+" if k == 10 else str(k)): n for k, n in sorted(counts.items())},
         "sites_per_function": {("10+" if k == 10 else str(k)): n for k, n in sorted(site_counts.items())},
         "without_source_lines": {"functions": unplaced[0], "bytes": unplaced[1]},
+        "in_project_headers": {"copies": sum(v[0] for v in header_symbols.values()), "functions": len(header_symbols),
+                               "bytes": sum(v[1] for v in header_symbols.values())},
+        "in_library_headers": {"copies": sum(v[0] for v in library_symbols.values()), "functions": len(library_symbols),
+                               "bytes": sum(v[1] for v in library_symbols.values())},
         "register_allocation_only": {"functions": register_only[0], "bytes": register_only[1]},
         "differences": differences,
         "fallout": fallout,
@@ -392,10 +409,12 @@ def analysis_of(target, verdict) -> Analysis:
     return analyse(pair[0], pair[1], target.diff(verdict).findings)
 
 
-def row(verdict, analysis: Analysis) -> dict:
-    """A function's analysis as a JSON-ready row."""
+def row(verdict, analysis: Analysis, header: bool = False) -> dict:
+    """A function's analysis as a JSON-ready row; `header` when the function is defined outside the unit's
+    source, so the same function may be open in several units."""
     primaries = [vars(p) for p in analysis.primaries]
     return {
+        "header": header,
         "unit": verdict.unit,
         "symbol": verdict.symbol,
         "bytes": verdict.row.get("size", 0),
@@ -441,6 +460,7 @@ def run(target, units: list[str] | None = None, progress=None) -> dict:
         except (OSError, KeyError, RuntimeError) as error:
             failed.append(f"{unit}: no source lines: {error}")
             source, lines = None, {}
+        own = target.unit_file(unit)
         for verdict, analysis in analysed:
             span = None
             if source is not None:
@@ -449,8 +469,8 @@ def run(target, units: list[str] | None = None, progress=None) -> dict:
                     span = (scope.start_point[0] + 1, scope.end_point[0] + 1)
                 except (KeyError, ValueError):
                     span = None
-            place(analysis, lines.get(verdict.symbol, {}), span)
-            rows.append(row(verdict, analysis))
+            place(analysis, lines.get(verdict.symbol, {}), own, span)
+            rows.append(row(verdict, analysis, header=source is not None and span is None))
         if progress:
             progress(unit, len(rows))
     return {"census": census(rows), "functions": rows, "failed": failed}

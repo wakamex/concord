@@ -269,13 +269,20 @@ class Harvest:
         """Lines of the unit's source behind the code at `offsets` in `symbol`, for
         the unit compiled from `source` with -g; each offset's whole inline chain
         counts. Empty when the debug compile fails."""
-        return set().union(*self.line_map(unit, source, {symbol: offsets}).get(symbol, {}).values())
+        own = self.unit_file(unit)
+        return {line for places in self.line_map(unit, source, {symbol: offsets}).get(symbol, {}).values() for path, line in places if path == own}
 
-    def line_map(self, unit: str, source: bytes, offsets: dict[str, list[int]]) -> dict[str, dict[int, set[int]]]:
-        """For each symbol, each of its offsets' source lines, as source_lines finds
-        them, from one debug compile of the unit; empty when that compile fails."""
-        unit = self.source(unit)
-        obj = self.debug_objects([unit], {unit: source}).get(unit)
+    def unit_file(self, unit: str) -> str:
+        """The unit's source file, relative to the checkout, as line_map names it."""
+        return f"src/{self.source(unit)}"
+
+    def line_map(self, unit: str, source: bytes, offsets: dict[str, list[int]]) -> dict[str, dict[int, list[tuple[str, int]]]]:
+        """For each symbol, each of its offsets' (file, line) places from one debug
+        compile of the unit: every frame of its inline chain in the unit's own file,
+        then the outermost frame, the function's own body, wherever it is (a header
+        for an inline method). Empty when the debug compile fails."""
+        own = self.unit_file(unit)
+        obj = self.debug_objects([self.source(unit)], {self.source(unit): source}).get(self.source(unit))
         if obj is None:
             return {}
         found = {}
@@ -285,7 +292,10 @@ class Harvest:
             except KeyError:
                 continue
             chains = inline_chains(obj, function.section, [function.start + offset for offset in wanted])
-            found[symbol] = {o: {f.line for f in chain if f.path == f"src/{unit}"} for o, chain in zip(wanted, chains, strict=True)}
+            found[symbol] = {
+                offset: [(f.path, f.line) for f in chain if f.path == own] + ([(chain[-1].path, chain[-1].line)] if chain else [])
+                for offset, chain in zip(wanted, chains, strict=True)
+            }
         return found
 
     def vtables(self) -> tuple[int, list[dict]]:

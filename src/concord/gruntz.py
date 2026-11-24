@@ -548,21 +548,28 @@ class Gruntz:
         """Lines of the unit's source behind the code at `offsets` in `symbol`, for
         the unit compiled from `source` with cl's /Zd line records. Empty when
         that compile fails."""
-        return set().union(*self.line_map(unit, source, {symbol: offsets}).get(symbol, {}).values())
+        own = self.unit_file(unit)
+        return {line for places in self.line_map(unit, source, {symbol: offsets}).get(symbol, {}).values() for path, line in places if path == own}
 
-    def line_map(self, unit: str, source: bytes, offsets: dict[str, list[int]]) -> dict[str, dict[int, set[int]]]:
-        """For each symbol, each of its offsets' source line, from one compile of
-        the unit with cl's /Zd line records; empty when the compile fails."""
+    def unit_file(self, unit: str) -> str:
+        """The unit's source file, relative to the checkout, as line_map names it."""
+        return str(self.source_path(unit).relative_to(self.root))
+
+    def line_map(self, unit: str, source: bytes, offsets: dict[str, list[int]]) -> dict[str, dict[int, list[tuple[str, int]]]]:
+        """For each symbol, each of its offsets' (file, line), from one compile of the
+        unit with cl's /Zd line records, which name the unit's own file; empty when
+        the compile fails."""
         data = self.line_object(unit, source)
         if data is None:
             return {}
+        own = self.unit_file(unit)
         found = {}
         for symbol, wanted in offsets.items():
             records = coff.lines(data, symbol)
             found[symbol] = {}
             for offset in wanted:
                 before = [line for start, line in records if start <= offset]
-                found[symbol][offset] = {before[-1]} if before else set()
+                found[symbol][offset] = [(own, before[-1])] if before else []
         return found
 
     def line_object(self, unit: str, source: bytes) -> bytes | None:
