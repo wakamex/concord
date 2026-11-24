@@ -269,15 +269,24 @@ class Harvest:
         """Lines of the unit's source behind the code at `offsets` in `symbol`, for
         the unit compiled from `source` with -g; each offset's whole inline chain
         counts. Empty when the debug compile fails."""
+        return set().union(*self.line_map(unit, source, {symbol: offsets}).get(symbol, {}).values())
+
+    def line_map(self, unit: str, source: bytes, offsets: dict[str, list[int]]) -> dict[str, dict[int, set[int]]]:
+        """For each symbol, each of its offsets' source lines, as source_lines finds
+        them, from one debug compile of the unit; empty when that compile fails."""
         unit = self.source(unit)
         obj = self.debug_objects([unit], {unit: source}).get(unit)
         if obj is None:
-            return set()
-        function = read_function(obj, symbol)
-        lines = set()
-        for chain in inline_chains(obj, function.section, [function.start + offset for offset in offsets]):
-            lines |= {frame.line for frame in chain if frame.path == f"src/{unit}"}
-        return lines
+            return {}
+        found = {}
+        for symbol, wanted in offsets.items():
+            try:
+                function = read_function(obj, symbol)
+            except KeyError:
+                continue
+            chains = inline_chains(obj, function.section, [function.start + offset for offset in wanted])
+            found[symbol] = {o: {f.line for f in chain if f.path == f"src/{unit}"} for o, chain in zip(wanted, chains, strict=True)}
+        return found
 
     def vtables(self) -> tuple[int, list[dict]]:
         """Compare every vtable the last `hv match` compiled with the target's. A slot that

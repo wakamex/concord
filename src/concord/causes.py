@@ -67,19 +67,21 @@ def frame_size(instructions: list[Instruction], function: ObjectFunction) -> int
     return None
 
 
+def _callee(ins: Instruction, function: ObjectFunction) -> str | None:
+    """The function a call instruction calls by relocation. A relocation against the function's own name or a
+    section symbol is how some objects reach code in the same section, not a callee."""
+    if not ins.is_call:
+        return None
+    for offset, name in function.targets:
+        if ins.offset <= offset < ins.offset + ins.size:
+            callee = name.split("+")[0]
+            return None if callee == function.name or callee.startswith((".", "$")) else callee
+    return None
+
+
 def calls(instructions: list[Instruction], function: ObjectFunction) -> Counter:
-    """Each callee by name, as many times as the function calls it. A relocation against the function's own
-    name or a section symbol is how some objects reach code in the same section, not a callee."""
-    found = Counter()
-    for ins in instructions:
-        if ins.is_call:
-            for offset, name in function.targets:
-                if ins.offset <= offset < ins.offset + ins.size:
-                    callee = name.split("+")[0]
-                    if callee != function.name and not callee.startswith((".", "$")):
-                        found[callee] += 1
-                    break
-    return found
+    """Each callee by name, as many times as the function calls it."""
+    return Counter(callee for ins in instructions if (callee := _callee(ins, function)) is not None)
 
 
 def _stack_only(a: Instruction, b: Instruction) -> bool:
@@ -212,12 +214,27 @@ def analyse(target: ObjectFunction, candidate: ObjectFunction, findings: list[Di
                 f"({our_calls[callee]} against {retail_calls[callee]}): a helper inlined or kept out of line "
                 "differently, or a call added or missing"))
     call_set = any(p.kind == "calls" for p in result.primaries)
+    rows = [(f, _rows(at_target, f.target_offsets, f.offset, f.candidate_offsets),
+             _rows(at_candidate, f.candidate_offsets, f.candidate, f.target_offsets)) for f in findings]
+    anchors, last = {}, None  # a finding only retail has is placed at our nearest earlier differing row
+    for f in sorted(findings, key=lambda f: f.offset):
+        last = f.candidate if f.candidate is not None else last
+        anchors[id(f)] = last
+    for primary in result.primaries:
+        if primary.kind == "calls":  # placed at the first differing call to the callee on the side with more
+            callee = primary.detail.split(" calls to ", 1)[1].split(" than retail", 1)[0]
+            more = " more calls " in primary.detail
+            at = next((f for f, a_rows, b_rows in rows
+                       if any(_callee(i, candidate if more else target) == callee for i in (b_rows if more else a_rows))), None)
+            if at is not None:
+                primary.target_offset = at.offset
+                primary.candidate_offset = anchors[id(at)]
+                primary.rows = 0
 
     tables = table_start(theirs, target), table_start(ours, candidate)
     register_rows, slot_rows, spill_rows, sites = 0, 0, 0, []
-    for finding in findings:
-        a_rows = _rows(at_target, finding.target_offsets, finding.offset, finding.candidate_offsets)
-        b_rows = _rows(at_candidate, finding.candidate_offsets, finding.candidate, finding.target_offsets)
+    first_register = None  # the first finding of register choices or copies, where allocation-only differences start
+    for finding, a_rows, b_rows in rows:
         if (tables[0] is not None and finding.offset >= tables[0]) or (
                 tables[1] is not None and finding.candidate is not None and finding.candidate >= tables[1]):
             result.fallout["jump table data"] += finding.rows
@@ -237,6 +254,7 @@ def analyse(target: ObjectFunction, candidate: ObjectFunction, findings: list[Di
             continue
         if paired and all(shape(x) == shape(y) for x, y in zip(a_rows, b_rows)):
             register_rows += finding.rows
+            first_register = first_register or finding
             continue
         if paired and all(_stack_only(x, y) or shape(x) == shape(y) for x, y in zip(a_rows, b_rows)):
             slot_rows += finding.rows
@@ -247,6 +265,7 @@ def analyse(target: ObjectFunction, candidate: ObjectFunction, findings: list[Di
             continue
         if not paired and a_rows + b_rows and all(_spill(i) for i in a_rows + b_rows):
             spill_rows += finding.rows  # register pressure: fallout when anything structural differs
+            first_register = first_register or finding
             continue
         if paired and all(_constant_only(x, y) or shape(x) == shape(y) for x, y in zip(a_rows, b_rows)):
             sites.append(("constant", finding, a_rows, b_rows))
@@ -256,6 +275,7 @@ def analyse(target: ObjectFunction, candidate: ObjectFunction, findings: list[Di
             kind = _site(a_rows, b_rows)
             if kind == "moves":
                 spill_rows += finding.rows  # copies and reloads: allocation, fallout when anything structural differs
+                first_register = first_register or finding
             else:
                 sites.append((kind, finding, a_rows, b_rows))
 
@@ -285,26 +305,48 @@ def analyse(target: ObjectFunction, candidate: ObjectFunction, findings: list[Di
         result.fallout["register choices"] += register_rows
         result.fallout["copies, spills, reloads and saves"] += spill_rows
     elif register_rows or spill_rows:
+        at = first_register
         result.primaries.append(Primary(
             "register-allocation", f"{register_rows + spill_rows} differing rows are register choices, spills and "
             "saves alone: the structure matches, so the cause is allocation order (for MSVC, value lifetimes and "
-            "uses; see il-search)", rows=register_rows + spill_rows))
+            "uses; see il-search), starting at the first of them",
+            at.offset if at else None, anchors[id(at)] if at else None,
+            register_rows + spill_rows))
     return result
 
 
-def place(analysis: Analysis, records: list[tuple[int, int]]) -> None:
-    """Give each primary cause the source line of its candidate offset, from line records."""
-    from concord.first_differences import at
-
+def place(analysis: Analysis, lines: dict[int, set[int]], span: tuple[int, int] | None = None) -> None:
+    """Give each primary cause the first source line of its candidate offset, from the offsets' lines, keeping
+    only lines inside the function's span where it is known."""
     for primary in analysis.primaries:
-        if primary.candidate_offset is not None:
-            primary.line = at(records, primary.candidate_offset)
+        found = lines.get(primary.candidate_offset, set()) if primary.candidate_offset is not None else set()
+        if span:
+            found = {n for n in found if span[0] <= n <= span[1]}
+        primary.line = min(found) if found else None
+
+
+def sites(primaries: list[dict], within: int = 2) -> list[list[int]]:
+    """The primary causes grouped into source sites: causes whose lines are within `within` lines of the
+    previous one share a site, and causes without a line form one more site. One source change usually
+    explains one site, so a function's sites estimate the edits it needs. Indexes into `primaries`."""
+    placed = sorted((p["line"], i) for i, p in enumerate(primaries) if p.get("line") is not None)
+    groups: list[list[int]] = []
+    last = None
+    for line, index in placed:
+        if groups and line - last <= within:
+            groups[-1].append(index)
+        else:
+            groups.append([index])
+        last = line
+    unplaced = [i for i, p in enumerate(primaries) if p.get("line") is None]
+    return groups + ([unplaced] if unplaced else [])
 
 
 def census(rows: list[dict]) -> dict:
     """Primary causes over many functions: by kind, by count per function, and the fallout share."""
     kinds: dict[str, list[int]] = {}
-    counts = Counter()
+    counts, site_counts = Counter(), Counter()
+    unplaced = [0, 0]
     register_only = [0, 0]
     differences = fallout = 0
     for row in rows:
@@ -314,6 +356,11 @@ def census(rows: list[dict]) -> dict:
             entry[0] += 1
             entry[1] += row["bytes"]
         counts[min(len(row["primaries"]), 10)] += 1
+        if row["primaries"] and all(p.get("line") is None for p in row["primaries"]):
+            unplaced[0] += 1  # no line in the unit's source: code from a header or a library template
+            unplaced[1] += row["bytes"]
+        else:
+            site_counts[min(len(row["sites"]), 10)] += 1
         if seen == {"register-allocation"}:
             register_only[0] += 1
             register_only[1] += row["bytes"]
@@ -323,31 +370,36 @@ def census(rows: list[dict]) -> dict:
         "functions": len(rows),
         "by_kind": {k: {"functions": v[0], "bytes": v[1]} for k, v in sorted(kinds.items(), key=lambda kv: -kv[1][1])},
         "primaries_per_function": {("10+" if k == 10 else str(k)): n for k, n in sorted(counts.items())},
+        "sites_per_function": {("10+" if k == 10 else str(k)): n for k, n in sorted(site_counts.items())},
+        "without_source_lines": {"functions": unplaced[0], "bytes": unplaced[1]},
         "register_allocation_only": {"functions": register_only[0], "bytes": register_only[1]},
         "differences": differences,
         "fallout": fallout,
     }
 
 
-def function(target, verdict, records: list[tuple[int, int]] | None = None) -> dict:
-    """One open function's primary causes and fallout, as a JSON-ready row."""
+def analysis_of(target, verdict) -> Analysis:
+    """One open function's primary causes and fallout, from the build's objects."""
     from concord.diff import read_functions
 
     retail, ours = target.object_pair(verdict)
     pair = read_functions(retail, {verdict.symbol}).get(verdict.symbol), read_functions(ours, {verdict.symbol}).get(verdict.symbol)
     if pair[0] is None or pair[1] is None:
         raise KeyError(f"{verdict.symbol} is not a function in both objects of {verdict.unit}")
-    findings = target.diff(verdict).findings
-    analysis = analyse(pair[0], pair[1], findings)
-    if records:
-        place(analysis, records)
+    return analyse(pair[0], pair[1], target.diff(verdict).findings)
+
+
+def row(verdict, analysis: Analysis) -> dict:
+    """A function's analysis as a JSON-ready row."""
+    primaries = [vars(p) for p in analysis.primaries]
     return {
         "unit": verdict.unit,
         "symbol": verdict.symbol,
         "bytes": verdict.row.get("size", 0),
         "score": verdict.row.get("fuzzy"),
         "differences": analysis.differences,
-        "primaries": [vars(p) for p in analysis.primaries],
+        "primaries": primaries,
+        "sites": sites(primaries),
         "fallout": dict(analysis.fallout),
     }
 
@@ -356,8 +408,6 @@ def run(target, units: list[str] | None = None, progress=None) -> dict:
     """Every function below 100% in the target's last build, or in the given units, with a census."""
     from collections import defaultdict
     from dataclasses import replace
-
-    from concord import coff
 
     def below(verdicts):
         """Functions under 100% in the build, by their score where the target reports one (a dip the
@@ -375,17 +425,29 @@ def run(target, units: list[str] | None = None, progress=None) -> dict:
             open_[verdict.unit].append(verdict)
     rows, failed = [], []
     for unit, verdicts in sorted(open_.items()):
-        data = None
-        if hasattr(target, "line_object"):  # line records place each cause at a source line where the target has them
-            try:
-                data = target.line_object(unit, target.source_path(unit).read_bytes())
-            except (OSError, KeyError):
-                data = None
+        analysed = []
         for verdict in verdicts:
             try:
-                rows.append(function(target, verdict, coff.lines(data, verdict.symbol) if data else None))
+                analysed.append((verdict, analysis_of(target, verdict)))
             except (KeyError, ValueError, OSError) as error:
                 failed.append(f"{unit} {verdict.symbol}: {error}")
+        try:  # one line compile per unit places every cause it can
+            source = target.source_path(unit).read_bytes()
+            wanted = {v.symbol: sorted({p.candidate_offset for p in a.primaries if p.candidate_offset is not None}) for v, a in analysed}
+            lines = target.line_map(unit, source, wanted) if any(wanted.values()) else {}
+        except (OSError, KeyError, RuntimeError) as error:
+            failed.append(f"{unit}: no source lines: {error}")
+            source, lines = None, {}
+        for verdict, analysis in analysed:
+            span = None
+            if source is not None:
+                try:
+                    scope = target.find_function(source, verdict.symbol)
+                    span = (scope.start_point[0] + 1, scope.end_point[0] + 1)
+                except (KeyError, ValueError):
+                    span = None
+            place(analysis, lines.get(verdict.symbol, {}), span)
+            rows.append(row(verdict, analysis))
         if progress:
             progress(unit, len(rows))
     return {"census": census(rows), "functions": rows, "failed": failed}

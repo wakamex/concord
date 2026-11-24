@@ -7,9 +7,11 @@ from pathlib import Path
 from concord.bench import (
     MUTATIONS,
     Case,
+    CauseCase,
     Located,
     Outcome,
     cases,
+    cause_table,
     changed_lines,
     commute,
     expand_assignment,
@@ -144,6 +146,19 @@ class Location(unittest.TestCase):
         self.assertEqual(hit.share, 0.2)
         self.assertEqual(location_table([hit, near, far, blind]), [("swap if branches", 4, 3, 1, 2, 0.1)])
 
+
+    def test_cause_hits_and_precision(self):
+        def item(kinds, lines, changed):
+            return CauseCase(Case("a.cpp", TOTAL, "swap if branches", "", b"", 90.0), kinds, lines, changed)
+
+        first = item(["control-flow", "register-allocation"], [{5}, set()], {4})
+        later = item(["frame", "operation"], [{20}, {6}], {4})
+        miss = item(["operation"], [{30}], {4})
+        self.assertEqual([i.first_hit for i in (first, later, miss)], [True, False, False])
+        self.assertEqual([i.hit for i in (first, later, miss)], [True, True, False])
+        self.assertEqual([i.precision for i in (first, later, miss)], [1.0, 0.5, 0.0])
+        self.assertEqual([i.sites for i in (first, later, miss)], [2, 2, 1])  # a cause without a line is a site of its own
+        self.assertEqual(cause_table([first, later, miss]), [("swap if branches", 3, 5 / 3, 5 / 3, 1, 1, 2, 0.5)])
 
 if __name__ == "__main__":
     unittest.main()

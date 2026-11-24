@@ -296,6 +296,95 @@ def locate(harvest: Target, case: Case) -> Located:
     return result
 
 
+@dataclass
+class CauseCase:
+    """The primary causes concord names for a case, against the lines that were changed."""
+
+    case: Case
+    kinds: list[str] = field(default_factory=list)  # each primary cause's kind, in the order concord gives them
+    lines: list[set[int]] = field(default_factory=list)  # each primary cause's source lines, empty when it has none
+    changed: set[int] = field(default_factory=set)
+
+    def near(self, index: int, within: int = 2) -> bool:
+        return any(abs(line - c) <= within for line in self.lines[index] for c in self.changed)
+
+    @property
+    def hit(self) -> bool:
+        """Some primary cause is within two lines of the change."""
+        return any(self.near(i) for i in range(len(self.kinds)))
+
+    @property
+    def first_hit(self) -> bool:
+        """The primary cause concord lists first, the one to fix first, is within two lines of the change."""
+        return bool(self.kinds) and self.near(0)
+
+    @property
+    def sites(self) -> int:
+        """The source sites the primary causes fall into, as concord causes groups them."""
+        from concord.causes import sites
+
+        return len(sites([{"line": min(lines) if lines else None} for lines in self.lines]))
+
+    @property
+    def few(self) -> bool:
+        """No more sites than the case has edits."""
+        return self.sites <= (2 if self.case.mutation == TWO_EDITS else 1)
+
+    @property
+    def precision(self) -> float | None:
+        """The share of primary causes with a line that are within two lines of the change."""
+        placed = [i for i in range(len(self.kinds)) if self.lines[i]]
+        return sum(self.near(i) for i in placed) / len(placed) if placed else None
+
+
+def locate_causes(harvest: Target, case: Case) -> CauseCase:
+    """Compile the case, separate its diff's primary causes from their fallout, and
+    give each primary cause the source lines of its code in the case's own compile."""
+    from concord.causes import analyse
+    from concord.diff import read_functions
+
+    scope = harvest.find_function(case.source, case.symbol)
+    first, last = scope.start_point[0] + 1, scope.end_point[0] + 1
+    original = harvest.source_path(case.unit).read_bytes()
+    result = CauseCase(case, changed={line for line in changed_lines(original, case.source) if first <= line <= last})
+    evaluation = harvest.evaluate(case.unit, {"case": case.source})["case"]
+    diff = _diff(harvest, evaluation, case.symbol)
+    verdict = evaluation.verdict(case.symbol)
+    retail = read_functions(harvest.object_pair(verdict)[0], {case.symbol}).get(case.symbol)
+    ours = read_functions(evaluation.object, {case.symbol}).get(case.symbol)
+    if retail is None or ours is None:
+        raise KeyError(f"{case.symbol} is not a function in both objects")
+    analysis = analyse(retail, ours, diff.findings)
+    offsets = sorted({p.candidate_offset for p in analysis.primaries if p.candidate_offset is not None})
+    lines = harvest.line_map(case.unit, case.source, {case.symbol: offsets}).get(case.symbol, {}) if offsets else {}
+    result.kinds = [p.kind for p in analysis.primaries]
+    result.lines = [{n for n in lines.get(p.candidate_offset, set()) if first <= n <= last} for p in analysis.primaries]
+    return result
+
+
+def cause_table(found: list[CauseCase]) -> list[tuple[str, int, float, float, int, int, int, float | None]]:
+    """(mutation, cases, mean primary causes, mean source sites, cases with no more
+    sites than edits, cases where the first primary cause is within two lines of the
+    change, cases where any is, mean precision of the placed primary causes), in
+    MUTATIONS' order with two-edit cases last."""
+    rows = []
+    for name in [*MUTATIONS, TWO_EDITS]:
+        group = [item for item in found if item.case.mutation == name]
+        if group:
+            precisions = [item.precision for item in group if item.precision is not None]
+            rows.append((
+                name,
+                len(group),
+                sum(len(item.kinds) for item in group) / len(group),
+                sum(item.sites for item in group) / len(group),
+                sum(item.few for item in group),
+                sum(item.first_hit for item in group),
+                sum(item.hit for item in group),
+                sum(precisions) / len(precisions) if precisions else None,
+            ))  # fmt: skip
+    return rows
+
+
 def location_table(found: list[Located]) -> list[tuple[str, int, int, int, int, float]]:
     """(mutation, cases, cases whose diff points at a line of the function, cases
     where it points at the changed line, within two lines of it, mean share of the

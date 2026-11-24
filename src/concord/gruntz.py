@@ -548,15 +548,21 @@ class Gruntz:
         """Lines of the unit's source behind the code at `offsets` in `symbol`, for
         the unit compiled from `source` with cl's /Zd line records. Empty when
         that compile fails."""
+        return set().union(*self.line_map(unit, source, {symbol: offsets}).get(symbol, {}).values())
+
+    def line_map(self, unit: str, source: bytes, offsets: dict[str, list[int]]) -> dict[str, dict[int, set[int]]]:
+        """For each symbol, each of its offsets' source line, from one compile of
+        the unit with cl's /Zd line records; empty when the compile fails."""
         data = self.line_object(unit, source)
         if data is None:
-            return set()
-        records = coff.lines(data, symbol)
-        found = set()
-        for offset in offsets:
-            before = [line for start, line in records if start <= offset]
-            if before:
-                found.add(before[-1])
+            return {}
+        found = {}
+        for symbol, wanted in offsets.items():
+            records = coff.lines(data, symbol)
+            found[symbol] = {}
+            for offset in wanted:
+                before = [line for start, line in records if start <= offset]
+                found[symbol][offset] = {before[-1]} if before else set()
         return found
 
     def line_object(self, unit: str, source: bytes) -> bytes | None:

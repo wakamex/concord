@@ -1,6 +1,6 @@
 import unittest
 
-from concord.causes import analyse, census
+from concord.causes import analyse, census, sites
 from concord.diff import ObjectFunction, diff_code
 
 
@@ -38,6 +38,7 @@ class CallTests(unittest.TestCase):
         found, analysis = kinds(retail, ours)
         self.assertEqual(found, ["calls"])
         self.assertIn("1 more calls to helper", analysis.primaries[0].detail)
+        self.assertIsNotNone(analysis.primaries[0].candidate_offset)  # placed at a differing call, so it gets a line
 
     def test_the_function_itself_is_not_a_callee(self):
         call = bytes.fromhex("e800000000")
@@ -51,7 +52,9 @@ class RegisterTests(unittest.TestCase):
         # mov eax, [esp+4]; mov ecx, [esp+8]; add eax, ecx; ret  against the two loads' registers swapped
         retail = function(bytes.fromhex("8b442404" "8b4c2408" "01c8" "c3"))
         ours = function(bytes.fromhex("8b4c2404" "8b442408" "01c8" "c3"))
-        self.assertEqual(kinds(retail, ours)[0], ["register-allocation"])
+        found, analysis = kinds(retail, ours)
+        self.assertEqual(found, ["register-allocation"])
+        self.assertEqual((analysis.primaries[0].target_offset, analysis.primaries[0].candidate_offset), (0, 0))
 
     def test_register_choices_are_fallout_of_a_structural_cause(self):
         retail = function(bytes.fromhex("83ec10" "8b442414" "8b4c2418" "01c8" "83c410" "c3"))
@@ -89,16 +92,24 @@ class SiteTests(unittest.TestCase):
         self.assertEqual(kinds(retail, ours)[0], ["register-allocation"])
 
 
+class SourceSiteTests(unittest.TestCase):
+    def test_causes_within_two_lines_share_a_site_and_unplaced_ones_form_one(self):
+        primaries = [{"line": 10}, {"line": 30}, {"line": 12}, {"line": None}, {"line": 14}, {"line": None}]
+        self.assertEqual(sites(primaries), [[0, 2, 4], [1], [3, 5]])
+
+
 class CensusTests(unittest.TestCase):
     def test_counts_kinds_by_bytes(self):
         rows = [
-            {"bytes": 100, "differences": 10, "fallout": {"register choices": 8}, "primaries": [{"kind": "frame"}, {"kind": "calls"}]},
-            {"bytes": 40, "differences": 3, "fallout": {}, "primaries": [{"kind": "register-allocation"}]},
+            {"bytes": 100, "differences": 10, "fallout": {"register choices": 8}, "primaries": [{"kind": "frame"}, {"kind": "calls"}], "sites": [[0, 1]]},
+            {"bytes": 40, "differences": 3, "fallout": {}, "primaries": [{"kind": "register-allocation"}], "sites": [[0]]},
         ]
         result = census(rows)
         self.assertEqual(result["by_kind"]["frame"], {"functions": 1, "bytes": 100})
         self.assertEqual(result["register_allocation_only"], {"functions": 1, "bytes": 40})
         self.assertEqual((result["differences"], result["fallout"]), (13, 8))
+        self.assertEqual(result["sites_per_function"], {})  # neither row's causes have a line
+        self.assertEqual(result["without_source_lines"], {"functions": 2, "bytes": 140})
 
 
 if __name__ == "__main__":

@@ -295,6 +295,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="instead of searching, report whether each case's diff points at the line that was changed",
     )
+    p_bench.add_argument(
+        "--causes",
+        action="store_true",
+        help="instead of searching, report how many primary causes concord names for each case and whether they point at the changed line",
+    )
     p_bench.add_argument("--save", type=Path, help="write every case and its outcome to this JSON Lines file")
 
     p_blockers = sub.add_parser("blockers", help="why each stubbed method of seeded units still traps, grouped by cause")
@@ -738,10 +743,12 @@ def _dispatch(argv: list[str] | None = None) -> int:
         if args.save:
             args.save.write_text(json.dumps(report, indent=2) + "\n")
         for row in report["functions"] if args.symbol else []:
-            print(f"{row['symbol']}: {row['differences']} differing rows, {len(row['primaries'])} primary causes")
-            for p in row["primaries"]:
-                where = f"line {p['line']}" if p["line"] else (f"+{p['candidate_offset']:#x}" if p["candidate_offset"] is not None else "")
-                print(f"  {p['kind']:20} {where:10} {p['detail']}")
+            print(f"{row['symbol']}: {row['differences']} differing rows, {len(row['primaries'])} primary causes at {len(row['sites'])} source sites")
+            for number, site in enumerate(row["sites"], 1):
+                print(f"  site {number}")
+                for p in (row["primaries"][i] for i in site):
+                    where = f"line {p['line']}" if p["line"] else (f"+{p['candidate_offset']:#x}" if p["candidate_offset"] is not None else "")
+                    print(f"    {p['kind']:20} {where:10} {p['detail']}")
             print(f"  fallout: {', '.join(f'{n} {reason}' for reason, n in row['fallout'].items() if n)}")
         print(json.dumps(report["census"], indent=1) if not args.symbol else "", end="\n" if not args.symbol else "")
         return 0
@@ -1821,6 +1828,8 @@ def _bench(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     print(flush=True)
     if args.locate:
         return _bench_locate(harvest, found, args)
+    if args.causes:
+        return _bench_causes(harvest, found, args)
     outcomes = []
     for case in found:
         outcome = bench.solve(harvest, case, args.budget, args.seed, not args.undirected)
@@ -1869,6 +1878,35 @@ def _bench_locate(harvest: Harvest | Gruntz, found: list, args: argparse.Namespa
     print(f"\n{'mutation':27} {'cases':>5} {'pointed':>8} {'on line':>8} {'within 2':>9} {'share of lines':>15}")
     for name, count, pointed, on_line, near, share in bench.location_table(located):
         print(f"{name:27} {count:5} {pointed:8} {on_line:8} {near:9} {share:15.2f}")
+    return 0
+
+
+def _bench_causes(harvest: Harvest | Gruntz, found: list, args: argparse.Namespace) -> int:
+    located = []
+    for case in found:
+        try:
+            item = bench.locate_causes(harvest, case)
+        except (KeyError, OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
+            print(f"  error {case.mutation}: {str(error).strip().splitlines()[-1][:120] if str(error).strip() else type(error).__name__}", flush=True)
+            continue
+        located.append(item)
+        if args.save:
+            row = {
+                Path(harvest.log).stem: results.commit(harvest.root), "unit": case.unit, "symbol": case.symbol,
+                "mutation": case.mutation, "description": case.description, "kinds": item.kinds,
+                "lines": [sorted(lines) for lines in item.lines], "changed": sorted(item.changed),
+            }  # fmt: skip
+            results.record(args.save, row)
+        mark = "first" if item.first_hit else "hit" if item.hit else "miss"
+        print(f"  {case.mutation:26} {len(item.kinds):3} primary {item.sites:3} sites  {mark:5}  {','.join(item.kinds)[:56]:56} {_member(case.symbol)}", flush=True)
+    print(f"\n{'mutation':27} {'cases':>5} {'mean causes':>11} {'mean sites':>10} {'sites<=edits':>12} {'first near':>10} {'any near':>8} {'precision':>9}")
+    for name, count, mean, sites, few, first, near, precision in bench.cause_table(located):
+        shown = "-" if precision is None else f"{precision:.2f}"
+        print(f"{name:27} {count:5} {mean:11.1f} {sites:10.1f} {few:12} {first:10} {near:8} {shown:>9}")
+    total = len(located)
+    if total:
+        print(f"{'all':27} {total:5} {sum(len(i.kinds) for i in located) / total:11.1f} {sum(i.sites for i in located) / total:10.1f} "
+              f"{sum(i.few for i in located):12} {sum(i.first_hit for i in located):10} {sum(i.hit for i in located):8}")
     return 0
 
 
