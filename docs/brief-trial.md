@@ -1,5 +1,7 @@
 # Author trial of concord brief
 
+Status: stopped after 3 of the 38 functions, to change the brief; see the results below. A new run needs a new registered sample.
+
 Question: does `concord brief` help whoever writes a function's source reach a byte match, compared with concord's plain diff? The brief lists the sites of a function's primary causes, most causes first, with the source around each and the known idioms; on real fixes from both targets' histories its first site held the fix in about three cases of four where something structural differs ([causes.md](causes.md)). This trial measures whether an author working from it matches more functions, or with fewer compiles.
 
 ## Protocol
@@ -54,3 +56,13 @@ The sample below was drawn at random (seed 20261124) from the open functions of 
 | 36 | harvest | defined in a project header | `harvest::game::CConditionalHarvestEvent::~CConditionalHarvestEvent` | 231 | - | 2 | diff |
 | 37 | harvest | defined in a project header | `ox::scene::ISceneNode::~ISceneNode` | 356 | - | 2 | brief |
 | 38 | harvest | defined in a project header | `ox::gui::IGUIElement::bringToFront` | 119 | - | 2 | diff |
+
+## Results: stopped after 3 functions
+
+| # | Arm | Outcome | Compiles | What the author found |
+| ---: | --- | --- | ---: | --- |
+| 1 | brief | unchanged | 1 | Site 1 was the right lines, the `x` and `y` computations. The function is a dip: it scored 100 in an earlier build, retail computes both values in the source's own term order, and the present build reorders them, so the cause is outside the function. |
+| 2 | diff | unchanged | 5 | The global register allocator holds the object pointer in eax where retail uses ecx; forcing retail's round-robin grants with `concord regtrace` reaches only 97.61, and accessor spellings, snap ordering and a named object local did not move it. |
+| 3 | brief | unchanged | 2 | Site 1 was the right call: the differing stores are the inlined body of `Build`, whose order is set in a header only this unit includes. Two reorderings there scored lower. |
+
+Every function needed the instructions around the differing rows, which the brief quoted only as the rows themselves, and four of the sixteen gruntz-decomp functions in the sample are dips, functions whose source compiled to the original before. The trial was stopped so that the brief would show both sides' instructions around each site and flag a dip; a run of the old brief would have measured a version already known to change. The diff arm also exposed that `concord diff` reported a dip as exact; it now shows its differences.

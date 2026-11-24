@@ -44,11 +44,39 @@ def excerpt(lines: list[str], marked: set[int], context: int) -> list[str]:
     return [f"{'>' if n in marked else ' '} {n:5}  {lines[n - 1]}" for n in range(first, last + 1)]
 
 
-def render(row: dict, root: Path, compiler: str, target_flag: str, context: int = 3) -> str:
-    """The brief of one row of concord causes, as text."""
+def window(instructions: list, offsets: list[int], around: int = 3) -> list[str]:
+    """The instructions from `around` before the first of `offsets` to `around` after the last, as text, with
+    the instructions at the offsets flagged."""
+    if not offsets:
+        return []
+    at = {i.offset: n for n, i in enumerate(instructions)}
+    found = [at[o] for o in offsets if o in at]
+    if not found:
+        return []
+    first, last = max(0, min(found) - around), min(len(instructions), max(found) + around + 1)
+    flagged = set(found)
+    return [f"{'>' if n in flagged else ' '} {instructions[n].offset:5x}  {instructions[n].text}" for n in range(first, last)]
+
+
+def side_by_side(left: list[str], right: list[str], width: int = 46) -> list[str]:
+    rows = [f"{'retail':{width}}  ours"]
+    for n in range(max(len(left), len(right))):
+        a = left[n] if n < len(left) else ""
+        rows.append(f"{a:{width}}  {right[n] if n < len(right) else ''}".rstrip())
+    return rows
+
+
+def render(row: dict, root: Path, compiler: str, target_flag: str, context: int = 3,
+           code: tuple[list, list] | None = None, dip: bool = False) -> str:
+    """The brief of one row of concord causes, as text. `code` is retail's and our instructions, for the
+    instructions around each site; `dip` marks a function the project counts as matched that differs now."""
     counts = (f"{len(row['primaries'])} primary causes at {len(row['sites'])} sites; {row['differences']} differing rows, "
               f"{sum(row['fallout'].values())} of them fallout")
     out = [f"{row['symbol']} in {row['unit']}: {row['bytes']} bytes, score {row['score']}", counts]
+    if dip:
+        out.append("a dip: the project counts this function as matched because its source compiled to the original "
+                   "in an earlier build, so the difference likely comes from outside the function (the unit's "
+                   "declarations or a header) rather than from its body")
     if row.get("header"):
         out.append("defined outside the unit's source: the same function may be open in other units that compile it")
     only_registers = [p["kind"] for p in row["primaries"]] == ["register-allocation"]
@@ -63,6 +91,11 @@ def render(row: dict, root: Path, compiler: str, target_flag: str, context: int 
         out += ["", f"site {number}: {where}"]
         out += [f"  {p['kind']}: {p['detail']}" for p in found]
         out += [f"  {line}" for line in excerpt(_text(root, file), placed, context)] if file else []
+        if code:
+            retail = window(code[0], sorted({p["target_offset"] for p in found if p.get("target_offset") is not None}))
+            ours = window(code[1], sorted({p["candidate_offset"] for p in found if p.get("candidate_offset") is not None}))
+            if retail or ours:
+                out += [f"  {line}" for line in side_by_side(retail, ours)]
     kinds = {p["kind"] for p in row["primaries"]}
     idioms = knowledge.for_causes(knowledge.load(compiler), {KIND_CAUSES[k] for k in kinds if k in KIND_CAUSES})
     if idioms:
@@ -76,8 +109,14 @@ def render(row: dict, root: Path, compiler: str, target_flag: str, context: int 
 
 def brief(target, unit: str, symbol: str, compiler: str, target_flag: str, context: int = 3) -> str:
     """The brief of one open function of the target's last build."""
+    from concord.diff import disassemble, read_functions
+
     verdict = target.verdict(unit, symbol)
     rows = [row for row in causes.run(target, [verdict.unit])["functions"] if row["symbol"] == symbol]
     if not rows:
         raise KeyError(f"{symbol} is not open in {unit}")
-    return render(rows[0], target.root, compiler, target_flag, context)
+    retail, ours = target.object_pair(verdict)
+    code = tuple(disassemble(read_functions(path, {symbol})[symbol]) for path in (retail, ours))
+    fuzzy = verdict.row.get("fuzzy")
+    dip = bool(verdict.row.get("exact")) and fuzzy is not None and fuzzy < 100.0
+    return render(rows[0], target.root, compiler, target_flag, context, code, dip)
