@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import difflib
 import random
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
@@ -190,22 +191,16 @@ def _show(root, commit: str, path: str) -> bytes | None:
     return done.stdout if done.returncode == 0 else None
 
 
-def history(harvest: Target, commits: int = 300, count: int | None = None, seed: int = 0) -> list[Case]:
-    """Cases from the target's own history: for each exact function whose body one
-    of the last `commits` commits changed, and that no later commit changed, the
-    unit's present source with that function's body from before the commit. The
-    changed lines are the fix a person made, so --causes measures localization on
-    real differences. Kept, as for mutations, when only that function stops
-    matching. A fix made in a header, or spread over several functions, is
-    replayed only in part, and a body that no longer compiles against the
-    present headers is dropped. At most `count` cases, chosen at random."""
+def _changed_by_history(harvest: Target, commits: int) -> dict[str, dict[str, tuple[str, bytes, bytes]]]:
+    """unit -> symbol -> (commit, unit source with the function's body from before the commit, present source),
+    for each exact function whose body one of the last `commits` commits changed, and no later commit did."""
     root = harvest.root
     exact: dict[str, set[str]] = {}
     for unit, symbol in functions(harvest):
         exact.setdefault(unit, set()).add(symbol)
     sources = {unit: harvest.source_path(unit) for unit in exact}
     paths = {str(path.relative_to(root)): unit for unit, path in sources.items()}
-    found: dict[str, dict[str, tuple[str, bytes]]] = {}  # unit -> symbol -> (commit, mutated source)
+    found: dict[str, dict[str, tuple[str, bytes, bytes]]] = {}
     current = {unit: path.read_bytes() for unit, path in sources.items()}
     log = _git(root, "log", f"-{commits}", "--format=%H", "--", *sorted(paths)).split()
     for commit in log:  # newest first, so a function's latest change is the one kept
@@ -227,12 +222,26 @@ def history(harvest: Target, commits: int = 300, count: int | None = None, seed:
                 if new.text != now.text or old.text == new.text:
                     continue  # changed since, or not by this commit
                 mutated = current[unit][: now.start_byte] + old.text + current[unit][now.end_byte :]
-                found.setdefault(unit, {})[symbol] = (commit[:9], mutated)
+                found.setdefault(unit, {})[symbol] = (commit[:9], mutated, current[unit])
+    return found
+
+
+def history(harvest: Target, commits: int = 300, count: int | None = None, seed: int = 0) -> list[Case]:
+    """Cases from the target's own history: for each exact function whose body one
+    of the last `commits` commits changed, and that no later commit changed, the
+    unit's present source with that function's body from before the commit. The
+    changed lines are the fix a person made, so --causes measures localization on
+    real differences. Kept, as for mutations, when only that function stops
+    matching. A fix made in a header, or spread over several functions, is
+    replayed only in part, and a body that no longer compiles against the
+    present headers is dropped. At most `count` cases, chosen at random."""
+    found = _changed_by_history(harvest, commits)
     cases_found = []
     for unit, items in sorted(found.items()):
-        evaluations = harvest.evaluate(unit, {"base": current[unit], **{f"c{n}": text for n, (_, (_, text)) in enumerate(sorted(items.items()))}})
+        current = next(iter(items.values()))[2]
+        evaluations = harvest.evaluate(unit, {"base": current, **{f"c{n}": text for n, (_, (_, text, _)) in enumerate(sorted(items.items()))}})
         base = evaluations["base"].exact_functions()
-        for n, (symbol, (commit, text)) in enumerate(sorted(items.items())):
+        for n, (symbol, (commit, text, _)) in enumerate(sorted(items.items())):
             evaluation = evaluations[f"c{n}"]
             if evaluation.error or symbol not in base or base - evaluation.exact_functions() != {symbol}:
                 continue
@@ -240,6 +249,61 @@ def history(harvest: Target, commits: int = 300, count: int | None = None, seed:
     if count is not None and len(cases_found) > count:
         cases_found = random.Random(seed).sample(cases_found, count)
     return cases_found
+
+
+def _same_shape(one: bytes, other: bytes) -> bool:
+    """Whether two function texts are the same with whitespace and comments dropped and a name used on only one
+    side taken as a placeholder, so that a rewrite's invented local name matches the name a person chose."""
+    def tokens(text: bytes) -> list[bytes]:
+        text = re.sub(rb"//[^\n]*|/\*.*?\*/", b"", text, flags=re.DOTALL)
+        return re.findall(rb"[A-Za-z_]\w*|\d[\w.]*|\S", text)
+
+    a, b = tokens(one), tokens(other)
+    words = re.compile(rb"[A-Za-z_]\w*")
+    only = {t for t in a if words.fullmatch(t)} ^ {t for t in b if words.fullmatch(t)}
+
+    def placeheld(seq: list[bytes]) -> list[bytes]:
+        names: dict[bytes, bytes] = {}
+        return [names.setdefault(t, b"$%d" % len(names)) if t in only else t for t in seq]
+
+    return placeheld(a) == placeheld(b)
+
+
+@dataclass
+class Lever:
+    """A fix from the target's history, and whether one of concord's rewrites makes it."""
+
+    unit: str
+    symbol: str
+    commit: str
+    rewrite: str | None  # the rewrite whose result is the fixed body, if one is
+    diff: list[str]  # the fix, as changed lines of the function
+
+
+def levers(harvest: Target, commits: int = 300) -> list[Lever]:
+    """For each fix in the target's history that mattered, a function that the body from before the commit
+    stops matching (the history cases), whether a single rewrite concord's searches make turns that body into
+    the present one, comparing their shapes (whitespace, comments, and the name of a local only one side has, aside), and the fix's changed lines.
+    A fix no rewrite makes is a kind of edit the searches lack; grouping those shows which recur."""
+    from concord.permute import singles
+
+    out = []
+    for case in history(harvest, commits):
+        present = harvest.source_path(case.unit).read_bytes()
+        target = harvest.find_function(present, case.symbol).text
+        made = None
+        for text, why in singles(case.source, case.symbol, set(), harvest.find_function, harvest.rewrites):
+            try:
+                if _same_shape(harvest.find_function(text, case.symbol).text, target):
+                    made = why.split()[0]
+                    break
+            except (KeyError, ValueError):
+                continue
+        old = harvest.find_function(case.source, case.symbol).text.decode(errors="replace").splitlines()
+        new = harvest.find_function(present, case.symbol).text.decode(errors="replace").splitlines()
+        diff = [line for line in difflib.unified_diff(old, new, lineterm="", n=0) if line[:1] in "+-" and line[:3] not in ("+++", "---")]
+        out.append(Lever(case.unit, case.symbol, case.description.removeprefix("before "), made, diff))
+    return out
 
 
 TWO_EDITS = "two edits"

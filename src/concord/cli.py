@@ -311,6 +311,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="instead of searching, report how many primary causes concord names for each case and whether they point at the changed line",
     )
+    p_bench.add_argument(
+        "--levers", action="store_true",
+        help="with --history: say which of the fixes one of concord's rewrites makes, compiling nothing; --save writes each fix",
+    )
     p_bench.add_argument("--save", type=Path, help="write every case and its outcome to this JSON Lines file")
 
     p_blockers = sub.add_parser("blockers", help="why each stubbed method of seeded units still traps, grouped by cause")
@@ -1857,6 +1861,8 @@ def _blockers(args: argparse.Namespace) -> int:
 def _bench(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     harvest = _target(parser, args)
     tally: dict = {}
+    if args.history and args.levers:
+        return _bench_levers(harvest, args)
     if args.history:
         found = bench.history(harvest, args.history, args.per_kind, args.seed)
         print(f"{len(found)} cases from the last {args.history} commits", flush=True)
@@ -1924,6 +1930,19 @@ def _bench_locate(harvest: Harvest | Gruntz, found: list, args: argparse.Namespa
     print(f"\n{'mutation':27} {'cases':>5} {'pointed':>8} {'on line':>8} {'within 2':>9} {'share of lines':>15}")
     for name, count, pointed, on_line, near, share in bench.location_table(located):
         print(f"{name:27} {count:5} {pointed:8} {on_line:8} {near:9} {share:15.2f}")
+    return 0
+
+
+def _bench_levers(harvest: Harvest | Gruntz, args: argparse.Namespace) -> int:
+    found = bench.levers(harvest, args.history)
+    for lever in found:
+        if args.save:
+            results.record(args.save, {"unit": lever.unit, "symbol": lever.symbol, "commit": lever.commit,
+                                       "rewrite": lever.rewrite, "diff": lever.diff})
+    made = Counter(lever.rewrite for lever in found if lever.rewrite)
+    print(f"{len(found)} fixes from the last {args.history} commits; {sum(made.values())} made by one rewrite")
+    for rewrite, count in made.most_common():
+        print(f"  {count:4}  {rewrite}")
     return 0
 
 

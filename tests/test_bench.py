@@ -12,12 +12,14 @@ from concord.bench import (
     CauseCase,
     Located,
     Outcome,
+    _same_shape,
     cases,
     cause_table,
     changed_lines,
     commute,
     expand_assignment,
     history,
+    levers,
     location_table,
     nest_condition,
     split_declaration,
@@ -164,6 +166,44 @@ class History(unittest.TestCase):
         self.assertEqual([(c.mutation, c.symbol) for c in found], [("history", TOTAL)])  # skip was never changed
         self.assertIn(b"while (i < count)", found[0].source)
         self.assertIn(b"int skip(int count)", found[0].source)
+
+
+class Compiled(Recorded):
+    """A function matches when its text is SOURCE's."""
+
+    def evaluate(self, unit, sources):
+        out = {}
+        for name, text in sources.items():
+            exact = {s for s in (TOTAL, SKIP) if find_function(text, s).text == find_function(SOURCE, s).text}
+            rows = [{"symbol": s, "exact": s in exact} for s in (TOTAL, SKIP)]
+            out[name] = Evaluation(name, unit, sections=[{"functions": rows}], fuzzy={TOTAL: 90.0, SKIP: 90.0})
+        return out
+
+
+class Levers(unittest.TestCase):
+    def test_a_fix_a_rewrite_makes_is_named_and_one_it_does_not_is_kept_as_lines(self):
+        before = SOURCE.replace(b"for (int i = 0; i < count; ++i)\n    {\n        sum", b"for (int i = 0; count > i; ++i)\n    {\n        sum", 1)
+        before = before.replace(b"return n;", b"return n + 0;")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src").mkdir()
+            git = lambda *a: subprocess.run(["git", *a], cwd=root, check=True, capture_output=True)
+            git("init", "-q")
+            git("config", "user.email", "t@example.com")
+            git("config", "user.name", "t")
+            (root / "src" / "a.cpp").write_bytes(before)
+            git("add", "src/a.cpp")
+            git("commit", "-q", "-m", "start")
+            (root / "src" / "a.cpp").write_bytes(SOURCE)
+            git("commit", "-q", "-am", "match both")
+            found = {lever.symbol: lever for lever in levers(Compiled(root), commits=10)}
+        self.assertEqual(found[TOTAL].rewrite, "compare-operand-order")  # swapping the comparison's operands makes the fix
+        self.assertIsNone(found[SKIP].rewrite)  # no rewrite drops a + 0
+        self.assertEqual(found[SKIP].diff, ["-    return n + 0;", "+    return n;"])
+
+    def test_names_only_one_side_has_are_placeholders(self):
+        self.assertTrue(_same_shape(b"f(){ T* concordTmp0 = new T; g(concordTmp0); }", b"f(){ T* missile = new T; // x\n g(missile); }"))
+        self.assertFalse(_same_shape(b"f(){ x = 1; y = 2; }", b"f(){ y = 2; x = 1; }"))
 
 
 class Location(unittest.TestCase):
