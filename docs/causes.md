@@ -58,6 +58,10 @@ Functions that have at least one primary cause of the kind, and their bytes.
 - `CGruntzMgr::HandleCommand` (99.54%): 763 differing rows reduce to 9 primary causes: a stack frame 8 bytes smaller than retail's, six exit sites where retail jumps to a shared `return 1` and ours returns inline, and two operations: an `xor` and `and` in the other order, and one extra load in the screenshot command. These are the causes a hand session found and fixed (the frame, the exits) or classified as what remains.
 - `TmDeflectStep` (91.10%): 4,217 rows reduce to 71, led by a stack frame 160 bytes larger and 19 more calls to `CMapMgr::CellFlagsAt` than retail, the cause a hand session found (a shared inline helper whose extra cost exhausted the inline budget), with three related helpers.
 
+## Register allocation only, checked with regtrace
+
+`concord regtrace` replays each of the 73 gruntz-decomp functions whose only cause is register allocation with retail's register at every round-robin grant of c2's local allocator, which hands out eax, ecx and edx. 22 become exact, among them `CGrunt::CreateHealthSprite` and its six siblings and seven `CGameObject`-taking constructors; 13 rise without becoming exact and 6 do not rise; in 32 the local allocator's grants already agree with retail, so their differing registers come from c2's global allocator, which assigns ebx, esi and edi and which regtrace does not steer. The label holds in each case, since every differing row has the same instruction shape on both sides; what it does not say is which allocator made the choice.
+
 ## Limits
 
 - `operation` is the largest kind, and a site counts as one whenever the two sides compute with a different multiset of non-copy instructions; around extra out-of-line calls some of these are still fallout (in `TmDeflectStep`, 36 of its 71 causes are operations near the extra calls). `instruction` holds what fits no other kind.
