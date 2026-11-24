@@ -574,6 +574,11 @@ class Gruntz:
         """The loader the driver may compile under, as it sees the path."""
         return str(self.root / "build" / "concord" / "wibo-loader") if os.environ.get("CONCORD_GRUNTZ_WIBO") else None
 
+    def object_pair(self, verdict: FunctionVerdict) -> tuple[Path, Path]:
+        """The retail object and the checkout's own, as the last report compared them."""
+        pair = (self.root / REPORT).parent
+        return pair / "target" / f"{verdict.unit}.c.obj", pair / "base" / f"{verdict.unit}.obj"
+
     def diff(self, verdict: FunctionVerdict, candidate_object: Path | None = None) -> DiffResult:
         """Attribute the function's remaining differences, for the checkout's own
         compile or for a candidate object from evaluate(). Whether it is exact is

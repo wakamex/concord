@@ -22,6 +22,7 @@ from concord import (
     calls,
     calls_constants,
     causal,
+    causes,
     census,
     colour,
     comparison_flips,
@@ -507,6 +508,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_residual.add_argument("--harvest", type=Path, required=True, help="Harvest checkout after `hv match`")
     p_residual.add_argument("--save", type=Path, help="write the census as JSON")
 
+    p_causes = sub.add_parser(
+        "causes",
+        help="separate each open function's primary differences from their fallout and say what to change first",
+    )
+    p_causes.add_argument("--harvest", type=Path, help="Harvest checkout")
+    p_causes.add_argument("--gruntz", type=Path, help="gruntz-decomp checkout after `gruntz build`")
+    p_causes.add_argument("--unit", help="one unit; with a symbol, one function")
+    p_causes.add_argument("symbol", nargs="?", help="one function's symbol, with --unit")
+    p_causes.add_argument("--save", type=Path, help="write every function's causes and the census as JSON")
     p_first = sub.add_parser(
         "first-differences",
         help="group a gruntz-decomp checkout's open functions by the helpers called where their code differs",
@@ -715,6 +725,27 @@ def _dispatch(argv: list[str] | None = None) -> int:
                     f"changed bytes target [{target_offsets}] candidate [{candidate_offsets}]; {location}"
                 )
         return 0
+    if args.command == "causes":
+        target = _target(parser, args)
+        if args.symbol:
+            if not args.unit:
+                parser.error("a symbol needs --unit")
+            whole = causes.run(target, [target.verdict(args.unit, args.symbol).unit])
+            rows = [row for row in whole["functions"] if row["symbol"] == args.symbol]
+            report = {"functions": rows, "census": causes.census(rows), "failed": whole["failed"]}
+        else:
+            report = causes.run(target, [args.unit] if args.unit else None, lambda unit, n: print(f"{unit}: {n} functions", flush=True))
+        if args.save:
+            args.save.write_text(json.dumps(report, indent=2) + "\n")
+        for row in report["functions"] if args.symbol else []:
+            print(f"{row['symbol']}: {row['differences']} differing rows, {len(row['primaries'])} primary causes")
+            for p in row["primaries"]:
+                where = f"line {p['line']}" if p["line"] else (f"+{p['candidate_offset']:#x}" if p["candidate_offset"] is not None else "")
+                print(f"  {p['kind']:20} {where:10} {p['detail']}")
+            print(f"  fallout: {', '.join(f'{n} {reason}' for reason, n in row['fallout'].items() if n)}")
+        print(json.dumps(report["census"], indent=1) if not args.symbol else "", end="\n" if not args.symbol else "")
+        return 0
+
     if args.command == "first-differences":
         report = first_differences.run(Gruntz(args.gruntz), lambda unit, n: print(f"{unit}: {n} functions", flush=True))
         if args.save:

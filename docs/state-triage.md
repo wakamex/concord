@@ -4,7 +4,7 @@ Question: of the open functions in [gruntz-decomp](https://github.com/sushi-shi/
 
 Result: unit state decides little of what remains. Of 442 functions below 100 in 145 units, 19 (13.6 KB) become exact in some unit state, 7 (9.4 KB) rise but never reach exact, and 416 (452 KB) stay where they are in every state tried, so they need source work. Five units can be made fully exact by a single state.
 
-`concord state-triage` measured this. For every unit with an open function, it compiled the unit with 1 to 7 inert declarations (`enum { concord_state_pad_K_I };`) inserted before each `#include` line of the unit's own source and after the last one, and scored every function against an unpadded compile of the same source made the same way. The pads are a diagnostic and are never written to the checkout or offered as a change. It ran on the clean checkout at gruntz-decomp 8c3a113ca.
+`concord state-triage` measured this. For every unit with an open function, it compiled the unit with 1 to 7 inert declarations (`typedef int concord_state_pad_K_I;`, since cl 5.0 counts typedefs and extern variables in the declaration count these functions depend on, and enumerators not) inserted before each `#include` line of the unit's own source and after the last one, and scored every function against an unpadded compile of the same source made the same way. The pads are a diagnostic and are never written to the checkout or offered as a change. It ran on the clean checkout at gruntz-decomp 8c3a113ca.
 
 ## Classes
 

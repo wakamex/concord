@@ -304,6 +304,10 @@ class Harvest:
                 return v
         raise KeyError(f"{symbol} is not in {unit}'s report")
 
+    def object_pair(self, verdict: FunctionVerdict) -> tuple[Path, Path]:
+        """The target object and the checkout's own, as the last match compared them."""
+        return self.objects / "target" / f"{verdict.unit}.o", self.objects / "base" / f"{verdict.unit}.o"
+
     def diff(self, verdict: FunctionVerdict, candidate_object: Path | None = None) -> DiffResult:
         """Attribute the function's remaining differences, for the checkout's own
         compile or for a candidate object from evaluate()."""
