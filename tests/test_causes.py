@@ -61,6 +61,34 @@ class RegisterTests(unittest.TestCase):
         self.assertIn("frame", found)
 
 
+class SiteTests(unittest.TestCase):
+    def test_another_member_offset_is_a_field(self):
+        # mov eax, [ecx + 0x10] against mov eax, [ecx + 0x14]
+        retail = function(bytes.fromhex("8b4110" "c3"))
+        ours = function(bytes.fromhex("8b4114" "c3"))
+        self.assertEqual(kinds(retail, ours)[0], ["field"])
+
+    def test_another_operation_is_an_operation(self):
+        # xor eax, 0x100 against and eax, 0xffffffbf
+        retail = function(bytes.fromhex("3500010000" "c3"))
+        ours = function(bytes.fromhex("25bfffffff" "c3"))
+        self.assertEqual(kinds(retail, ours)[0], ["operation"])
+
+    def test_an_extra_copy_is_fallout_of_a_structural_cause(self):
+        # a larger frame, and one extra mov ecx, eax that only copies a register
+        retail = function(bytes.fromhex("83ec10" "8b442414" "83c410" "c3"))
+        ours = function(bytes.fromhex("83ec18" "8b44241c" "89c1" "83c418" "c3"))
+        found, analysis = kinds(retail, ours)
+        self.assertEqual(found, ["frame"])
+        self.assertGreater(sum(analysis.fallout.values()), 0)
+
+    def test_copies_alone_are_register_allocation(self):
+        # the same loads, with the result copied through another register on our side only
+        retail = function(bytes.fromhex("8b442404" "8b4c2408" "01c8" "c3"))
+        ours = function(bytes.fromhex("8b442404" "8b4c2408" "01c8" "89c2" "89d0" "c3"))
+        self.assertEqual(kinds(retail, ours)[0], ["register-allocation"])
+
+
 class CensusTests(unittest.TestCase):
     def test_counts_kinds_by_bytes(self):
         rows = [

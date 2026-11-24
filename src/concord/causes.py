@@ -34,7 +34,7 @@ STACK = {"rsp", "rbp"}  # register families: the diff names esp and ebp by their
 GROUP = 16  # bytes: neighbouring rows of one kind closer than this are one site
 CONTROL = {"ret", "retn", "jmp"}
 # the order primaries are reported in: structure that shifts everything after it first
-ORDER = ["frame", "calls", "control-flow", "constant", "slots", "instruction", "register-allocation"]
+ORDER = ["frame", "calls", "control-flow", "constant", "field", "operation", "slots", "instruction", "register-allocation"]
 
 
 @dataclass
@@ -130,6 +130,44 @@ def _spill(ins: Instruction) -> bool:
     return False
 
 
+def _move(ins: Instruction) -> bool:
+    """A copy between registers, or between a register and a stack slot: allocation, not computation."""
+    if ins.mnemonic in ("push", "pop") and ins.operands and ins.operands[0][0] == "reg":
+        return True
+    if ins.mnemonic != "mov" or len(ins.operands) != 2:
+        return False
+    kinds = [o[0] for o in ins.operands]
+    if kinds == ["reg", "reg"]:
+        return True
+    return sorted(kinds) == ["mem", "reg"] and any(o[0] == "mem" and o[1] in STACK for o in ins.operands)
+
+
+def _field(a: Instruction, b: Instruction) -> bool:
+    """The same instruction reaching another member: a non-stack displacement differs, registers aside."""
+    if a.mnemonic != b.mnemonic or len(a.operands) != len(b.operands):
+        return False
+    differs = False
+    for x, y in zip(a.operands, b.operands):
+        if x[0] == y[0] == "mem" and x[1] not in STACK and x[4] != y[4] and x[3] == y[3] and x[5] == y[5]:
+            differs = True
+        elif x[0] != y[0] or (x[0] == "imm" and x != y):
+            return False
+    return differs
+
+
+def _site(a_rows: list[Instruction], b_rows: list[Instruction]) -> str:
+    """The kind of a differing site that is not a frame, call count, branch, constant or slot difference."""
+    rows = a_rows + b_rows
+    if rows and all(_move(i) for i in rows):
+        return "moves"
+    if len(a_rows) == len(b_rows) and a_rows and all(_field(x, y) or shape(x) == shape(y) for x, y in zip(a_rows, b_rows)):
+        return "field"
+    work = Counter(i.mnemonic for i in a_rows if not _move(i)), Counter(i.mnemonic for i in b_rows if not _move(i))
+    if work[0] != work[1]:
+        return "operation"
+    return "instruction"
+
+
 def table_start(instructions: list[Instruction], function: ObjectFunction) -> int | None:
     """Where a jump table embedded after the code begins: the first relocation against the function itself that
     lies past its last return, since a switch's table holds addresses in the function."""
@@ -140,9 +178,13 @@ def table_start(instructions: list[Instruction], function: ObjectFunction) -> in
     return own[0] if own else None
 
 
-def _rows(finding: DiffFinding, by_offset: dict[int, Instruction], offsets: tuple[int, ...], start: int | None) -> list[Instruction]:
+def _rows(by_offset: dict[int, Instruction], offsets: tuple[int, ...], start: int | None, other: tuple[int, ...]) -> list[Instruction]:
+    """A finding's instructions on one side: its listed offsets, none when only the other side lists any (a
+    one-sided finding), else the instruction at its start."""
     if offsets:
         return [by_offset[o] for o in offsets if o in by_offset]
+    if other:
+        return []
     return [by_offset[start]] if start in by_offset else []
 
 
@@ -174,8 +216,8 @@ def analyse(target: ObjectFunction, candidate: ObjectFunction, findings: list[Di
     tables = table_start(theirs, target), table_start(ours, candidate)
     register_rows, slot_rows, spill_rows, sites = 0, 0, 0, []
     for finding in findings:
-        a_rows = _rows(finding, at_target, finding.target_offsets, finding.offset)
-        b_rows = _rows(finding, at_candidate, finding.candidate_offsets, finding.candidate)
+        a_rows = _rows(at_target, finding.target_offsets, finding.offset, finding.candidate_offsets)
+        b_rows = _rows(at_candidate, finding.candidate_offsets, finding.candidate, finding.target_offsets)
         if (tables[0] is not None and finding.offset >= tables[0]) or (
                 tables[1] is not None and finding.candidate is not None and finding.candidate >= tables[1]):
             result.fallout["jump table data"] += finding.rows
@@ -211,7 +253,11 @@ def analyse(target: ObjectFunction, candidate: ObjectFunction, findings: list[Di
         elif any(i.mnemonic.startswith("j") or i.mnemonic in CONTROL for i in a_rows + b_rows):
             sites.append(("control-flow", finding, a_rows, b_rows))
         else:
-            sites.append(("instruction", finding, a_rows, b_rows))
+            kind = _site(a_rows, b_rows)
+            if kind == "moves":
+                spill_rows += finding.rows  # copies and reloads: allocation, fallout when anything structural differs
+            else:
+                sites.append((kind, finding, a_rows, b_rows))
 
     if slot_rows:
         first = next(f for kind, f, _, _ in sites if kind == "slots")
@@ -237,7 +283,7 @@ def analyse(target: ObjectFunction, candidate: ObjectFunction, findings: list[Di
     result.primaries.sort(key=lambda p: ORDER.index(p.kind))
     if result.primaries:
         result.fallout["register choices"] += register_rows
-        result.fallout["spills, reloads and saves"] += spill_rows
+        result.fallout["copies, spills, reloads and saves"] += spill_rows
     elif register_rows or spill_rows:
         result.primaries.append(Primary(
             "register-allocation", f"{register_rows + spill_rows} differing rows are register choices, spills and "
