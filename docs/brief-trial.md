@@ -1,6 +1,6 @@
 # Author trial of concord brief
 
-Status: the first run stopped after 3 of its 38 functions to change the brief; a 12-function pilot with the changed brief is registered below.
+Status: the first run stopped after 3 of its 38 functions to change the brief, and the 12-function pilot of the changed brief stopped after 7, once its exact-match bar could no longer be met. Neither run made a function exact; the brief found the right place each time.
 
 Question: does `concord brief` help whoever writes a function's source reach a byte match, compared with concord's plain diff? The brief lists the sites of a function's primary causes, most causes first, with the source around each and the known idioms; on real fixes from both targets' histories its first site held the fix in about three cases of four where something structural differs ([causes.md](causes.md)). This trial measures whether an author working from it matches more functions, or with fewer compiles.
 
@@ -85,3 +85,19 @@ Registered before any of its functions was opened. Twelve open functions with a 
 | 10 | harvest | single site, 500 bytes or less | `daisy::gui::CGUIDetachableFrame::lockToItemInside` | 261 | - | diff |
 | 11 | harvest | single site, 500 bytes or less | `daisy::video::CVideoNull::makeColorKeyTexture` | 491 | - | brief |
 | 12 | harvest | single site, 500 bytes or less | `harvest::gui::CStatisticsScreen::renderGraph` | 162 | - | diff |
+
+### Pilot results: stopped after 7 functions
+
+| # | Arm | Outcome | Compiles | What the author found |
+| ---: | --- | --- | ---: | --- |
+| 1 | brief | unchanged | 3 | Identical code up to +0x158; retail stores m_y first and loads m_object into ecx, ours stores m_x first and loads it into eax; swapping the stores, dropping the o local and a local for SetSpeedX's object each left the bytes unchanged; regtrace's later grants give only 99.79. |
+| 2 | diff | unchanged | 2 | Regtrace: the switch index (xor ecx, ecx) is a round-robin grant in ours and not in retail, and the case blocks' cursor drift then alternates direction; !isAttacker and an int cast of the switch value left the bytes unchanged. |
+| 3 | brief | unchanged | 0 | Retail tracks one more destructible object in the EH states while destroying player (state 8 for the member at player+0x868c, and one more destructor call), so retail's CMoviePlayer has one more member or base with a destructor; that is a layout change to include/Io/MoviePlayer.h, shared by three units, with no single candidate indicated, so no compile was spent. |
+| 4 | diff | unchanged | 4 | Regtrace: from +0xf9 ours has one more round-robin grant than retail, with identical instructions before it; m_session for Session(), m_localPlayer for LocalPlayer() left the bytes unchanged, and Initialize through m_session or without the session local scored 96.31. |
+| 5 | brief | unchanged | 4 | Storing Y through m_object reproduces retail's ending exactly but changes which registers hold origin and the evaluation order upstream: 86.31 with the local declared late or absent, 92.85 with it declared at the top; retail loads m_object straight into ecx for SetImageFrameByName and keeps origin.y and origin.x in edi and ebx. |
+| 6 | diff | unchanged | 3 | Retail computes the tile x, fetches the grid, then computes y and compares against the grid width in memory; ours computes both before the grid and caches the width in edi. Shifts in the call kept the pixel values for the later WireTileSwitchLogic call (89.5); the direct CellFlagsAt and a shifted copy left the bytes unchanged. |
+| 7 | brief | unchanged | 2 | Retail cmp esi, r14d; jle against ours cmp r14d, esi; jge, after GCC turned the counter into a pointer difference; l <= len left the bytes unchanged and l < used scored 87.08 and lowered twelve other functions. |
+
+The pilot stopped after its seventh function. With none of the brief arm's first four exact, the bar of half its single-site functions exact could not be reached even if its last two matched, and neither arm had an exact function to compare compiles on. The first site of the brief was the right place in all four brief functions, which with the first run's two makes six of six, but in each the difference came from an allocation or scheduling decision that the edits within five compiles did not move: which register the global allocator gives a pointer, the order cl schedules two independent stores, the round-robin cursor around a switch, the operand order GCC gives a rewritten loop test, or a declaration in a shared header (an extra destructible member in `CMoviePlayer`, the widening loop in `CString`). The two arms did not differ: across both runs the diff arm also made none of its four functions exact.
+
+What this says about concord: the brief answers where to look, and finding the place was not what kept these functions open. What they lacked was a mapping from a scheduling or allocation difference to the source form that produces it, which no tool in concord yet gives for c2's global allocator or GCC's loop rewriting.
