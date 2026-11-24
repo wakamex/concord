@@ -34,6 +34,9 @@ VARIABLE = "CONCORD_ORACLE"
 TIMEOUT_VARIABLE = "CONCORD_ORACLE_TIMEOUT"
 CASES_VARIABLE = "CONCORD_ORACLE_CASES"
 DEFAULT_TIMEOUT = 60.0
+# gruntz-oracle runs a function's 5,000 cases in about 95 seconds on a quiet host (CPlay::LoadScrollSpeedOptions),
+# and several times that under load; at 60 seconds it could check 1 of the 152 functions a gruntz sweep improved
+GRUNTZ_TIMEOUT = 600.0
 # A float comparison changed so it differs only for NaN can show in about 0.2% of
 # generated cases (CDropshipEntity::updateLogic: 4 of 2,000); 5,000 cases catch
 # it with near certainty in a few seconds per function.
@@ -69,11 +72,11 @@ def configured(target: Harvest | Gruntz | None = None) -> bool:
     return command(target) is not None
 
 
-def timeout_seconds() -> float:
-    """The positive per-invocation timeout, in seconds."""
+def timeout_seconds(default: float = DEFAULT_TIMEOUT) -> float:
+    """The positive per-invocation timeout, in seconds: the environment's, or the target's default."""
     value = os.environ.get(TIMEOUT_VARIABLE)
     if value is None:
-        return DEFAULT_TIMEOUT
+        return default
     try:
         seconds = float(value)
     except ValueError as error:
@@ -97,8 +100,8 @@ def case_count() -> int:
     return count
 
 
-def _run(argv: list[str], cwd: Path, allowed: tuple[int, ...], label: str) -> subprocess.CompletedProcess:
-    seconds = timeout_seconds()
+def _run(argv: list[str], cwd: Path, allowed: tuple[int, ...], label: str, default: float = DEFAULT_TIMEOUT) -> subprocess.CompletedProcess:
+    seconds = timeout_seconds(default)
     try:
         done = subprocess.run(
             argv, cwd=cwd, capture_output=True, text=True, check=False, timeout=seconds,
@@ -194,7 +197,7 @@ def check_objects(harvest: Harvest | Gruntz, unit: str, symbol: str, before: Pat
     if hasattr(harvest, "layouts"):  # a target that knows its record layouts lets the oracle lay out memory by type
         argv += ["--layouts", str(harvest.layouts(unit))]
     # exit 3 and "under-exercised": no case ran the differing code to completion, so equivalence is not shown
-    done = _run(argv, harvest.root, (0, 1, 3), "oracle check")
+    done = _run(argv, harvest.root, (0, 1, 3), "oracle check", GRUNTZ_TIMEOUT if isinstance(harvest, Gruntz) else DEFAULT_TIMEOUT)
     report = _report(done.stdout, "oracle check")
     verdict = report.get("verdict")
     if not isinstance(verdict, str) or verdict not in {"agree", "differ", "under-exercised"}:

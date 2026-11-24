@@ -48,8 +48,8 @@ class GruntzOracle(unittest.TestCase):
         self.assertEqual(run.call_args.args, (
             ["gruntz-oracle", "check", "before.obj", "after.obj", "--symbol", "?f@@YAHH@Z", "--unit", "unit", "--cases", "17",
              "--layouts", "unit-layouts.json"],
-            self.target.root, (0, 1, 3), "oracle check",
-        ))
+            self.target.root, (0, 1, 3), "oracle check", oracle.GRUNTZ_TIMEOUT,
+        ))  # gruntz-oracle's 5,000 cases take about 95 seconds on a quiet host, so it gets the longer default
 
     def test_under_exercised_is_not_equivalent(self):
         with patch.dict(os.environ, {}, clear=True), patch("concord.oracle.shutil.which", return_value="gruntz-oracle"), patch(
