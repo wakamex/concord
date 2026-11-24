@@ -20,6 +20,20 @@ def fake_harvest(root: Path) -> SimpleNamespace:
 
 
 class CliTest(unittest.TestCase):
+    def test_diff_shows_a_dip_the_project_counts_as_exact(self):
+        from unittest import mock
+
+        from concord.harvest import FunctionVerdict
+        from concord.model import DiffResult
+
+        seen = []
+        dip = FunctionVerdict("u", "f", {"exact": True, "fuzzy": 99.2}, {})
+        target = SimpleNamespace(verdict=lambda unit, symbol: dip, compiler="msvc-5.0",
+                                 diff=lambda verdict: seen.append(verdict) or DiffResult(99.2, False))
+        with mock.patch("concord.cli._target", return_value=target), contextlib.redirect_stdout(io.StringIO()):
+            main(["diff", "--gruntz", ".", "--unit", "u", "f"])
+        self.assertFalse(seen[0].row["exact"])  # diffed like an open function, though the project counts it exact
+
     def test_author_prints_unchanged_source_evidence(self):
         import json
         import tempfile

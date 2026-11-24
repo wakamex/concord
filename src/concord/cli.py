@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import os
@@ -1515,7 +1516,11 @@ def _diff(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         if not args.unit:
             parser.error("--harvest and --gruntz need --unit")
         checkout = _target(parser, args)
-        _print_result(checkout.diff(checkout.verdict(args.unit, args.function)), args.compiler or checkout.compiler)
+        verdict = checkout.verdict(args.unit, args.function)
+        if verdict.row.get("fuzzy") is not None and verdict.row["fuzzy"] < 100.0:
+            # a dip: the project counts a banked 100 as exact, but this build differs, so show how
+            verdict = dataclasses.replace(verdict, row={**verdict.row, "exact": False})
+        _print_result(checkout.diff(verdict), args.compiler or checkout.compiler)
     elif args.target and args.candidate:
         target = read_function(args.target, args.function)
         _print_result(diff_code(target, read_function(args.candidate, args.function)), args.compiler)
