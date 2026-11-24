@@ -78,7 +78,7 @@ class GruntzOracle(unittest.TestCase):
                 after = SimpleNamespace(exact=False, fuzzy=96, score=96, findings=[])
                 found = SimpleNamespace(baseline=before, best=after, source=b"after", steps=[],
                                         reason="budget", tried=1, lowered={})
-                args = argparse.Namespace(budget=1, batch=1, seed=0, depth=1, apply=False,
+                args = argparse.Namespace(budget=1, batch=1, seed=0, depth=1, objective="score", apply=False,
                                           apply_improved=True, results=self.target.root / "results.jsonl")
                 with patch.dict(os.environ, {"CONCORD_ORACLE": "gruntz-oracle"}), patch(
                     "concord.cli.permute", return_value=found
@@ -92,6 +92,31 @@ class GruntzOracle(unittest.TestCase):
                 repair.assert_not_called()
                 self.assertEqual(source.read_bytes(), b"after" if agrees else b"before")
                 self.assertIsNotNone(json.loads(args.results.read_text())["oracle"])
+
+    def test_permute_logs_its_search_when_the_oracle_cannot_run_the_baseline(self):
+        with TemporaryDirectory() as directory:
+            self.target.root = Path(directory)
+            source = self.target.root / "src/unit.cpp"
+            source.parent.mkdir()
+            source.write_bytes(b"before")
+            before = SimpleNamespace(exact=False, fuzzy=95, score=95, findings=[])
+            after = SimpleNamespace(exact=False, fuzzy=96, score=96, findings=[])
+            found = SimpleNamespace(baseline=before, best=after, source=b"after", steps=["a step"],
+                                    reason="budget", tried=1, lowered={})
+            args = argparse.Namespace(budget=1, batch=1, seed=0, depth=1, objective="score", apply=False,
+                                      apply_improved=True, results=self.target.root / "results.jsonl")
+            with patch.dict(os.environ, {"CONCORD_ORACLE": "gruntz-oracle"}), patch(
+                "concord.cli.permute", return_value=found
+            ), patch("concord.cli.finish", return_value=b"after"), patch(
+                "concord.cli.results.commit", return_value="abc"
+            ), patch("concord.cli.results.save_patch", return_value=None), patch(
+                "concord.cli.oracle.gate", side_effect=oracle.OracleBaselineError("oracle failed on the baseline for f: timed out")
+            ), contextlib.redirect_stdout(io.StringIO()):
+                cli._permute_one(self.target, "src/unit.cpp", "f", args)
+            self.assertEqual(source.read_bytes(), b"before")  # nothing inexact is kept without the oracle
+            row = json.loads(args.results.read_text())
+            self.assertEqual(row["steps"], ["a step"])
+            self.assertIn("baseline", row["oracle"]["error"])
 
     def test_permute_refuses_disabled_gruntz_oracle(self):
         args = argparse.Namespace(results=None, apply_improved=True)

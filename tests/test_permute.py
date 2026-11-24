@@ -6,7 +6,7 @@ from pathlib import Path
 
 from concord.harvest import Evaluation
 from concord.model import DiffResult
-from concord.permute import _mutate, drop_twins, permute, singles
+from concord.permute import _cause_key, _mutate, drop_twins, permute, singles
 from concord.transforms import ALL, find_function
 
 SOURCE = b"""int f(int a, int b)
@@ -58,6 +58,35 @@ class NetRule(unittest.TestCase):
         self.assertTrue(result.best.exact)  # 40 bytes gain 10 points, 400 bytes lose 0.01
         self.assertIn(b"int low = b > a;", result.source)
         self.assertEqual(result.lowered, {"g": (80.0, 79.99)})
+
+
+class Vanishing(Neighbour):
+    """A target on which every rewrite but one leaves `f` out of the object, as GCC does when it aliases a
+    constructor; the remaining one makes it exact."""
+
+    def evaluate(self, unit, sources):
+        out = super().evaluate(unit, sources)
+        for name, text in sources.items():
+            if text != SOURCE and b"int low = b > a;" not in text:
+                out[name] = Evaluation(name, unit, sections=[{"functions": [{"symbol": "g", "exact": False, "size": 400}]}], fuzzy={"g": 80.0})
+        return out
+
+
+class MissingFunction(unittest.TestCase):
+    def test_a_candidate_without_the_function_is_passed_over(self):
+        result = permute(Vanishing(net_rule=True), "u.cpp", SYMBOL, budget=48, source=SOURCE)
+        self.assertTrue(result.best.exact)
+
+
+class CauseObjective(unittest.TestCase):
+    def test_fewer_primary_causes_outrank_a_higher_score(self):
+        fewer, higher = DiffResult(90.0, False), DiffResult(95.0, False)
+        fewer.fuzzy, higher.fuzzy = 90.0, 95.0
+        fewer.primaries, higher.primaries = 1, 3
+        exact = DiffResult(100.0, True)
+        exact.primaries = 0
+        self.assertGreater(_cause_key(fewer), _cause_key(higher))
+        self.assertGreater(_cause_key(exact), _cause_key(fewer))
 
 
 class Twins(unittest.TestCase):

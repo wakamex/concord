@@ -105,17 +105,28 @@ def permute(
     depth: int = 3,
     source: bytes | None = None,
     directed: bool = True,
+    objective: str = "score",
 ) -> PermuteResult:
     """Search from the unit's source in the checkout, or from `source`. Without
-    `directed`, only the random stage runs and it ignores where the diff points."""
+    `directed`, only the random stage runs and it ignores where the diff points.
+    `objective` "causes" ranks candidates by their primary causes (concord causes)
+    before their score, so a step that removes a cause counts even when the score
+    does not rise."""
     rng = random.Random(seed)
+    key = _cause_key if objective == "causes" else _key
     source = source if source is not None else target.source_path(unit).read_bytes()
     baseline = target.evaluate(unit, {"baseline": source})["baseline"]
     if baseline.error:
         raise RuntimeError(f"the unit's own source does not compile:\n{baseline.error}")
     protected = baseline.exact_functions()
     others = other_scores(baseline, symbol)
-    current = (source, _diff(target, baseline, symbol), [])
+    def scored_diff(evaluation) -> DiffResult:
+        d = _diff(target, evaluation, symbol)
+        if objective == "causes":
+            d.primaries = _primaries(target, evaluation, symbol, d)
+        return d
+
+    current = (source, scored_diff(baseline), [])
     result = PermuteResult(current[1], current[1], source)
     seen = {source}
     find, rewrites = target.find_function, target.rewrites
@@ -133,19 +144,19 @@ def permute(
         scored = []
         for name, (text, steps) in candidates.items():
             e = evaluations[name]
-            if e.error or not protected <= e.exact_functions():
-                continue
-            scored.append((_diff(target, e, symbol), text, steps, e))
+            if e.error or not protected <= e.exact_functions() or e.verdict(symbol) is None:
+                continue  # a rewrite can leave the function out of the object, as when GCC aliases a constructor
+            scored.append((scored_diff(e), text, steps, e))
         # the best candidates that keep every other function of the unit at least as good
-        floor = _key(current[1])
-        for key in sorted({_key(d) for d, _, _, _ in scored if (_key(d) >= floor if ties else _key(d) > floor)}, reverse=True):
-            tied = [s for s in scored if _key(s[0]) == key]
+        floor = key(current[1])
+        for rank in sorted({key(d) for d, _, _, _ in scored if (key(d) >= floor if ties else key(d) > floor)}, reverse=True):
+            tied = [s for s in scored if key(s[0]) == rank]
             rng.shuffle(tied)
             choice = next((s for s in tied if kept(lowered(others, s[3], symbol), s[3])), None)
             if choice is not None:
                 d, text, steps, e = choice
                 current = (text, d, steps)
-                if _key(d) > _key(result.best):
+                if key(d) > key(result.best):
                     result.best, result.source, result.steps = d, text, steps
                     result.lowered = lowered(others, e, symbol)
                 return True
@@ -184,6 +195,24 @@ def permute(
             lines = located()
     result.reason = result.reason or ("exact" if result.best.exact else "budget spent")
     return result
+
+
+def _primaries(target: Target, evaluation, symbol: str, diff: DiffResult) -> int:
+    """How many primary causes concord causes finds in the candidate's code for `symbol`."""
+    from concord.causes import analyse
+    from concord.diff import read_functions
+
+    verdict = evaluation.verdict(symbol)
+    retail = read_functions(target.object_pair(verdict)[0], {symbol}).get(symbol)
+    ours = read_functions(evaluation.object, {symbol}).get(symbol)
+    if retail is None or ours is None:
+        return len(diff.findings)
+    return len(analyse(retail, ours, diff.findings).primaries)
+
+
+def _cause_key(diff: DiffResult) -> tuple:
+    """Exact first, then fewest primary causes, then the score ranking search uses."""
+    return (diff.exact, -getattr(diff, "primaries", 0), diff.fuzzy or 0.0, diff.score, -len(diff.findings))
 
 
 def near_misses(target: Target, minimum: float) -> list[tuple[str, str, float]]:

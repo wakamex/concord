@@ -221,10 +221,10 @@ class Outcome:
     permute_tried: int
 
 
-def solve(harvest: Target, case: Case, budget: int = 128, seed: int = 0, directed: bool = True) -> Outcome:
-    """Run both searches on the case; `directed` is permute's own setting."""
+def solve(harvest: Target, case: Case, budget: int = 128, seed: int = 0, directed: bool = True, objective: str = "score") -> Outcome:
+    """Run both searches on the case; `directed` and `objective` are permute's own settings."""
     by_cause = search(harvest, case.unit, case.symbol, source=case.source)
-    found = permute(harvest, case.unit, case.symbol, budget=budget, seed=seed, source=case.source, directed=directed)
+    found = permute(harvest, case.unit, case.symbol, budget=budget, seed=seed, source=case.source, directed=directed, objective=objective)
     return Outcome(case, by_cause.best.exact, by_cause.tried, found.best.exact, found.tried)
 
 

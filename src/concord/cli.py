@@ -137,6 +137,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_permute.add_argument("--batch", type=int, default=32, help="candidates compiled per step")
     p_permute.add_argument("--depth", type=int, default=3, help="most rewrites one candidate adds")
     p_permute.add_argument("--seed", type=int, default=0)
+    p_permute.add_argument(
+        "--objective", choices=("score", "causes"), default="score",
+        help="rank candidates by score, or by fewest primary causes (concord causes) and then score",
+    )
     p_permute.add_argument("--apply", action="store_true", help="write an exact match over the unit's file")
     p_permute.add_argument(
         "--apply-improved", action="store_true", help="write any improvement over the unit's file, exact or partial"
@@ -290,6 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench.add_argument("--seed", type=int, default=0)
     p_bench.add_argument("--two-edits", type=int, default=0, metavar="N", help="also take up to N cases two changes away from a match")
     p_bench.add_argument("--undirected", action="store_true", help="run permute without its single-edit stage and location ordering")
+    p_bench.add_argument("--objective", choices=("score", "causes"), default="score", help="permute's ranking of candidates (see concord permute)")
     p_bench.add_argument(
         "--locate",
         action="store_true",
@@ -1569,6 +1574,7 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         parser.error("pass --unit and a function, or --near-miss")
     if args.skip_logged:
         settings = {k: getattr(args, k) for k in ("budget", "batch", "depth", "seed")}
+        settings["objective"] = None if args.objective == "score" else args.objective  # rows record it only when not the score
         done = results.searched(results.load(args.results), "permute", settings)
         targets = [t for t in targets if t not in done]
     if args.near_miss is not None:
@@ -1578,8 +1584,8 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         print(f"=== {unit} {symbol}")
         try:
             exact += _permute_one(harvest, unit, symbol, args)
-        except oracle.OracleBaselineError as error:
-            # One function the oracle cannot check must not end a sweep; record it so
+        except (oracle.OracleBaselineError, KeyError, RuntimeError, subprocess.CalledProcessError) as error:
+            # One function that cannot be searched must not end a sweep; record it so
             # --skip-logged passes over it next time.
             if args.near_miss is None:
                 raise
@@ -1587,7 +1593,9 @@ def _permute(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
             results.record(args.results, {
                 "command": "permute", Path(harvest.log).stem: results.commit(harvest.root), "unit": unit, "symbol": symbol,
                 "budget": args.budget, "batch": args.batch, "depth": args.depth, "seed": args.seed,
-                "reason": "oracle-baseline", "error": str(error), "exact": False,
+                **({"objective": args.objective} if args.objective != "score" else {}),
+                "reason": "oracle-baseline" if isinstance(error, oracle.OracleBaselineError) else "error",
+                "error": str(error), "exact": False,
             })
     if len(targets) > 1:
         print(f"{exact} of {len(targets)} functions exact")
@@ -1598,7 +1606,7 @@ def _permute_one(harvest: Harvest | Gruntz, source: str, symbol: str, args: argp
     revision = results.commit(harvest.root)
     path = harvest.source_path(source)
     original = path.read_bytes()
-    result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth)
+    result = permute(harvest, source, symbol, args.budget, args.batch, args.seed, args.depth, objective=args.objective)
     repairs = []
     if harvest.oracle and not isinstance(harvest, Gruntz):  # repair uses Harvest's original image
         result.source, repairs = repair(harvest, source, symbol, result.source, result.baseline.fuzzy or 0.0)
@@ -1613,7 +1621,12 @@ def _permute_one(harvest: Harvest | Gruntz, source: str, symbol: str, args: argp
         finished = None
         verdict = {"error": "inexact nan-sense step"}
     elif finished is not None and not result.best.exact and harvest.oracle:
-        kept, verdict = oracle.gate(harvest, source, symbol, original, finished)
+        try:
+            kept, verdict = oracle.gate(harvest, source, symbol, original, finished)
+        except oracle.OracleBaselineError as error:
+            # The oracle cannot run the unchanged function, so no inexact gain can be
+            # proven; the search itself still counts and is logged.
+            kept, verdict = False, {"error": str(error)}
         if not kept:
             if verdict and "error" in verdict:
                 print(f"candidate rejected by oracle: {verdict['error']}")
@@ -1633,6 +1646,7 @@ def _permute_one(harvest: Harvest | Gruntz, source: str, symbol: str, args: argp
             "batch": args.batch,
             "depth": args.depth,
             "seed": args.seed,
+            **({"objective": args.objective} if args.objective != "score" else {}),
             "reason": result.reason,
             "tried": result.tried,
             "before": result.baseline.score,
@@ -1832,7 +1846,7 @@ def _bench(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         return _bench_causes(harvest, found, args)
     outcomes = []
     for case in found:
-        outcome = bench.solve(harvest, case, args.budget, args.seed, not args.undirected)
+        outcome = bench.solve(harvest, case, args.budget, args.seed, not args.undirected, args.objective)
         outcomes.append(outcome)
         if args.save:
             row = {
