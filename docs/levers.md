@@ -23,6 +23,8 @@ The fixes no rewrite makes were grouped by reading their changed lines.
 
 Harvest's naming rewrite spells a local's type as `__typeof__(...)`, so a fix that names a value with its written type does not compare equal to the rewrite's result even when GCC compiles both alike; the naming counts above leave those fixes out.
 
-## What follows
+## Branch shape, tried and removed
 
-Branch shape recurs on both targets and its rewrites are mechanical, so it is added first, and measured by the open functions it makes exact on both targets. Naming variants come next.
+Three branch-shape rewrites were added and then removed: a returned ternary as an `if` and a `return` (and back), the rest of a block as an explicit `else` after a branch that always leaves (and back), and a loop body's last combined test split into an early `continue`. They reproduced 1 of the roughly 10 Harvest branch-shape fixes they were built from, because the fixes are each a different form (an `||` early exit split in two, a parameter clamped with a ternary moved into an `if`, a `break` moved into the loop's condition, a ternary inside a returned comparison spread over two returns), each seen once or twice. Out of sample they made nothing exact: a permute sweep of all 270 open Harvest functions (64 candidates, depth 2, seed 1) made the same 5 functions exact as the sweep without them, all through older rewrites, and none of its 60 improvements used a branch-shape step; on the 98 open gruntz-decomp functions with a control-flow cause, the same search made none exact and used no branch-shape step.
+
+The stop rule set before building them, fewer than 15 new exact functions on gruntz-decomp and fewer than 10 on Harvest, was met at 0 and 0, so rewrites mined from history stop here. Most fixes in both histories are one-off forms, renames or semantic corrections that a fixed set of rewrites does not reproduce.

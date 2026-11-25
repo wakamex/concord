@@ -903,127 +903,6 @@ def value_at_use(source: bytes, scope: Node) -> Iterator[Rewrite]:
                     break
 
 
-def _indent_of(source: bytes, node: Node) -> bytes:
-    start = _line_start(source, node.start_byte)
-    return source[start : node.start_byte] if not source[start : node.start_byte].strip() else b""
-
-
-def ternary_return(source: bytes, scope: Node) -> Iterator[Rewrite]:
-    """`return c ? a : b;` as `if (c) return a; return b;`, and an `if (c) return a;` followed by `return b;`
-    as the ternary. GCC 4.4 and cl 5.0 can lay out the two forms' branches differently."""
-    for node in _descendants(scope, "return_statement"):
-        value = node.named_children[0] if node.named_children else None
-        if value is None or value.type != "conditional_expression" or not _indent_of(source, node):
-            continue
-        condition, yes, no = (value.child_by_field_name(f) for f in ("condition", "consequence", "alternative"))
-        if None in (condition, yes, no):
-            continue
-        indent = _indent_of(source, node)
-        replacement = (b"if (" + _strip_parens(condition) + b")\n" + indent + b"    return " + yes.text + b";\n"
-                       + indent + b"return " + no.text + b";")
-        yield _rewrite("branch-shape", Cause.BLOCK_ORDER, source, node, replacement, "a returned ternary as an if")
-    for block in _descendants(scope, "compound_statement"):
-        statements = [c for c in block.named_children if c.type != "comment"]
-        for first, second in pairwise(statements):
-            if first.type != "if_statement" or second.type != "return_statement" or first.child_by_field_name("alternative"):
-                continue
-            body = first.child_by_field_name("consequence")
-            if body.type == "compound_statement":
-                inner = [c for c in body.named_children if c.type != "comment"]
-                body = inner[0] if len(inner) == 1 else None
-            if body is None or body.type != "return_statement" or not body.named_children or not second.named_children:
-                continue
-            condition = first.child_by_field_name("condition")
-            replacement = (b"return " + _strip_parens(condition) + b" ? " + body.named_children[0].text + b" : "
-                           + second.named_children[0].text + b";")
-            line = source.count(b"\n", 0, first.start_byte) + 1
-            yield Rewrite("branch-shape", Cause.BLOCK_ORDER, f"line {line}: an if and a return as a returned ternary",
-                          source[: first.start_byte] + replacement + source[second.end_byte :])
-
-
-def _strip_parens(condition: Node) -> bytes:
-    """A condition_clause's or parenthesized expression's inside."""
-    inner = condition
-    while inner.type in ("condition_clause", "parenthesized_expression") and inner.named_children:
-        inner = inner.named_children[-1]
-    return inner.text
-
-
-def _exits(statement: Node) -> bool:
-    """Whether a statement always leaves its block: a return, or a block that ends in one."""
-    if statement.type in ("return_statement", "continue_statement", "break_statement"):
-        return True
-    if statement.type == "compound_statement":
-        inner = [c for c in statement.named_children if c.type != "comment"]
-        return bool(inner) and _exits(inner[-1])
-    return False
-
-
-def explicit_else(source: bytes, scope: Node) -> Iterator[Rewrite]:
-    """An `if` without an else whose branch always leaves the block, followed by the rest of the block, with
-    the rest moved into an explicit else; and an `if` whose branch leaves the block with an else, the else's
-    statements moved after it. The two are the same code to a person, and can be laid out differently."""
-    for block in _descendants(scope, "compound_statement"):
-        statements = [c for c in block.named_children if c.type != "comment"]
-        for index, node in enumerate(statements):
-            if node.type != "if_statement":
-                continue
-            body, alternative = node.child_by_field_name("consequence"), node.child_by_field_name("alternative")
-            indent = _indent_of(source, node)
-            line = source.count(b"\n", 0, node.start_byte) + 1
-            if alternative is None and _exits(body) and index + 1 < len(statements) and indent:
-                rest = statements[index + 1 :]
-                if any(c.type == "declaration" for c in rest):
-                    continue  # a declaration's scope would shrink
-                end = rest[-1].end_byte
-                moved = source[_line_start(source, rest[0].start_byte) : end]
-                replacement = node.text + b" else {\n" + b"    " + _reindent(moved, b"    ") + b"\n" + indent + b"}"
-                yield Rewrite("branch-shape", Cause.BLOCK_ORDER, f"line {line}: the rest of the block as an explicit else",
-                              source[: node.start_byte] + replacement + source[end:])
-            elif alternative is not None and _exits(body) and indent:
-                other = alternative.named_children[0] if alternative.type == "else_clause" else alternative
-                if other.type != "compound_statement":
-                    continue
-                inner = [c for c in other.named_children if c.type != "comment"]
-                if not inner or any(c.type == "declaration" for c in inner):
-                    continue
-                moved = source[_line_start(source, inner[0].start_byte) : inner[-1].end_byte]
-                kept = source[node.start_byte : body.end_byte]
-                replacement = kept + b"\n" + _dedent(moved, b"    ")
-                yield Rewrite("branch-shape", Cause.BLOCK_ORDER, f"line {line}: an else after a leaving branch as the rest of the block",
-                              source[: node.start_byte] + replacement + source[node.end_byte :])
-
-
-def _dedent(text: bytes, by: bytes) -> bytes:
-    return b"\n".join(line.removeprefix(by) for line in text.split(b"\n"))
-
-
-def early_continue(source: bytes, scope: Node) -> Iterator[Rewrite]:
-    """A loop body ending in `if (a && b) { ... }` with that test split into an early exit:
-    `if (!a) continue; if (b) { ... }`, the first half negated as a person would write it."""
-    for loop in _descendants(scope, "for_statement") + _descendants(scope, "while_statement"):
-        body = loop.child_by_field_name("body")
-        if body is None or body.type != "compound_statement":
-            continue
-        statements = [c for c in body.named_children if c.type != "comment"]
-        if not statements or statements[-1].type != "if_statement" or statements[-1].child_by_field_name("alternative"):
-            continue
-        last = statements[-1]
-        condition = last.child_by_field_name("condition")
-        test = condition.named_children[-1] if condition.named_children else None
-        while test is not None and test.type == "parenthesized_expression":
-            test = test.named_children[0]
-        if test is None or test.type != "binary_expression" or test.child_by_field_name("operator").type != "&&":
-            continue
-        left, right = test.child_by_field_name("left"), test.child_by_field_name("right")
-        indent = _indent_of(source, last)
-        if not indent:
-            continue
-        replacement = (b"if (" + _negate(left, source) + b")\n" + indent + b"    continue;\n" + indent
-                       + b"if (" + right.text + b")" + source[condition.end_byte : last.end_byte])
-        yield _rewrite("branch-shape", Cause.BLOCK_ORDER, source, last, replacement, "the loop's last test split into an early continue")
-
-
 PLAIN = {"identifier", "field_expression", "number_literal"}
 
 
@@ -1297,9 +1176,6 @@ ALL = [
     name_temporaries,
     inline_temporaries,
     value_at_use,
-    ternary_return,
-    explicit_else,
-    early_continue,
     while_loop,
     for_loop,
     expand_assignment,
